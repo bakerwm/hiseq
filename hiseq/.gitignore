@@ -1,0 +1,18 @@
+# Compiled python modules
+*.pyc
+build/
+
+# Setuptools distribution folder
+dist/
+
+# Python egg metadata
+/*.egg-info
+/*.egg
+
+# Sublime files
+*.sublime-workspace
+*.sublime-project
+
+# large files
+data/
+
