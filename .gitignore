@@ -11,4 +11,4 @@ build/
 
 # docs
 docs/build/
-test/
+test/results/
