@@ -203,6 +203,7 @@ def args_init(args={}, demx=False, trim=False, align=False, call_peak=False,
             args['small_genome'] = args.get('small_genome', False)
             args['simplify_name'] = args.get('simplify_name', True)
             args['simple_name'] = args.get('simple_name', False) # deprecated, instead simplify_name
+            args['index_parallel'] = args.get('index_parallel', False) # for multiple index
 
             # check-point
             if args['spikein'] == args['genome']:

@@ -12,6 +12,7 @@ __email__ = 'wangm08@hotmail.com'
 __date__ = '2019-10-01'  
 __version__ = '0.0.1'
 
+import hiseq
 
 class Hiseq(object):
     """The 1st-level of command, choose which sub-command to use
@@ -96,7 +97,7 @@ class Hiseq(object):
 
 def main():
     # Hiseq()
-    hiseq.qc.Trimmer()
+    hiseq.qc.trimmer.Trimmer()
 
         
 if __name__ == '__main__':

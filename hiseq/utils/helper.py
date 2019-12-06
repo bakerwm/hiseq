@@ -11,7 +11,9 @@ import os
 import sys
 import gzip
 import shutil
+import json
 import pickle
+import fnmatch
 import logging
 import functools
 import subprocess
@@ -146,7 +148,7 @@ def args_logger(d, x, overwrite=False):
         key: value
     """
     assert isinstance(d, dict)
-    n = ['%20s : %-40s' % (k, d[k]) for k in sorted(list(d.keys()))]
+    n = ['%30s |    %-40s' % (k, d[k]) for k in sorted(d.keys())]
     if os.path.exists(x) and overwrite is False:
         return True
     else:
@@ -197,7 +199,7 @@ def listfiles(path, full_name=True, recursive=False, include_dir=False):
     return out
 
 
-def listfiles2(self, pattern, path='.', full_name=True, recursive=False):
+def listfiles2(pattern, path='.', full_name=True, recursive=False):
     """
     List all the files in specific directory
     fnmatch.fnmatch()
@@ -218,8 +220,72 @@ def listfiles2(self, pattern, path='.', full_name=True, recursive=False):
     listfiles('*.fq', './')
     """
     fn_list = listfiles(path, full_name, recursive, include_dir=False)
-    fn_list = [f for f in os.listdir(path) if fnmatch.fnmatch(f, pattern)]
+    fn_list = [f for f in fn_list if fnmatch.fnmatch(f, pattern)]
     return fn_list
 
+
+class Json(object):
+
+    def __init__(self, x):
+        """
+        x 
+          - dict, save to file
+          - json, save to file
+          - file, read as dict
+        Save dict to json file
+        Read from json file as dict
+        ...
+        """
+        self.x = x # input
+
+        if isinstance(x, Json):
+            self.dict = x.dict
+        elif isinstance(x, dict):
+            # input a dict, 
+            # save to file
+            self.dict = x
+        elif os.path.exists(x):
+            # a file saving json content
+            self.dict = self.reader()
+        else:
+            raise Exception('unknown objec: {}'.format(x))
+
+    def _tmp(self):
+        """
+        Create a tmp file to save json object
+        """
+        tmp = tempfile.NamedTemporaryFile(prefix='tmp', suffix='.json', delete=False)
+        return tmp.name
+
+
+    def reader(self):
+        """
+        Read json file as dict
+        """
+        if os.path.getsize(self.x) > 0:
+            with open(self.x) as r:
+                d = json.load(r)
+        else:
+            d = {}
+
+        return d
+
+
+    def writer(self, f=None):
+        """
+        Write d (dict) to file x, in json format
+        """
+        # save to file
+        if f is None:
+            f = self._tmp()
+
+        assert isinstance(f, str)
+        # assert os.path.isfile(f)
+
+        if isinstance(self.x, dict):
+            with open(f, 'wt') as w:
+                json.dump(self.x, w, indent=4, sort_keys=True)
+
+        return f
 
 

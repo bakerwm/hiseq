@@ -5,7 +5,10 @@
 Wrappers for qc, alignment, ..., create html report
 """
 
-from hiseq.utils.helper import *
+# from hiseq.utils.helper import *
+from .helper import *
+
+
 
 @Logger('INFO')
 class ReportFastqc(object):
@@ -120,7 +123,11 @@ class ReportFastqc(object):
 class ReportAlignment(object):
     """
     Generate html report for alignment directories
-    search for *.stat files
+    search for *.json files
+
+    combine together
+
+    all: with in outdir
     """
 
     def __init__(self, path):
@@ -129,5 +136,20 @@ class ReportAlignment(object):
         """
         pass
 
+        self.path = path
+        self.stat_files = listfiles2('*.align.json', path, True, True)
+
+
+    def json2dataframe(self):
+        frames = [pd.read_json(f, orient='index'), self.stat_files]
+        df = pd.concat(frames, axis=1)
+        df.columns = df.loc['index_name', ].tolist()
+        df2 = df.T # or df1.transpose() # switch column and index
+
+
+        
+
+
         
         
+
