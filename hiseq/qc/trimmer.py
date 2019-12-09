@@ -269,8 +269,6 @@ class Trimmer(object):
         return self.out_files
 
 
-
-
 @Logger('INFO')
 class Cutadapt(object):
 

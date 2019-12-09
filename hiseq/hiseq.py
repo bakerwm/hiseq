@@ -12,21 +12,25 @@ __email__ = 'wangm08@hotmail.com'
 __date__ = '2019-10-01'  
 __version__ = '0.0.1'
 
-import hiseq
+# import hiseq
+import os
+import sys
+import argparse
+from .utils.argsParser import *
+from .qc.trimmer import Trimmer
+from .align.alignment import Alignment
 
 class Hiseq(object):
     """The 1st-level of command, choose which sub-command to use
     qc, align, quant, peak, motif, report, ... (to be continued)
 
     """
-
-
     def __init__(self):
         parser = argparse.ArgumentParser(
             prog = 'hiseq',
             description = 'A collection of tools for HiSeq data',
             epilog = '',
-            usage = ''' hiseq <command> [<args>]
+            usage = """ hiseq <command> [<args>]
 
     The most commonly used sub-commands are:
 
@@ -36,68 +40,99 @@ class Hiseq(object):
         peak      Call peaks using MACS2
         motif     Check motifs from a BED/fasta file    
         report    Create a report to the above commands
-    '''
+    """
             )
         parser.add_argument('command', help='Subcommand to run')
+
         # parse_args defaults to [1:] for args
         args = parser.parse_args(sys.argv[1:2])
         if not hasattr(self, args.command):
             print('Unrecognized command')
             parser.print_help()
             sys.exit(1)
+
         # use dispatch pattern to invoke method with same name
         getattr(self, args.command)()
 
 
-
     def qc(self):
-        '''Quality control, 
+        """Quality control, 
         cutadapt  : Trimming adapters from reads
         trim_ends : Python scripts to trim ends of reads, usually, the barcode sequences
         fastqc    : Create fastqc report the raw and clean files
-        '''
-        parser = argparse.ArgumentParser(
-            description='Quality control for fastq files'
-            )
-        parser.add_argument('-i', '--fq1', 
-            help='The fastq file(s) of SE or read1 file(s) of PE')
-        # now that, we're inside a subcommand, ignore the first
-        # TWO argvs, hiseq and qc
+        """
+        parser = add_qc_args()
         args = parser.parse_args(sys.argv[2:])
-        print('Running hiseq qc, fq1={}'.format(args.fq1))
+        args = vars(args) # convert to dict
+        
+        # custom args
+        fq1_list = args.pop('fq1', None) # list
+        outdir = args.pop('outdir', None)
+
+        ## iterate all fq1
+        for fq1 in fq1_list:
+            print(fq1)
+            Trimmer(fq1, outdir, **args).run()
+
 
 
     def align(self):
-        '''Alignment
+        """Alignment
         Align fastq/a files to reference
         fq: SE or PE
         aligner: bowtie, bowtie2, STAR, bwa, hisat2, ...
         output: directory
         args: unique, multi, x-size, ...
-
         input
         output
         arguments.txt (pickle)
-        '''
-        parser = argparse.ArgumentParser(
-            description='Align short reads to reference sequence')
-        parser.add_argument('-n', '--aligner', 
-            help='The aligner, [bowtie, bowtie2, STAR, bwa, hisat2]')
-        parser.add_argument('-i', '--fq1',
-            help='The fastq file(s) of SE or read1 file(s) of PE')
-        parser.add_argument('-o', '--out',
-            help='The directory to save the results')
-        parser.add_argument('-I', '--fq2',
-            help='The read2 of PE files')
-        # now that, we're inside a subcommand, ignore the first
-        # TWO argvs, hiseq and qc        
+        """
+        parser = add_align_args()
         args = parser.parse_args(sys.argv[2:])
-        print('Running hiseq align, aligner={}, fq1={}, out={}'.format(
-            args.aligner, args.fq1, args.out))
+        args = vars(args) # convert to dict
+        # print('Running hiseq align, aligner={}, fq1={}, out={}'.format(
+        #     args.aligner, args.fq1, args.out))
+        Alignment(**args).run()
+
+
+    def quant(self):
+        """
+        quantify hiseq reads
+        ...
+        """
+        parser = add_quant_args()
+        args = parser.parse_args(sys.argv[2:])
+        print('hiseq quant')
+
+
+    def peak(self):
+        """
+        quantify hiseq reads
+        ...
+        """
+        parser = add_peak_args()
+        args = parser.parse_args(sys.argv[2:])
+        print('hiseq peak')
+
+
+    def motif(self):
+        """
+        quantify hiseq reads
+        ...
+        """
+        parser = add_motif_args()
+        args = parser.parse_args(sys.argv[2:])
+        print('hiseq motif')
+
+
+
+
+
+
+
 
 def main():
-    # Hiseq()
-    hiseq.qc.trimmer.Trimmer()
+    Hiseq()
 
         
 if __name__ == '__main__':
