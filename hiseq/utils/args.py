@@ -112,12 +112,13 @@ class Adapter(object):
         return args_trimmer.get(self.lib, args_mini)
 
 
-def args_init(args={}, demx=False, trim=False, align=False, call_peak=False, 
+def args_init(kwargs={}, demx=False, trim=False, align=False, call_peak=False, 
     bam2bw=False):
         """
         Inititate the arguments, assign the default values to arg
         positional arg: smp, genome
         """
+        args = kwargs.copy() # do not change original dict
         if not isinstance(args, dict):
             raise Exception('unknown argument: args=%s' % args)
 
