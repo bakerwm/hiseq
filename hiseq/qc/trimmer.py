@@ -202,8 +202,8 @@ class Trimmer(object):
 
         ## cut-after-trim
         cut2_dir = os.path.join(self.outdir, 'temp', '03.cut_after_trim')
-        cut2_f1 = os.path.join(rmdup_dir, os.path.basename(f1))
-        cut2_f2 = None if f2 is None else os.path.join(rmdup_dir, os.path.basename(f2))
+        cut2_f1 = os.path.join(rmdup_dir, 'cut.' + os.path.basename(f1))
+        cut2_f2 = None if f2 is None else os.path.join(rmdup_dir, 'cut.' + os.path.basename(f2))
 
         ## create dir
         is_path(rmdup_dir)
