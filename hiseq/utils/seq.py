@@ -304,7 +304,6 @@ class Fastx(object):
         discard_tooshort: [True, False]
 
         """
-
         # arguments
         args = kwargs
 
@@ -319,6 +318,8 @@ class Fastx(object):
             elif isinstance(cut, str):
                 if re.match('^\d+,-\d+$', cut):
                     s, e = cut.split(',', 1)
+                    s = eval(s)
+                    e = eval(e)
                     return x[s:e]
                 else:
                     raise Exception('unknown format for cut={}'.format(cut))
