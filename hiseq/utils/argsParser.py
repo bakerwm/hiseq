@@ -126,7 +126,7 @@ def add_align_args():
         help='The directory to save results, default, \
         current working directory.')
     parser.add_argument('-g', '--genome', required=True, default='hg19', 
-        choices=['dm3', 'hg19', 'hg38', 'mm10', 'mm9'],
+        choices=['dm3', 'dm6', 'hg19', 'hg38', 'mm10', 'mm9'],
         help='Reference genome : dm3, hg19, hg39, mm10, default: hg19')
     parser.add_argument('--aligner', default='bowtie', 
         choices=['bowtie', 'bowtie2', 'STAR'],
@@ -143,6 +143,8 @@ def add_align_args():
         help='Name of the experiment')
 
     ## extra: para
+    parser.add_argument('--extra-para', dest='extra_para', default=None,
+        help='Extra parameters for aligner, eg: -X 2000 for bowtie2. default: [None]')
     parser.add_argument('--n-map', dest='n_map', type=int, default=0,
         help='Report up to N alignments per read. use -k for bowtie and \
         bowtie2 (default 1), --outFilterMultimapNmax for STAR \
@@ -156,9 +158,18 @@ def add_align_args():
     parser.add_argument('--unique-only', action='store_true',
         dest='unique_only',
         help='if specified, keep unique mapped reads only')
+
+    ## extra rRNA
+    parser.add_argument('--align-to-chrM', dest='align_to_chrM',
+        action='store_true',
+        help='if specified, align to Mitochondrial DNA before genome')
     parser.add_argument('--align-to-rRNA', dest='align_to_rRNA',
         action='store_true',
         help='if specified, align to rRNA before genome')
+    parser.add_argument('--align-to-MT-trRNA', dest='align_to_MT_trRNA',
+        action='store_true',
+        help='if specified, align to Mito, tRNA and rRNA before genome')
+
     parser.add_argument('--overwrite', action='store_true',
         help='if spcified, overwrite exists file')
     parser.add_argument('--threads', default=8, type=int, 

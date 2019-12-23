@@ -98,10 +98,13 @@ class Alignment(object):
           - fq2
           - index_list
         """
+        # update
         args = args_init(kwargs, align=True)
-        
-        if args['fq'] is None:
-            raise Exception('{:>10} : --fq no input detected'.format('error'))
+        args['fq'] = args['fq1'] = kwargs['fq1'] #
+        args['outdir'] = args['path_out'] # !!! to-do
+
+        if args['fq1'] is None:
+            raise Exception('{:>10} : -i, --fq1 no input detected'.format('error'))
 
         self.kwargs = args
 
@@ -281,9 +284,14 @@ class AlignIndex(object):
             'genome_rm': [
                 os.path.join(i_prefix, 'genome_rm'),
                 os.path.join(i_prefix, genome + '_rm')],
-            'rRNA': [
-                os.path.join(i_prefix, 'rRNA'),
+            'MT_trRNA': [
                 os.path.join(i_prefix, 'MT_trRNA')],
+            'rRNA': [
+                os.path.join(i_prefix, 'rRNA')],
+            'chrM': [
+                os.path.join(i_prefix, 'chrM')],
+            'structural_RNA': [
+                os.path.join(i_prefix, 'structural_RNA')],
             'te': [
                 os.path.join(i_prefix, 'transposon')],
             'piRNA_cluster': [
@@ -291,9 +299,7 @@ class AlignIndex(object):
             'miRNA': [
                 os.path.join(i_prefix, 'miRNA')],
             'miRNA_hairpin': [
-                os.path.join(i_prefix, 'miRNA_hairpin')],
-            'structureRNA': [
-                os.path.join(i_prefix, 'structureRNA')]}
+                os.path.join(i_prefix, 'miRNA_hairpin')]}
 
         # hit
         i_list = d.get(group, ['temp_temp'])
@@ -334,7 +340,9 @@ class AlignConfig(object):
         ## update args: for index_list
         args['genome'] = args.get('genome', 'dm3')
         args['spikein'] = args.get('spikein', None)
+        args['align_to_chrM'] = args.get('align_to_chrM', True)
         args['align_to_rRNA'] = args.get('align_to_rRNA', True)
+        args['align_to_MT_trRNA'] = args.get('align_to_MT_trRNA', True)
         args['extra_index'] = args.get('extra_index', None)
 
         ## update args:
@@ -505,16 +513,32 @@ class AlignConfig(object):
 
         elif isinstance(args['genome'], str): # Genome(self.genome).check
             index_list = []
-            ## genome
-            if args['align_to_rRNA']:
+            ## extra index (rRNA, chrM, ...)
+            if args['align_to_MT_trRNA']:
                 index_list.append(
-                    AlignIndex(self.aligner).search(args['genome'], 'rRNA'))
+                    AlignIndex(self.aligner).search(args['genome'], 'MT_trRNA'))
+            else:
+                if args['align_to_rRNA']:
+                    index_list.append(
+                        AlignIndex(self.aligner).search(args['genome'], 'rRNA'))
+                elif args['align_to_chrM']:
+                    index_list.append(
+                        AlignIndex(self.aligner).search(args['genome'], 'chrM'))
+            ## genome
             index_list.append(AlignIndex(self.aligner).search(args['genome'], 'genome'))
             ## spikein
             if isinstance(args['spikein'], str):
-                if args['align_to_rRNA']:
+                if args['align_to_MT_trRNA']:
                     index_list.append(
-                        AlignIndex(args['aligner']).search(args['spikein'], 'rRNA'))
+                        AlignIndex(self.aligner).search(args['spikein'], 'MT_trRNA'))
+                else:
+                    if args['align_to_rRNA']:
+                        index_list.append(
+                            AlignIndex(args['aligner']).search(args['spikein'], 'rRNA'))
+                    elif args['align_to_chrM']:
+                        index_list.append(
+                            AlignIndex(args['aligner']).search(args['spikein'], 'chrM'))
+                ## genome/spikein
                 index_list.append(
                     AlignIndex(args['aligner']).search(args['spikein'], 'genome'))
 
@@ -645,7 +669,22 @@ class AlignNIndex(object):
         # df2 = df.T.sort_index() # or df1.transpose() # switch column and index
         # df2.to_csv(stat_log, sep='\t', index=False)
 
-        ## version-2: cat
+        # ## version-2: cat
+        # stat_files = listfiles2('*.align.stat', path, True, True)
+        # with open(stat_log, 'wt') as w:
+        #     for f in stat_files:
+        #         iname=$(basename $(dirname ${f})) #
+        #         sname=$(basename ${f})
+        #         sname=${sname/.align.stat}
+        #         with open(f) as r:
+        #             for line in r:
+        #                 if line.startswith('#'):
+        #                     line = '\t'.join([line.strip(), "index", "sample"])
+        #                 else:
+        #                     line = '\t'.join([line.strip(), iname, sname])
+        #                 # w.write(''.join(r.readlines()))
+        #                 w.write(line + '\n')
+
         stat_files = listfiles2('*.align.stat', path, True, True)
         with open(stat_log, 'wt') as w:
             for f in stat_files:
@@ -816,6 +855,10 @@ class Bowtie(object):
             args.get('threads', 4),
             self.config.unmap)
 
+        ## extra align para
+        if not args['extra_para'] is None:
+            cmd += ' ' + args['extra_para']
+
         ## se or pe
         if args['fq2'] is None: 
             cmd += ' {} 1>{} 2>{}'.format(
@@ -886,6 +929,7 @@ class Bowtie(object):
         dd['index_name'] = self.config.index_name
 
         # # sort by keys
+        # dd = dict(sorted(dd.items(), key=lambda kv: kv[1], reverse=True))
         self.log_dict = dd
 
         # save dict to plaintext file
@@ -994,12 +1038,16 @@ class Bowtie2(object):
         arg_fx = '-f' if self.config.format == 'fasta' else '-q'
 
         ## cmd
-        cmd = '{} -x {} {} {} -p {} --very-sensitive-local --mm --no-unal'.format(
+        cmd = '{} -x {} {} -p {} {} --very-sensitive-local --mm --no-unal'.format(
             self.aligner_exe,
             args['index'],
             arg_fx,
-            arg_unique,
-            args.get('threads', 4))
+            args.get('threads', 4),
+            arg_multi)
+
+        ## extra align para
+        if not args['extra_para'] is None:
+            cmd += ' ' + args['extra_para']
 
         ## se or pe
         if args['fq2'] is None: 
@@ -1096,8 +1144,23 @@ class Bowtie2(object):
             dd['map'] = dd['unique'] + dd['multiple']
         dd['unmap'] = dd['total'] - dd['unique'] - dd['multiple']
 
+        # save fqname, indexname, 
+        dd['fqname'] = self.config.fqname
+        dd['index_name'] = self.config.index_name
+
         # save dict
+        # sort by keys
+        # dd = dict(sorted(dd.items(), key=lambda kv: kv[1], reverse=True))
         self.log_dict = dd
+
+        # save dict to plaintext file
+        self.align_stat = self.config.out_prefix + '.align.stat'
+        with open(self.align_stat, 'wt') as w:
+            # for k, v in sorted(dd.items()):
+            #     w.write('\t'.join([self.config.fqname, self.config.index_name, k, str(v)]) + '\n')
+            w.write('#') # header line
+            w.write('\t'.join(list(map(str, dd.keys()))) + '\n')
+            w.write('\t'.join(list(map(str, dd.values()))) + '\n')
 
         return dd['total'], dd['map'], dd['unique'], dd['multiple'], dd['unmap']
 
@@ -1129,7 +1192,8 @@ class Bowtie2(object):
         else:
             run_shell_cmd(cmd)
             sam2bam(self.config.sam, self.config.bam, sort=True, extra_para=self.arg_unique) # convert to bam
-
+            # update unmap files, samtools filtering
+            # !!!! to-do
         # save to file
         self.get_json() # log_json
 
@@ -1238,6 +1302,11 @@ class Star(object):
                 args.get('threads', 4),
                 self.config.unmap,
                 arg_unique)
+
+
+        ## extra align para
+        if not args['extra_para'] is None:
+            cmd += ' ' + args['extra_para']
 
         return cmd
 
@@ -1357,11 +1426,22 @@ class Star(object):
             dd['map'] = dd['unique'] + dd['multiple']
         dd['unmap'] = dd['total'] - dd['unique'] - dd['multiple']        
 
-        # sort by keys
-        dd = dict(sorted(d.items(), key=lambda kv: kv[1], reverse=True))
+        # save fqname, indexname, 
+        dd['fqname'] = self.config.fqname
+        dd['index_name'] = self.config.index_name
 
-        # save dict
+        # sort by keys
+        # dd = dict(sorted(d.items(), key=lambda kv: kv[1], reverse=True))
         self.log_dict = dd
+
+        # save dict to plaintext file
+        self.align_stat = self.config.out_prefix + '.align.stat'
+        with open(self.align_stat, 'wt') as w:
+            # for k, v in sorted(dd.items()):
+            #     w.write('\t'.join([self.config.fqname, self.config.index_name, k, str(v)]) + '\n')
+            w.write('#') # header line
+            w.write('\t'.join(list(map(str, dd.keys()))) + '\n')
+            w.write('\t'.join(list(map(str, dd.values()))) + '\n')
 
         return dd['total'], dd['map'], dd['unique'], dd['multiple'], dd['unmap']
 

@@ -198,13 +198,18 @@ def args_init(kwargs={}, demx=False, trim=False, align=False, call_peak=False,
             # args['align_to_te'] = args.get('align_to_te', False) # deprecated
             args['align_by_order'] = args.get('align_by_order', True) # align reads to multiple index by order
             args['n_map'] = args.get('n_map', 0)
-            args['align_to_rRNA'] = args.get('align_to_rRNA', True)
+
+            args['align_to_chrM'] = args.get('align_to_chrM', False)
+            args['align_to_rRNA'] = args.get('align_to_rRNA', False)
+            args['align_to_MT_trRNA'] = args.get('align_to_MT_trRNA', False)
+
             args['repeat_masked_genome'] = args.get('repeat_masked_genome', False)
             args['merge_rep'] = args.get('merge_rep', True)
             args['small_genome'] = args.get('small_genome', False)
             args['simplify_name'] = args.get('simplify_name', True)
             args['simple_name'] = args.get('simple_name', False) # deprecated, instead simplify_name
             args['index_parallel'] = args.get('index_parallel', False) # for multiple index
+            args['extra_para'] = args.get('extra_para', None)
 
             # check-point
             if args['spikein'] == args['genome']:
