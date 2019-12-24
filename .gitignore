@@ -12,3 +12,4 @@ build/
 # docs
 docs/build/
 test/results/
+test/
