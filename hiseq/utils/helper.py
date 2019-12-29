@@ -543,9 +543,9 @@ class Bam(object):
         sambamba = shutil.which('sambamba')
         log = outfile + '.sambamba.log'
         cmd = '{} markdup -r -t {} --overflow-list-size 800000 \
-            --tmpdir="./" {} {} > {}'.format(
-            str(self.threads),
+            --tmpdir="./" {} {} 2> {}'.format(
             sambamba,
+            str(self.threads),
             self.bam,
             outfile,
             log)

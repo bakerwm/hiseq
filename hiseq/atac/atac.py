@@ -29,10 +29,6 @@ compare replicates:
 - peak
 - motif
 - report
-
-
-
-
 """
 
 import os
@@ -139,7 +135,8 @@ class AtacConfig(object):
         self.trim_stat = os.path.join(self.cleandir, fqname + '.qc.stat')
         self.bam_raw = os.path.join(self.aligndir, fqname, '2.*', fqname + '.bam')
         self.align_stat = os.path.join(self.aligndir, fqname + '.align.txt')
-        self.bam_rmdup = os.path.join(self.bamdir, fqname + '.bam')
+        self.bam_rmdup = os.path.join(self.bamdir, fqname + '.rmdup.bam')
+        self.bam_proper_pair = os.path.join(self.bamdir, fqname + '.proper_pair.bam')
         self.peak = os.path.join(self.peakdir, fqname + '_peaks.narrowPeak')
         self.bw = os.path.join(self.bwdir, fqname + '.bigWig')
 
@@ -242,14 +239,40 @@ class Atac(object):
         return Json(self.design).dict
 
 
-    def symlink(self, src, dest):
+    def symlink(self, src, dest, absolute_path=True):
         """
         Create symlinks within output dir
 
         ../src
         """
-        srcname = os.path.join('..', os.path.basename(src))
-        os.symlink(srcname, dest)
+        if absolute_path:
+            # support: ~, $HOME,
+            srcname = os.path.abspath(os.path.expanduser(os.path.expandvars(src)))
+        else:
+            srcname = os.path.join('..', os.path.basename(src))
+
+        if not os.path.exists(dest):
+            os.symlink(srcname, dest)
+
+
+    #######################################
+    ## main pipeline
+    def prep_raw(self, copy=False):
+        """
+        Copy raw data to dest dir
+        if not: create a symlink
+        
+        self.fq1, self.fq2 => raw_fq_list
+        """
+        raw_fq1, raw_fq2 = self.config.raw_fq_list
+
+        # copy
+        if copy is True:
+            shutil.copy(self.fq1, raw_fq1)
+            shutil.copy(self.fq2, raw_fq2)
+        else:
+            self.symlink(self.fq1, raw_fq1, absolute_path=True)
+            self.symlink(self.fq2, raw_fq2, absolute_path=True)
 
 
     def trim(self, trimmed=False):
@@ -264,12 +287,14 @@ class Atac(object):
         """
         # args = self.args.copy()
         fq1, fq2 = self.config.raw_fq_list
-        outdir = self.config.cleandir
-        args = self.config.args # all
 
-        if trimmed is True:
-            # update clean fastq
-            Trimmer(fq1, outdir, fq2, **args).run()
+        # update args
+        args = self.config.args # all
+        args['fq1'] = args['fq'] = fq1
+        args['fq2'] = fq2
+        args['outdir'] = self.config.cleandir
+        if not trimmed is True:
+            Trimmer(**args).run()
         else:
             # create links
             for s, d in zip(self.config.raw_fq_list, self.config.clean_fq_list):
@@ -283,34 +308,79 @@ class Atac(object):
         -X 2000, ...
         """
         fq1, fq2 = self.config.clean_fq_list
-        # arguments
+
+        # update arguments
         args = self.config.args
         args['fq1'] = args['fq'] = fq1
         args['fq2'] = fq2
         args['outdir'] = self.config.aligndir
+        #
+        args['extra_para'] = '-X 2000'
         Alignment(**args).run()
+
+
+    def get_raw_bam(self):
+        """
+        Get the align bam file
+        from bamdir/1., 2., ...
+        !!! specific: 2.genome/*.bam
+        """
+        # bamdir = os.path.join(self.config.aligndir, '2.*')
+        bamdir = self.config.align_stat.rstrip('.align.txt')
+        print(bamdir)
+        bamlist = listfiles2('*.bam', bamdir, recursive=True)
+        # [chrM, genome]
+        return(bamlist[1]) # genome
+
+
+    def bam_rmdup(self, rmdup=True):
+        """
+        Remove PCR dup from BAM file using sambamfa/Picard 
+        save only proper paired PE reads
+        """
+        bam_raw = self.get_raw_bam()
+
+        # rmdup
+        if rmdup is True:
+            Bam(bam_raw).rmdup(self.config.bam_rmdup)
+        else:
+            shutil.copy(bam_raw, self.config.bam_rmdup)
+
+        # save proper pair reads
+        Bam(self.config.bam_rmdup).proper_pair(self.config.bam_proper_pair)
+        # index
+        Bam(self.config.bam_proper_pair).index()
+
+
+    def callpeak(self):
+        """
+        Call peaks using MACS2
+        """
+        pass
 
 
     def run(self):
         """
         Run all steps for ATACseq pipeline
         """
-        args = self.args.copy() # copy
-
         # init dir
+        args = self.config.args.copy()
 
-        # trim
-        if args['trimmed'] is True:
-            clean_fq1, clean_fq2 = (self.atac[''])
-        else:
-            args_trim = args_atac(args, trim=True)
-            clean_fq1, clean_fq2 = trimmer.Trimmer(
-                args['fq1'], args[''])
-            # hiseq.qc.trimmer.Trimmer(fq1, outdir).run()
+        trimmed = args.get('trimmed', False)
+        copy_raw_fq = args.get('copy_raw_fq', False)
+        rmdup = args.get('rmdup', True) # remove PCR dup
 
-        # align
+        # 1. copy raw data
+        self.prep_raw(copy_raw_fq)
 
-        # rmdup 
+        # 2. trim
+        self.trim(trimmed)
+
+        # 3. align
+        self.align()
+
+        # 4. rmdup
+        self.bam_rmdup(rmdup)
 
         # peak 
 
@@ -321,95 +391,104 @@ class Atac(object):
         # report
 
 
+class Atac2(object):
+    """
+    For replicates:
+    1. mito%
+    2. frag size
+    3. TSS enrich
+    4. Correlation (pearson)
+    5. IDR
+    6. Peaks overlap
+    """
+    def __init__(**kwargs):
+        pass
 
 
+# def config(self):
+#     """
+#     Create directories, filenames
+#     raw_data
+#     clean_data
+#     align
+#     bam_files
+#     bw_files
+#     peak
+#     motif
+#     report
+#     ...
+#     files:
+#     raw_fastq 
+#     clean fastq
+#     align.bam 
+#     rmdup bam
+#     peak (narrowPeak)
+#     motif (to-do)
+#     report
+#     """
+#     args = self.kwargs.copy()
 
+#     assert os.path.exists(self.fq1)
+#     assert os.path.exists(self.fq2)
+#     assert is_path(self.outdir)
 
+#     ## sample name
+#     fqname = file_prefix(self.fq1)[0]
+#     fqname = re.sub('[._][rR]?1$', '', fqname)
+#     if args['smp_name']:
+#         fqname = args['smp_name']
 
-    # def config(self):
-    #     """
-    #     Create directories, filenames
-    #     raw_data
-    #     clean_data
-    #     align
-    #     bam_files
-    #     bw_files
-    #     peak
-    #     motif
-    #     report
-    #     ...
-    #     files:
-    #     raw_fastq 
-    #     clean fastq
-    #     align.bam 
-    #     rmdup bam
-    #     peak (narrowPeak)
-    #     motif (to-do)
-    #     report
-    #     """
-    #     args = self.kwargs.copy()
+#     ## outdir
+#     self.rawdir = os.path.join(self.outdir, 'raw_data')
+#     self.cleandir = os.path.join(self.outdir, 'clean_data')
+#     self.aligndir = os.path.join(self.outdir, 'align')
+#     self.bamdir = os.path.join(self.outdir, 'bam_files')
+#     self.bwdir = os.path.join(self.outdir, 'bw_files')
+#     self.peakdir = os.path.join(self.outdir, 'peak')
+#     self.motifdir = os.path.join(self.outdir, 'motif')
+#     self.reportdir = os.path.join(self.outdir, 'report')
 
-    #     assert os.path.exists(self.fq1)
-    #     assert os.path.exists(self.fq2)
-    #     assert is_path(self.outdir)
+#     ## global variables:
+#     #############################
+#     ## prefix
+#     self.out_prefix = os.path.join(self.outdir, fqname)
+#     ## raw data
+#     fq_names = list(map(os.path.basename, [self.fq1, self.fq2]))
+#     self.raw_fq_list = [os.path.join(self.rawdir, i) for i in fq_names]
+#     ## clean data
+#     self.clean_fq_list = [os.path.join(self.cleandir, i) for i in fq_names]
+#     self.trim_stat = os.path.join(self.cleandir, fqname + '.qc.stat')
+#     ## align data
+#     self.bam_raw = os.path.join(self.aligndir, fqname, '2.*', fqname + '.bam')
+#     self.align_stat = os.path.join(self.aligndir, fqname + '.align.txt')
+#     ## rmdup
+#     self.bam_rmdup = os.path.join(self.bamdir, fqname + '.bam')
+#     ## peak
+#     self.peak = os.path.join(self.peakdir, fqname + '_peaks.narrowPeak')
+#     ## bw file
+#     self.bw = os.path.join(self.bwdir, fqname + '.bigWig')
 
-    #     ## sample name
-    #     fqname = file_prefix(self.fq1)[0]
-    #     fqname = re.sub('[._][rR]?1$', '', fqname)
-    #     if args['smp_name']:
-    #         fqname = args['smp_name']
+#     ## update args
+#     args['rawdir'] = self.rawdir
+#     args['cleandir'] = self.cleandir
+#     args['aligndir'] = self.aligndir
+#     args['bamdir'] = self.bamdir
+#     args['bwdir'] = self.bwdir
+#     args['peakdir'] = self.peakdir
+#     args['motifdir'] = self.motifdir
+#     args['reportdir'] = self.reportdir
+#     args['out_prefix'] = self.out_prefix 
+#     args['raw_fq_list'] = self.raw_fq_list
+#     args['clean_fq_list'] = self.clean_fq_list
+#     args['trim_stat'] = self.trim_stat
+#     args['bam_raw'] = self.bam_raw
+#     args['align_stat'] = self.align_stat
+#     args['bam_rmdup'] = self.bam_rmdup
+#     args['peak'] = self.peak
+#     args['bw'] = self.bw
 
-    #     ## outdir
-    #     self.rawdir = os.path.join(self.outdir, 'raw_data')
-    #     self.cleandir = os.path.join(self.outdir, 'clean_data')
-    #     self.aligndir = os.path.join(self.outdir, 'align')
-    #     self.bamdir = os.path.join(self.outdir, 'bam_files')
-    #     self.bwdir = os.path.join(self.outdir, 'bw_files')
-    #     self.peakdir = os.path.join(self.outdir, 'peak')
-    #     self.motifdir = os.path.join(self.outdir, 'motif')
-    #     self.reportdir = os.path.join(self.outdir, 'report')
+#     ## create directories
+#     tmp = map(is_path, [self.rawdir, self.cleandir, self.aligndir, self.bamdir,
+#                   self.bwdir, self.peakdir, self.motifdir, self.reportdir])
 
-    #     ## global variables:
-    #     #############################
-    #     ## prefix
-    #     self.out_prefix = os.path.join(self.outdir, fqname)
-    #     ## raw data
-    #     fq_names = list(map(os.path.basename, [self.fq1, self.fq2]))
-    #     self.raw_fq_list = [os.path.join(self.rawdir, i) for i in fq_names]
-    #     ## clean data
-    #     self.clean_fq_list = [os.path.join(self.cleandir, i) for i in fq_names]
-    #     self.trim_stat = os.path.join(self.cleandir, fqname + '.qc.stat')
-    #     ## align data
-    #     self.bam_raw = os.path.join(self.aligndir, fqname, '2.*', fqname + '.bam')
-    #     self.align_stat = os.path.join(self.aligndir, fqname + '.align.txt')
-    #     ## rmdup
-    #     self.bam_rmdup = os.path.join(self.bamdir, fqname + '.bam')
-    #     ## peak
-    #     self.peak = os.path.join(self.peakdir, fqname + '_peaks.narrowPeak')
-    #     ## bw file
-    #     self.bw = os.path.join(self.bwdir, fqname + '.bigWig')
-
-    #     ## update args
-    #     args['rawdir'] = self.rawdir
-    #     args['cleandir'] = self.cleandir
-    #     args['aligndir'] = self.aligndir
-    #     args['bamdir'] = self.bamdir
-    #     args['bwdir'] = self.bwdir
-    #     args['peakdir'] = self.peakdir
-    #     args['motifdir'] = self.motifdir
-    #     args['reportdir'] = self.reportdir
-    #     args['out_prefix'] = self.out_prefix 
-    #     args['raw_fq_list'] = self.raw_fq_list
-    #     args['clean_fq_list'] = self.clean_fq_list
-    #     args['trim_stat'] = self.trim_stat
-    #     args['bam_raw'] = self.bam_raw
-    #     args['align_stat'] = self.align_stat
-    #     args['bam_rmdup'] = self.bam_rmdup
-    #     args['peak'] = self.peak
-    #     args['bw'] = self.bw
-
-    #     ## create directories
-    #     tmp = map(is_path, [self.rawdir, self.cleandir, self.aligndir, self.bamdir,
-    #                   self.bwdir, self.peakdir, self.motifdir, self.reportdir])
-
-    #     return args
+#     return args

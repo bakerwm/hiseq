@@ -101,8 +101,8 @@ class Alignment(object):
         """
         # update
         args = args_init(kwargs, align=True)
-        args['fq'] = args['fq1'] = kwargs['fq1'] #
-        args['outdir'] = args['path_out'] # !!! to-do
+        args['fq'] = args['fq1'] = args['fq1'] #
+        args['outdir'] = args['outdir'] # !!! to-do
 
         if args['fq1'] is None:
             raise Exception('{:>10} : -i, --fq1 no input detected'.format('error'))
