@@ -98,17 +98,19 @@ def peak_overlap(peak_list, outdir):
 
     make venn plot
     """
+    assert is_path(outdir)
+
     names = [os.path.splitext(i)[0] for i in peak_list]
 
     # name
-    pname = os.path.splitext(peak_list[0])[0]
+    pname = os.path.basename(os.path.splitext(peak_list[0])[0])
     pname = pname.rstrip('_peaks')
     pname = pname.rstrip('_rep1')
 
     # output
     prefix = os.path.join(outdir, pname)
     vennR = prefix + '.venn.R'
-    tiffout = prefix + '.venn.png'
+    tiffout = prefix + '.venn.tiff'
 
     # func
     plt = pybedtools.contrib.venn_maker.venn_maker
@@ -123,6 +125,8 @@ def peak_overlap2(peak_list, outdir):
     """
     if not len(peak_list) == 2:
         raise ValueError('expect two BED files, but {} received.'.format(len(peak_list)))
+
+    assert is_path(outdir)
 
     # name
     pname = os.path.splitext(peak_list[0])[0]

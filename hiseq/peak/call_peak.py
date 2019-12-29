@@ -80,6 +80,7 @@ class Macs2(object):
                     self.output,
                     self.prefix,
                     log)
+            peak = os.path.join(self.output, self.prefix + '_peaks.narrowPeak')
         else:
             # ChIP-seq
             macs2_cmd = 'macs2 callpeak -f BAM -t {} -g {} --outdir {} -n {} \
@@ -92,14 +93,18 @@ class Macs2(object):
                 macs2_cmd += ' -c {}'.format(self.control)
 
             macs2_cmd += ' 2> {}'.format(log)
+            # peak file
+            peak = os.path.join(self.output, self.prefix + '_peaks.narrowPeak')
 
        # output file
-        macs2_out = os.path.join(self.output, self.prefix + '_peaks.xls')
-        if os.path.exists(macs2_out) and self.overwrite is False:
+        # macs2_out = os.path.join(self.output, self.prefix + '_peaks.xls')
+        if os.path.exists(peak) and self.overwrite is False:
             log.info('file exists, skip macs2 callpeak')
         else:
             logging.info('run macs2 callpeak')
             run_shell_cmd(macs2_cmd)
+
+        return peak
 
 
     def bdgcmp(self, opt='ppois'):
@@ -113,7 +118,7 @@ class Macs2(object):
         if not os.path.exists(ip_bdg) or not os.path.exists(input_bdg):
             raise ValueError('*.bdg file not found, need to run .callpeak() first')
         if not opt in ['ppois', 'qpois', 'subtract', 'logFE', 'FE', 'logLR', 'slogLR', 'max']:
-            raise ValueError('unknown option: opt=%s' % opt)
+            raise ValueError('unknown option: opt={}'.format(opt))
 
         if opt == 'logLR':
             opt_ext = '-p 0.00001'
@@ -122,25 +127,27 @@ class Macs2(object):
 
         out_bdg = os.path.join(self.output, self.prefix + '.' + opt + '.bdg')
         log = os.path.join(self.output, self.prefix + '.macs2.bdgcmp.out')
-        c = "macs2 bdgcmp -t %s -c %s -o %s -m %s %s" % (ip_bdg, input_bdg, out_bdg, opt, opt_ext)
+        cmd1 = 'macs2 bdgcmp -t {} -c {} -o {} -m {} {}'.format(
+            ip_bdg, input_bdg, out_bdg, opt, opt_ext)
         
         if os.path.exists(out_bdg) and self.overwrite is False:
             logging.info('file exists, skip macs2 bdgcmp')
         else:
-            self.python2_run(c)
+            # self.python2_run(c)
+            run_shell_cmd(cmd1)
 
         # sort output *.bdg
-        c1 = 'sort -k1,1 -k2,2n -o %s %s' % (out_bdg, out_bdg)
+        cmd2 = 'sort -k1,1 -k2,2n -o {} {}'.format(out_bdg, out_bdg)
 
         # cnvert *.bdg to *.bigWig
         gsize_file = Genome(self.genome).get_fasize()
         out_bw  = os.path.join(self.output, self.prefix + '.' + opt + '.bigWig')
-        c2 = 'bedGraphToBigWig %s %s %s' % (out_bdg, gsize_file, out_bw)
+        cmd3 = 'bedGraphToBigWig {} {} {}'.format(out_bdg, gsize_file, out_bw)
         if os.path.exists(out_bw) and self.overwrite is False:
             logging.info('file exists, skip bg2bw')
         else:
-            subprocess.run(shlex.split(c1)) # sort bdg
-            subprocess.run(shlex.split(c2)) # convert bdg to bw
+            run_shell_cmd(cmd2)
+            run_shell_cmd(cmd3)
 
 
     def bdgpeakcall(self):
@@ -222,7 +229,7 @@ class Macs2(object):
         # broad peak file
         broadpeak = os.path.join(self.output, self.prefix + '_peaks.broadPeak')
         if not os.path.exists(broadpeak):
-            raise ValueError('file not found, need to run .callpeak() first - %s' % broadpeak)
+            raise ValueError('require .callpeak() first - {}'.format(broadpeak))
 
         # run
         anno_peak = os.path.join(self.output, self.prefix + '_peaks.broadPeak.annotation')
@@ -258,7 +265,7 @@ class Macs2(object):
         # search the xls file
         f = listfiles2("*peaks.xls", self.output)
         if not os.path.exists(f[0]):
-            raise ValueError('file missing in macs2 callpeak output: %s' % f)
+            raise ValueError('file missing in macs2 callpeak output: {}'.format(f))
 
         # top
         topN = 100
@@ -276,12 +283,12 @@ class Macs2(object):
                     dep['ip_depth'] = num
                 if 'tags in treatment' in line:
                     s = 1e6 / int(num)
-                    dep['ip_scale'] = '%.6f' % s
+                    dep['ip_scale'] = '{:.6f}'.format(s)
                 if 'tags after filtering in control' in line:
                     dep['input_depth'] = num
                 if 'tags in control' in line:
                     s = 1e6 / int(num)
-                    dep['input_scale'] = '%.6f' % s
+                    dep['input_scale'] = '{:.6f}'.format(s)
                 counter += 1
 
         return dep

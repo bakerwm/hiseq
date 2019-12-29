@@ -4,9 +4,34 @@
 
 import hiseq
 from hiseq.utils.helper import *
-from hiseq.utils import *
-from call_peak import *
-from rep_cor import *
+# from hiseq.utils import *
+# from call_peak import *
+# from rep_cor import *
+from atac import AtacConfig, Atac
+
+# input
+fq1 = 'data/pe_rep1_1.fq.gz'
+fq2 = 'data/pe_rep1_2.fq.gz'
+outdir = 'results/atac'
+genome = 'dm6'
+
+# config = AtacConfig(fq1, fq2, genome, outdir)
+
+config = "config_atac_template.json"
+Atac(config)
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # ## qc
 # fq1 = 'data/pe_rep1_1.fq.gz'
@@ -43,17 +68,17 @@ from rep_cor import *
 # f = 'pe_rep1.json'
 # # print(Json(f).dict)
 
+# ## Peak
+# bam = 'results/align/demo/2.genome/demo.bam'
+# genome = "dm6"
+# output = "results/peak"
+# prefix = "demo"
+# atac = True
 
-
-## Peak
-bam = 'results/align/demo/2.genome/demo.bam'
-genome = "dm6"
-output = "results/peak"
-prefix = "demo"
-atac = True
-
-# Macs2(bam, genome, output, prefix, atac=True).callpeak()
+# # Macs2(bam, genome, output, prefix, atac=True).callpeak()
 # m = Macs2(bam, genome, output, prefix, atac=True)
+# p = m.callpeak()
+# print(p)
 
 # p = m.annotation()
 # print(p)

@@ -10,3 +10,4 @@ from .qc import trimmer
 from .align import alignment
 from .utils import helper
 from .utils import argsParser
+from .peak import call_peak
