@@ -6,7 +6,31 @@ Default arguments for subcommands
 """
 
 import os
+import re
 import pathlib
+from .helper import *
+# from hiseq.utils.helper import *
+
+
+################################################
+## BUG: this function could not be imported
+## from hiseq.utils.helper import file_prefix
+################################################
+def file_prefix(fn, with_path=False):
+    """
+    extract the prefix of a file
+    remove extensions
+    .gz, .fq.gz
+    """
+    assert isinstance(fn, str)
+    p1 = os.path.splitext(fn)[0]
+    px = os.path.splitext(fn)[1]
+    if px.endswith('gz') or px.endswith('.bz2'):
+        px = os.path.splitext(p1)[1] + px
+        p1 = os.path.splitext(p1)[0]
+    if not with_path:
+        p1 = os.path.basename(p1)
+    return [p1, px]
 
 
 class Adapter(object):
@@ -148,6 +172,13 @@ def args_init(kwargs={}, demx=False, trim=False, align=False, call_peak=False,
 
         ## trimming, cutadapt
         if trim:
+            # output filename
+            fqname = file_prefix(args['fq1'])[0]
+            if not args['fq2'] is None:
+                fqname = re.sub('_[rR]?1$', '', fqname)
+            args['fqname'] = fqname
+            args['fq_out_prefix'] = os.path.join(args['outdir'], fqname)
+
             args['len_min']  = args.get('len_min', 15)
             args['adapter3'] = Adapter().adapters[0] # TruSeq 
             args['keep_name'] = args.get('keep_name', True)

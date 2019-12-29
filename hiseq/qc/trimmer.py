@@ -59,41 +59,29 @@ class Trimmer(object):
 
     """
 
-    def __init__(self, fq, outdir, fq2=None, **kwargs):
+    def __init__(self, **kwargs):
         """
         Main function
         """
-        assert os.path.exists(fq)
-        is_path(outdir)
-
         # prepare args
-        args = args_init(kwargs, trim=True) # init
-        args.pop('fq', None)
-        args.pop('outdir', None)
-        args.pop('fq2', None)
-
-        # output filename
-        fqname = file_prefix(fq)[0]
-        if not fq2 is None:
-            fqname = re.sub('_[rR]?1$', '', fqname)
-        fq_out_prefix = os.path.join(outdir, fqname)
-
-        # log files
-        self.kwargs = args # all args
-        self.fq = fq
-        self.outdir = outdir
-        self.fq1 = fq
-        self.fq2 = fq2
+        self.args = args_init(kwargs, trim=True) # init
+        assert self.trim_init() # required arguments
+        self.kwargs = self.args # all args
 
         # names
-        self.fqname = fqname
-        self.fq_out = fq_out_prefix + '.fq'    # SE
-        self.fq_out1 = fq_out_prefix + '_1.fq' # PE1
-        self.fq_out2 = fq_out_prefix + '_2.fq' # PE2
-        self.fq_out_prefix = fq_out_prefix
+        self.fq = self.fq1 = self.args['fq']
+        self.fq2 = self.args['fq2']
+        self.outdir = self.args['outdir']
+        self.fqname = self.args['fqname']
+        self.fq_out_prefix = self.args['fq_out_prefix']
+        self.fq_out = self.fq_out_prefix + '.fq'    # SE
+        self.fq_out1 = self.fq_out_prefix + '_1.fq' # PE1
+        self.fq_out2 = self.fq_out_prefix + '_2.fq' # PE2
+
+        assert is_path(self.outdir)
 
         # gzip
-        if args['gzip'] is True:
+        if self.args['gzip'] is True:
             self.fq_out += '.gz'
             self.fq_out1 += '.gz'
             self.fq_out2 += '.gz'
@@ -101,7 +89,19 @@ class Trimmer(object):
         # files
         se_out = [self.fq_out, None]
         pe_out = [self.fq_out1, self.fq_out2]
-        self.out_files = se_out if fq2 is None else pe_out
+        self.out_files = se_out if self.fq2 is None else pe_out
+
+
+    def trim_init(self):
+        """
+        Check arguments: fq, fq2, outdir
+        """
+        args = self.args.copy()
+        args_required = ['fq', 'fq2', 'outdir']
+        chk = [i for i in args_required if not i in args] # missing args
+        if len(chk) > 0:
+            raise Exception('check arguments for: {}'.format(' '.join(chk)))
+        return len(chk) == 0
 
 
     def report(self):
@@ -192,8 +192,10 @@ class Trimmer(object):
             args_logger(args, args_file, True) # update arguments.txt
 
         ## cutadapt directory
-        cutadapt_dir = os.path.join(self.outdir, 'temp', '01.cutadapt_output')
-        f1, f2 = Cutadapt(self.fq, cutadapt_dir, self.fq2, **args).run()
+        # cutadapt_dir = os.path.join(self.outdir, 'temp', '01.cutadapt_output')
+        args['outdir'] = os.path.join(self.outdir, 'temp', '01.cutadapt_output')
+        # f1, f2 = Cutadapt(self.fq, cutadapt_dir, self.fq2, **args).run()
+        f1, f2 = Cutadapt(**args).run()
 
         ## rmdup
         rmdup_dir = os.path.join(self.outdir, 'temp', '02.rmdup_output')
@@ -206,8 +208,8 @@ class Trimmer(object):
         cut2_f2 = None if f2 is None else os.path.join(rmdup_dir, 'cut.' + os.path.basename(f2))
 
         ## create dir
-        is_path(rmdup_dir)
-        is_path(cut2_dir)
+        assert is_path(rmdup_dir)
+        assert is_path(cut2_dir)
 
         # SE
         if self.fq2 is None:
@@ -272,8 +274,8 @@ class Trimmer(object):
 @Logger('INFO')
 class Cutadapt(object):
 
-    def __init__(self, fq, outdir, fq2=None, **kwargs):
-
+    # def __init__(self, fq, outdir, fq2=None, **kwargs):
+    def __init__(self, **kwargs):
         """
         Trim adapter and low quality bases for fastq file(s) using ``cutadapt``
         program version 2.7. the program will guess the adapters: TruSeq,
@@ -291,37 +293,46 @@ class Cutadapt(object):
             Cutadapt('read1.fq', 'output', 'read2.fq')
 
         """
-        assert os.path.exists(fq)
-        is_path(outdir)
-
         # prepare args
-        args = args_init(kwargs, trim=True) # init
-        # update
-        args['fq'] = fq
-        args['outdir'] = outdir
-        args['fq2'] = fq2
+        self.args = args_init(kwargs, trim=True) # init
+        assert self.cut_init()
+        assert is_path(self.args['outdir'])
 
-        # output filename
-        fqname = file_prefix(fq)[0]
-        if not fq2 is None:
-            fqname = re.sub('_[rR]?1$', '', fqname)
-        fq_out_prefix = os.path.join(outdir, fqname)
-        fq_out = fq_out_prefix + '.fastq'
-
-        # log files
-        self.fq = fq
-        self.outdir = outdir
-        self.fq1 = fq
-        self.fq2 = fq2
-        self.args = kwargs
-        self.fqname = fqname
-        self.fq_out = fq_out_prefix + '.fq'    # SE
-        self.fq_out1 = fq_out_prefix + '_1.fq' # PE1
-        self.fq_out2 = fq_out_prefix + '_2.fq' # PE2
-        self.log  = fq_out_prefix + '.cutadapt.log'
-        self.fq_out_prefix = fq_out_prefix
-        self.kwargs = args # all args
+        # variables
+        self.fq = self.fq1 = self.args['fq']
+        self.fq2 = self.args['fq2']
+        self.outdir = self.args['outdir']
+        self.fqname = self.args['fqname']
+        self.fq_out_prefix = self.args['fq_out_prefix']
+        self.fq_out = self.fq_out_prefix + '.fq'    # SE
+        self.fq_out1 = self.fq_out_prefix + '_1.fq' # PE1
+        self.fq_out2 = self.fq_out_prefix + '_2.fq' # PE2
+        self.log  = self.args['fq_out_prefix'] + '.cutadapt.log'
         self.cutadapt = shutil.which('cutadapt') # in PATH
+
+        # # gzip
+        # if self.args['gzip'] is True:
+        #     self.fq_out += '.gz'
+        #     self.fq_out1 += '.gz'
+        #     self.fq_out2 += '.gz'
+
+        # files
+        se_out = [self.fq_out, None]
+        pe_out = [self.fq_out1, self.fq_out2]
+        self.out_files = se_out if self.fq2 is None else pe_out
+        self.kwargs = self.args # global
+
+
+    def cut_init(self):
+        """
+        Check arguments: fq, fq2, outdir
+        """
+        args = self.args.copy()
+        args_required = ['fq', 'fq2', 'outdir']
+        chk = [i for i in args_required if not i in args] # missing args
+        if len(chk) > 0:
+            raise Exception('check arguments for: {}'.format(' '.join(chk)))
+        return len(chk) == 0
 
 
     def cut_cut(self, cutadapt_arg=True, read2=False):
