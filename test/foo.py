@@ -1,46 +1,17 @@
+import hiseq
+import os, sys
+import atac
 
+# rep_list = ['results/pe_rep1_1', 'results/pe_rep2_1']
+d = '/data/yulab/wangming/work/yu_2019/projects/20191204_lxh_ATACseq/results/20191230_hiseq_pipeline/results'
+# rep_list = [os.path.join(d, i) for i in [
+# 	'ATACseq_DaGal4Xsh3893_3h_rep1_1',
+# 	'ATACseq_DaGal4Xsh3893_3h_rep2_1']]
 
-import sys
-import logging
-import functools
+# atac.Atac2(rep_list).run()
 
+rep_list = hiseq.helper.listfiles(d, include_dir=True)
+rep_list = [i for i in rep_list if os.path.isdir(i)]
 
-# Test for Decorator
+atac.AtacBatch2(rep_list).run()
 
-class Logger(object):
-    def __init__(self, level='INFO'):
-        logging.basicConfig(
-            format='[%(asctime)s %(levelname)s] %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S',
-            stream=sys.stdout)
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(level)
-
-    def __call__(self, fn):
-        @functools.wraps(fn)
-        def decorated(*args, **kwargs):
-            try:
-                self.logger.info('{0} - {1} - {2}'.format(fn.__name__, args, kwargs))
-                result = fn(*args, **kwargs)
-                # self.logger.info(result)
-                return result
-            except Exception as ex:
-                self.logger.info('Exception {0}'.format(ex))
-                raise ex
-            return result
-        return decorated
-
-
-
-@Logger('INFO')
-def funcA(a, b, c):
-    return a + b + c
-
-
-@Logger('INFO')
-def funcB(a, b, c):
-    return a + b + c
-
-funcA(1, 2, 3)
-
-funcB(3, 4, 5)
