@@ -20,7 +20,7 @@ class Macs2(object):
     """
 
     def __init__(self, ip, genome, output, prefix=None, control=None, 
-        atac=False, overwrite=False):
+        atac=False, overwrite=False, **kwargs):
         """Parse the parameters
         venv, the virtualenv created for macs2, running in Python2
         """
@@ -99,7 +99,7 @@ class Macs2(object):
        # output file
         # macs2_out = os.path.join(self.output, self.prefix + '_peaks.xls')
         if os.path.exists(peak) and self.overwrite is False:
-            log.info('file exists, skip macs2 callpeak')
+            logging.info('file exists, skip macs2 callpeak')
         else:
             logging.info('run macs2 callpeak')
             run_shell_cmd(macs2_cmd)

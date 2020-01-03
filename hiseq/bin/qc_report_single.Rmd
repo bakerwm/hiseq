@@ -1,0 +1,181 @@
+---
+title: "ATAC-seq report"
+author: "Ming Wang"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    highlight: tango
+    toc: yes
+    toc_float:
+      collapsed: no
+    keep_md: true
+  word_document:
+    toc: yes
+  pdf_document:
+    toc: yes
+params:
+  qc_dir: ""
+---
+
+```{r setup, include=FALSE}
+# qc_dir <- normalizePath(params$qc_dir)
+# qc_func <- "/data/yulab/wangming/work/wmlib/hiseq/hiseq/bin/qc_report_function.R"
+# source(qc_func)
+library(hiseqr)
+suppressPackageStartupMessages(library(knitr))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(glue))
+suppressPackageStartupMessages(library(ggcor))
+
+knitr::opts_chunk$set(fig.width  = 12, 
+                      fig.height = 8, 
+                      fig.path   = "Figures/",
+                      echo       = FALSE,
+                      cache      = FALSE,
+                      prompt     = FALSE,
+                      tidy       = FALSE,
+                      comment    = NA,
+                      message    = FALSE,
+                      warning    = FALSE,
+                      eval       = T,
+                      rownames.print = FALSE)
+```
+
+```{r samples, eval = T}
+qc_dir <- "../../test/results/atac2/pe_rep1_1/qc/"
+align_dir <- file.path(qc_dir, "..", "align")
+flist     <- list.files(align_dir, "*align.txt", T, T, T)
+df        <- alignStat(flist)
+```
+
+## Summary
+
+```{r summary, results="asis"}
+df_table <- df %>%
+  tidyr::spread(group, count)
+mito_pct <- round(df_table$mito.pct * 100, 2)
+summary <- glue::glue("Sample name: {df$sample}, \\n 
+                      input total {df$total} reads; \\n
+                      uniquely mapped to reference genome {df$dm6.u} reads; \\n
+                      contains {mito_pct}% Mitochondrial DNA reads.")
+print(summary)
+```
+
+## Results
+
+### 1 Table1. Mito Percentage
+
+```{r table1_mito_pct}
+df_table <- df %>% 
+  dplyr::mutate(group = forcats::fct_rev(group)) %>%
+  tidyr::spread(group, count)
+knitr::kable(df_table)
+```
+
+### 2 Figure 1. Number of mapped reads
+
+```{r figure1_align_reads, out.width = "100%", fig.height = 4}
+alignPlot(df)
+```
+
+### 3 Figure2. Number of peaks
+
+```{r figure2_peaks, out.width = "100%", fig.height = 4}
+## total reads
+df3 <- df %>%
+  dplyr::filter(group %in% c("dm6.u")) %>%
+  mutate(id = forcats::fct_rev(id),
+         count  = round(count / 1e6, 1))
+
+## total peaks
+peak_dir <- file.path(qc_dir, "..", "peak")
+peak_files <- list.files(peak_dir, "*narrowPeak", T, T, T)
+gr_list <- lapply(peak_files, narrowPeakReader)
+
+df4 <- data.frame(id = gsub("_peaks.narrowPeak", "", basename(peak_files)),
+                 count  = sapply(gr_list, length)) %>%
+  mutate(id = forcats::fct_rev(id))
+
+p1 <- barplot2(df3, TRUE) + 
+  ggtitle("Unique reads on genome") +
+  ylab("Million of reads")
+
+p2 <- barplot2(df4, TRUE) + 
+  ggtitle("Number of peaks") +
+  theme(axis.title.y = element_blank(),
+        axis.text.y = element_blank())
+
+p <- cowplot::plot_grid(p1, p2, ncol = 2, rel_widths = c(1, 0.6), 
+                        labels = "AUTO")
+
+print(p)
+```
+
+### 4. FRiP.
+
+> Fraction of reads in peaks (FRiP) – Fraction of all mapped reads that fall into the called peak regions, i.e. usable reads in significantly enriched peaks divided by all usable reads. In general, FRiP scores correlate positively with the number of regions. (Landt et al, Genome Research Sept. 2012, 22(9): 1813–1831)
+>
+> source: https://www.encodeproject.org/data-standards/terms/
+
+> The fraction of reads in called peak regions (FRiP score) should be >0.3, though values greater than 0.2 are acceptable. For EN-TEx tissues, FRiP scores will not be enforced as QC metric. TSS enrichment remains in place as a key signal to noise measure
+> source: https://www.encodeproject.org/atac-seq/
+
+```{r frip}
+f <- file.path(qc_dir, 'FRiP.txt')
+if (file.exists(f)) {
+  df5 <- read.delim(f, sep = "\t")
+  knitr::kable(df5)
+}
+```
+
+
+### 5. Figure3. Fragment length
+
+The insert size distribution of sequenced fragments from human chromatin had clear periodicity of approximately 200 bp, suggesting many fragments are protected by integer multiples of nucleosomes.
+
+```{r figure3_fragment_length, out.width = "100%", fig.height = 4}
+flist <- list.files(qc_dir, "length_distribution.txt", T, T, T)
+df <- fragReader(flist)
+p  <- fragPlot(df)
+print(p)
+```
+
+### 6. TSS enrichment
+
+> Transcription Start Site (TSS) Enrichment Score - The TSS enrichment calculation is a signal to noise calculation. The reads around a reference set of TSSs are collected to form an aggregate distribution of reads centered on the TSSs and extending to 1000 bp in either direction (for a total of 2000bp). This distribution is then normalized by taking the average read depth in the 100 bps at each of the end flanks of the distribution (for a total of 200bp of averaged data) and calculating a fold change at each position over that average read depth. This means that the flanks should start at 1, and if there is high read signal at transcription start sites (highly open regions of the genome) there should be an increase in signal up to a peak in the middle. We take the signal value at the center of the distribution after this normalization as our TSS enrichment metric. Used to evaluate ATAC-seq. 
+>
+> source: https://www.encodeproject.org/data-standards/terms/
+
+**to-do**
+
+
+## ENCODE standard
+
+
+Experiments should have two or more biological replicates. Assays performed using EN-TEx samples may be exempted due to limited availability of experimental material, but at least two technical replicates are required.  
+
+Each replicate should have 25 million non-duplicate, non-mitochondrial aligned reads for single-end sequencing and 50 million for paired-ended sequencing (i.e. 25 million fragments, regardless of sequencing run type). 
+
+The alignment rate, or percentage of mapped reads, should be greater than 95%, though values >80% may be acceptable. 
+
+Replicate concordance is measured by calculating IDR values (Irreproducible Discovery Rate). The experiment passes if both rescue and self consistency ratios are less than 2.
+
+Library complexity is measured using the Non-Redundant Fraction (NRF) and PCR Bottlenecking Coefficients 1 and 2, or PBC1 and PBC2. The preferred values are as follows: NRF>0.9, PBC1>0.9, and PBC2>3. 
+
+Various peak files must meet certain requirements. Please visit the section on output files under the pipeline overview for more information on peak files.
+
+The number of peaks within a replicated peak file should be >150,000, though values >100,000 may be acceptable. 
+
+The number of peaks within an IDR peak file should be >70,000, though values >50,000 may be acceptable.
+
+A nucleosome free region (NFR) must be present.
+
+A mononucleosome peak must be present in the fragment length distribution. These are reads that span a single nucleosome, so they are longer than 147 bp but shorter than 147*2 bp. Good ATAC-seq datasets have reads that span nucleosomes (which allows for calling nucleosome positions in addition to open regions of chromatin).
+
+The fraction of reads in called peak regions (FRiP score) should be >0.3, though values greater than 0.2 are acceptable. For EN-TEx tissues, FRiP scores will not be enforced as QC metric. TSS enrichment remains in place as a key signal to noise measure.
+
+Transcription start site (TSS) enrichment values are dependent on the reference files used; cutoff values for high quality data are listed in the table below. 
+
+
+

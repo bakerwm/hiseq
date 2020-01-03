@@ -19,6 +19,7 @@ import argparse
 from .utils.argsParser import *
 from .qc.trimmer import Trimmer
 from .align.alignment import Alignment
+from .atac.atac import AtacBatch
 
 class Hiseq(object):
     """The 1st-level of command, choose which sub-command to use
@@ -34,6 +35,8 @@ class Hiseq(object):
 
     The most commonly used sub-commands are:
 
+        atac      ATACseq pipeline
+
         qc        Basic quality control for fastq files, trim adapters, low-quality bases, ...
         align     Align fastq/a files to reference genome  
         quant     Count genes/features 
@@ -41,7 +44,7 @@ class Hiseq(object):
         motif     Check motifs from a BED/fasta file    
         report    Create a report to the above commands
     """
-            )
+        )
         parser.add_argument('command', help='Subcommand to run')
 
         # parse_args defaults to [1:] for args
@@ -86,7 +89,6 @@ class Hiseq(object):
         # for fq1 in fq1_list:
         #     print(fq1)
         #     Trimmer(fq1, outdir, **args).run()
-
 
 
     def align(self):
@@ -138,10 +140,30 @@ class Hiseq(object):
         print('hiseq motif')
 
 
+    def atac(self):
+        """
+        ATACseq pipeline
+        """
+        parser = add_atac_args()
+        args = parser.parse_args(sys.argv[2:])
+        # help
+        if len(sys.argv) < 3:
+            parser.parse_args(['-h'])
+        # main
+        args = vars(args) # convert to dict
+        # check config or --fq1,--fq2,--genome,--outdir
+        config = args.get('config', None)
+        fq1 = args.get('fq1', None)
+        fq2 = args.get('fq2', None)
+        genome = args.get('genome', None)
+        outdir = args.get('outdir', None)
+        chk2 = [not i is None for i in [fq1, fq2, genome, outdir]]
+
+        if config is None and not all(chk2):
+            sys.exit('required: --config or --fq1, --fq2, --genome, --outdir')
 
 
-
-
+        a = AtacBatch(**args).run()
 
 
 def main():

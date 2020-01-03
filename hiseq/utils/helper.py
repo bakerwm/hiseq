@@ -492,7 +492,7 @@ class Bam(object):
         return os.path.exists(bai)
 
 
-    def sort(self, outfile=None, by_name=False):
+    def sort(self, outfile=None, by_name=False, overwrite=False):
         """
         Sort bam file by position (default)
         save to *.sorted.bam (or specify the name)
@@ -500,7 +500,10 @@ class Bam(object):
         if outfile is None:
             outfile = os.path.splitext(self.bam)[0] + '.sorted.bam'
 
-        tmp = pysam.sort('-@', str(self.threads), '-o', outfile, self.bam)
+        if os.path.exists(outfile) and overwrite is False:
+            logging.info('file exists: {}'.format(outfile))
+        else:
+            tmp = pysam.sort('-@', str(self.threads), '-o', outfile, self.bam)
 
         return outfile
 
@@ -510,7 +513,8 @@ class Bam(object):
         Merge multiple BAM files using samtools
         """
         
-        pysam.merge('')
+        # pysam.merge('')
+        pass
 
 
     def count(self):
@@ -531,7 +535,7 @@ class Bam(object):
         return outfile
 
 
-    def rmdup(self, outfile=None):
+    def rmdup(self, outfile=None, overwrite=False):
         """
         Remove duplicates using picard/sambamba
         sambamba markdup -r --overflow-list-size 800000 raw.bam rmdup.bam
@@ -550,12 +554,15 @@ class Bam(object):
             outfile,
             log)
 
-        run_shell_cmd(cmd)
+        if os.path.exists(outfile) and overwrite is False:
+            logging.info('file exists: {}'.format(outfile))
+        else:
+            run_shell_cmd(cmd)
 
         return outfile
 
 
-    def proper_pair(self, outfile=None):
+    def proper_pair(self, outfile=None, overwrite=False):
         """
         Extract proper pair
         samtools view -f 2
@@ -563,9 +570,11 @@ class Bam(object):
         if outfile is None:
             outfile = os.path.splitext(self.bam)[0] + '.proper_pair.bam'
 
-        pysam.view('-f', '2', '-h', '-b', '-@', str(self.threads),
-            '-o', outfile, self.bam, catch_stdout=False)
-        
+        if os.path.exists(outfile) and overwrite is False:
+            logging.info('file exists: {}'.format(outfile))
+        else:
+            pysam.view('-f', '2', '-h', '-b', '-@', str(self.threads),
+                '-o', outfile, self.bam, catch_stdout=False)
 
         return outfile
 
