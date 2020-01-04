@@ -20,6 +20,7 @@ import subprocess
 import pysam
 import pybedtools
 import pathlib
+import binascii
 from .args import args_init
 
 
@@ -57,6 +58,16 @@ class Logger(object):
             return result
         return decorated
 
+
+def is_gz(filepath):
+    if os.path.exists(filepath):
+        with open(filepath, 'rb') as test_f:
+            return binascii.hexlify(test_f.read(2)) == b'1f8b'
+    else:
+        if filepath.endswith('.gz'):
+            return True
+        else:
+            return False
 
 def is_path(path, create = True):
     """
@@ -169,21 +180,27 @@ def args_logger(d, x, overwrite=False):
         return '\n'.join(n)
 
 
-def gzip_cmd(f, t, decompress=True, rm=True):
+def gzip_cmd(src, dest, decompress=True, rm=True):
     """
     Gzip Compress or Decompress files using gzip module in python 
     rm, True/False, whether remove old file
 
-    # check the f file by extension: .gz
+    # check the src file by extension: .gz
     """
     if decompress:
-        if f.endswith('.gz'):
-            raise Exception('not a gzipped file: {}'.format(f))
-        with gzip.open(f, 'rb') as r, open(t, 'wb') as w:
-            shutil.copyfileobj(r, w)
+        if is_gz(src):
+            with gzip.open(src, 'rb') as r, open(dest, 'wb') as w:
+                shutil.copyfileobj(r, w)
+        else:
+            log.warning('not a gzipped file: {}'.format(src))
+            shutil.copy(src, dest)
     else:
-        with open(f, 'rb') as r, gzip.open(t, 'wb') as w:
-            shutil.copyfileobj(r, w)
+        if is_gz(src):
+            log.warning('input is gzipped file, no need gzip')
+            shutil.copy(src, dest)
+        else:
+            with open(src, 'rb') as r, gzip.open(dest, 'wb') as w:
+                shutil.copyfileobj(r, w)
 
     # output
     if rm is True:
