@@ -158,10 +158,22 @@ class AtacConfig(object):
         self.reportdir = os.path.join(self.outdir, 'report')
         self.out_prefix = os.path.join(self.outdir, fqname)
 
-        ## names
-        fqnames = list(map(os.path.basename, [self.fq1, self.fq2]))
-        self.raw_fq_list = [os.path.join(self.rawdir, i) for i in fqnames]
-        self.clean_fq_list = [os.path.join(self.cleandir, i) for i in fqnames]
+        # self.raw_fq_list = [os.path.join(self.rawdir, i) for i in fqnames]
+        # self.clean_fq_list = [os.path.join(self.cleandir, i) for i in fqnames]
+        ## fastq files
+        ## consider input:
+        ## input: fastq, fq, fastq.gz, fq.gz
+        ## raw = input
+        ## clean = *.fq.gz # gzip if required.
+        # fqnames = list(map(os.path.basename, [self.fq1, self.fq2]))
+        self.raw_fq_list = [
+            os.path.join(self.rawdir, os.path.basename(self.fq1)),
+            os.path.join(self.rawdir, os.path.basename(self.fq2))]
+        ## clean = fq.gz
+        self.clean_fq_list = [
+            os.path.join(self.cleandir, file_prefix(self.fq1)[0] + '.fq.gz'),
+            os.path.join(self.cleandir, file_prefix(self.fq2)[0] + '.fq.gz')]
+        ## 
         self.trim_stat = os.path.join(self.cleandir, fqname + '.qc.stat')
         self.bam_raw = os.path.join(self.aligndir, fqname, '2.*', fqname + '.bam')
         self.align_stat = os.path.join(self.aligndir, fqname + '.align.txt')
@@ -489,6 +501,7 @@ class AtacSingle(object):
         """
         # args = self.args.copy()
         fq1, fq2 = self.config.raw_fq_list
+        clean_fq1, clean_fq2 = self.config.clean_fq_list
 
         # update args
         args = self.config.args # all
@@ -497,10 +510,20 @@ class AtacSingle(object):
         args['outdir'] = self.config.cleandir
         
         if trimmed is True:
-            # create links
-            for s, d in zip(self.config.raw_fq_list, self.config.clean_fq_list):
-                self.symlink(s, d)
+            print('!xxxx')
+            # create symlink from rawdir
+            # if raw is not gzipped, do it
+            if is_gz(fq1) and is_gz(fq2):
+                symlink(fq1, clean_fq1)
+                symlink(fq2, clean_fq2)
+            else:
+                # gzip files
+                gzip_cmd(fq1, clean_fq1, decompress=False, rm=False)
+                gzip_cmd(fq2, clean_fq2, decompress=False, rm=False)
+            # for s, d in zip(self.config.raw_fq_list, self.config.clean_fq_list):
+            #     self.symlink(s, d)
         else:
+            print('!yyyy')
             if check_file(self.config.clean_fq_list):
                 log.info('trim() skipped, file exists: {}'.format(
                     self.config.clean_fq_list))
@@ -1177,9 +1200,11 @@ class Atac(object):
         # for each sample:
         smp_dirs = []
         # sys.exit(self.json_list)
+        self.args.pop('design', None) # 
+        self.args.pop('rep_list', None) # 
 
         for i in self.json_list:
-            s = AtacSingle(design=i).run()
+            s = AtacSingle(design=i, **self.args).run()
             smp_dirs.append(re.sub('\.config.json', '', i))
 
         # for merge sample:
@@ -1191,7 +1216,7 @@ class Atac(object):
                 continue
             else:
                 print('!MMMM2')
-                AtacMerge(rep_list=x_list).run()
+                AtacMerge(rep_list=x_list, **self.args).run()
                 break
 
         # for multiple sample:
