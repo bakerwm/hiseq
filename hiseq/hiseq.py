@@ -19,7 +19,7 @@ import argparse
 from .utils.argsParser import *
 from .qc.trimmer import Trimmer
 from .align.alignment import Alignment
-from .atac.atac import AtacBatch
+from .atac.atac2 import Atac
 
 class Hiseq(object):
     """The 1st-level of command, choose which sub-command to use
@@ -153,17 +153,21 @@ class Hiseq(object):
         args = vars(args) # convert to dict
         # check config or --fq1,--fq2,--genome,--outdir
         config = args.get('config', None)
+        design = args.get('design', None)
         fq1 = args.get('fq1', None)
         fq2 = args.get('fq2', None)
         genome = args.get('genome', None)
         outdir = args.get('outdir', None)
-        chk2 = [not i is None for i in [fq1, fq2, genome, outdir]]
+        chk1 = config is None
+        chk2 = design is None
+        chk3 = [i is None for i in [fq1, fq2, genome, outdir]]
 
-        if config is None and not all(chk2):
-            sys.exit('required: --config or --fq1, --fq2, --genome, --outdir')
+        # if config is None and not all(chk2):
+        if all([chk1, chk2, chk3]):
+            sys.exit('required: --config, or --design, or --fq1, --fq2, --genome, --outdir')
 
-
-        a = AtacBatch(**args).run()
+        # a = AtacBatch(**args).run()
+        Atac(**args).run()
 
 
 def main():

@@ -18,16 +18,12 @@ if (length(args) < 2) {
 lendist <- args[1]
 pdfout  <- args[2]
 
-# # print(here::here())
-#
-# #func <- here::here("hiseq", "bin", "qc_report_function.R")
-# basedir <- "/home/wangming/work/wmlib/hiseq"
-# func <- file.path(basedir, "hiseq", "bin", "qc_report_function.R")
-# source(func)
 suppressPackageStartupMessages(library(hiseqr))
-
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(ggplot2))
 
 df <- hiseqr::fragReader(lendist)
+df$id <- basename(dirname(dirname(lendist)))
 p  <- hiseqr::fragPlot(df)
 
 pdf(pdfout)

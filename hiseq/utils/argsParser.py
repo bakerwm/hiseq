@@ -234,23 +234,29 @@ def add_atac_args():
     """
     parser = argparse.ArgumentParser(
         description='ATAC-seq pipeline')
-    parser.add_argument('-c', '--config', default=None,
-        help='config file for ATACseq pipeline: [fq1  fq2  genome  outdir] \
-        if specified, ignore --fq1, --fq2, -o, --genome;')
-    parser.add_argument('-i', '--fq1', nargs='+', 
-        help='read files, (or read1 of PE reads)')
-    parser.add_argument('--fq2', nargs='+', default=None, 
+    parser.add_argument('-c', '--config', nargs='+', default=None,
+        help='config, a tab-separated file; config for multiple ATACseq samples \
+        in this format: [fq1  fq2  genome  outdir] \
+        support multiple config.txt files \
+        if specified, ignore [--design], [--fq1, --fq2, -o, --genome]')
+    parser.add_argument('-d', '--design', nargs='+', default=None,
+        help='design, a json file, config for one ATACseq sample; \
+        supprot multiple design.json files \
+        (ignore --fq1, --fq2, --genome, --outdir)')
+    parser.add_argument('-1', '--fq1', nargs='+', default=None,
+        help='read1 files, (or read1 of PE reads)')
+    parser.add_argument('-2', '--fq2', nargs='+', default=None, 
         help='read2 of PE reads')
     parser.add_argument('-o', '--outdir', default=None, 
         help='The directory to save results, default, \
         current working directory.')
     parser.add_argument('-g', '--genome', default='dm6', 
-        choices=['dm3', 'dm6', 'hg19', 'hg38', 'mm10', 'mm9'],
-        help='Reference genome : dm3, dm6, hg19, hg39, mm10, default: hg19')
+        choices=['dm3', 'dm6', 'hg19', 'hg38', 'mm9', 'mm10'],
+        help='Reference genome : dm3, dm6, hg19, hg39, mm9, mm10, default: hg19')
 
     # optional arguments - 0    
     parser.add_argument('-n', '--smp_name', required=False,
-        help='Name of the experiment')
+        help='Name of the experiment, works for only one input fastq file')
     parser.add_argument('--trimmed', action='store_true',
         help='specify if input files are trimmed')
     parser.add_argument('--copy-raw-fq', dest='copy_raw_data',
