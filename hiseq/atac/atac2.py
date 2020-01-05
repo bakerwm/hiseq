@@ -32,14 +32,11 @@ compare replicates:
 """
 
 import os
-# import sys
 import re
-# import pandas as pd
 from hiseq.utils.helper import *
 from hiseq.qc.trimmer import Trimmer
 from hiseq.align.alignment import Alignment
 from hiseq.peak.call_peak import Macs2
-# from hiseq.utils.rep_cor import *
 from hiseq.atac.atac_utils import *
 import hiseq
 
@@ -104,7 +101,7 @@ class AtacConfig(object):
         elif isinstance(rep_list, list):
             flag = 'merge'
         # atac multiple
-        elif isinstance(input_dir, list):
+        elif isinstance(input_dir, str):
             flag = 'multiple'
         # atac, parse all
         else:
@@ -315,19 +312,40 @@ class AtacConfig(object):
         update self.
         """
         args = self.args.copy() # global
-        assert 'input_dir' in args # merge
+        assert in_dict(args, 'input_dir') # merge
+
+        # outdir
+        self.outdir = args.get('outdir', 
+            os.path.join(args['input_dir'], 'summary'))
+
+        ## outdir
+        self.configdir = os.path.join(self.outdir, 'config')
+        # self.qcdir = os.path.join(self.outdir, 'qc')
+        self.reportdir = os.path.join(self.outdir, 'report')
+
+        if create_dirs:
+            check_path([
+                self.configdir,
+                self.reportdir])
 
         # list all atac_single, atac_merge directories
         dirs = listfiles(args['input_dir'], include_dir=True)
-        dirs = [i for i in dirs if os.path.isdir(i)]
+        dirs = [os.path.abspath(i) for i in dirs if os.path.isdir(i)]
+        dirs = sorted(dirs)
 
+        # rep, merge
+        self.single_list = []
+        self.merge_list = []
         for x in dirs:
             if self.is_atac_single(x):
                 print('single', x)
-            if self.is_atac_merge(x):
+                self.single_list.append(x)
+            elif self.is_atac_merge(x):
                 print('merge', x)
-            # else:
-            #     continue
+                self.merge_list.append(x)
+            else:
+                print('unknown', x)
+                continue
 
 
     def is_atac_single(self, x):
@@ -394,7 +412,6 @@ class AtacConfig(object):
                 'reportdir',            
                 'bam',
                 'peak',
-                'lendist_txt',
                 'frip_txt',
                 'cor_counts',
                 'idr_txt',
@@ -970,7 +987,6 @@ class AtacMerge(object):
                 log.warning('report() failed.')
 
 
-
     def run(self):
         ## question:
         ## merge bam or merge peaks?!
@@ -993,7 +1009,81 @@ class AtacMultiple(object):
     create a summary report
     """
     def __init__(self, **kwargs):
-        pass
+        self.args = kwargs
+        assert in_dict(self.args, ['input_dir'])
+        self.status = self.init_atac() # update all variables: *.config, *.args
+
+
+    def init_atac(self):
+        """
+        Initiate directories, config:
+        save config files
+        outdir/config/*json, *pickle, *txt
+        """
+        self.config = AtacConfig(**self.args) # update, global
+        self.args.update(self.config.args) # update, global
+        assert self.config.atac_type == 'multiple'
+        self.args['input_dir'] = os.path.abspath(self.args['input_dir'])
+
+        # save config to files
+        args_pickle = os.path.join(self.config.configdir, 'arguments.pickle')
+        args_json = os.path.join(self.config.configdir, 'arguments.json')
+        args_txt = os.path.join(self.config.configdir, 'arguments.txt')
+        single_list = os.path.join(self.config.configdir, 'single_list.txt')
+        merge_list = os.path.join(self.config.configdir, 'merge_list.txt')
+
+        # check arguments
+        chk1 = args_checker(self.args, args_pickle)
+        Json(self.args).writer(args_json)
+        args_logger(self.args, args_txt)
+        self.args['overwrite'] = self.args.get('overwrite', False)
+        chk2 = self.args['overwrite'] is False
+        
+        # save replist
+        with open(single_list, 'wt') as w:
+            w.write('\n'.join(self.config.single_list) + '\n')
+
+        # save mergelist
+        with open(merge_list, 'wt') as w:
+            w.write('\n'.join(self.config.merge_list) + '\n')
+
+        # status
+        return all([chk1, chk2])
+
+
+    def report(self):
+        """
+        Create report for multiple samples within the directories
+        html
+        """
+        pkg_dir    = os.path.dirname(hiseq.__file__)
+        qc_reportR = os.path.join(pkg_dir, 'bin', 'atac_report.R')
+        atac_report_html = os.path.join(
+            self.config.reportdir, 
+            'atac_report.html')
+
+        cmd = 'Rscript {} {} {}'.format(
+            qc_reportR,
+            os.path.dirname(self.config.outdir),
+            self.config.reportdir)
+        
+        if check_file(atac_report_html):
+            log.info('report() skipped, file exists: {}'.format(
+                atac_report_html))
+        else:
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.warning('report() failed.')
+
+
+    def run(self):
+        """
+        Run AtacMultiple
+        """
+        self.report()
+
+
 
 
 class Atac(object):
@@ -1217,10 +1307,13 @@ class Atac(object):
             else:
                 print('!MMMM2')
                 AtacMerge(rep_list=x_list, **self.args).run()
-                break
 
         # for multiple sample:
         # summary report for a project
+        # dirname of smp_dirs
+        prj_dir = os.path.dirname(smp_dirs[0])
+        AtacMultiple(input_dir=prj_dir, **self.args).run()
+
 
 
 
