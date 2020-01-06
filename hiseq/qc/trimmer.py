@@ -19,7 +19,7 @@ import re
 import shutil
 import logging
 
-from hiseq.utils.args import Adapter, args_init
+from hiseq.utils.args import Adapter, args_init, ArgumentsInit
 from hiseq.utils.seq import Fastx
 from hiseq.utils.helper import * # all help functions
 
@@ -27,6 +27,8 @@ from hiseq.utils.helper import * # all help functions
 @Logger('INFO')
 class Trimmer(object):
     """Processing fastq files
+
+    # for only 1 input fastq: (for smp_name)
 
     General
       a. low quality bases at 3'
@@ -64,24 +66,37 @@ class Trimmer(object):
         Main function
         """
         # prepare args
-        self.args = args_init(kwargs, trim=True) # init
-        assert self.trim_init() # required arguments
-        self.kwargs = self.args # all args
+        self.args = ArgumentsInit(kwargs, trim=True).dict.__dict__
+        self.args.pop('args_input', None)
+        self.args.pop('cmd_input', None)
+        self.args.pop('dict', None)
+        self.init_trimmer()
 
-        # names
-        self.fq = self.fq1 = self.args['fq']
-        self.fq2 = self.args['fq2']
-        self.outdir = self.args['outdir']
-        self.fqname = self.args['fqname']
-        self.fq_out_prefix = self.args['fq_out_prefix']
+
+    def init_trimmer(self):
+        # global vars
+        self.fq1 = self.fq = self.args.get('fq1', None) # checked in ArgumentsInit
+        self.fq2 = self.args.get('fq2', None) # as above
+        self.outdir = self.args.get('outdir', None) # as above
+        assert isinstance(self.fq1, str)
+        assert isinstance(self.outdir, str)
+        assert is_path(self.outdir)
+
+        # optional
+        self.fqname = file_prefix(self.fq1)[0]
+        if not self.fq2 is None:
+            self.fqname = re.sub('[._][rR]?1$', '', self.fqname)
+            self.fqname = re.sub('_1$', '', self.fqname)
+        if self.args.get('smp_name', None):
+            self.fqname = self.args['smp_name']
+
+        self.fq_out_prefix = os.path.join(self.outdir, self.fqname) #self.args['fq_out_prefix']
         self.fq_out = self.fq_out_prefix + '.fq'    # SE
         self.fq_out1 = self.fq_out_prefix + '_1.fq' # PE1
         self.fq_out2 = self.fq_out_prefix + '_2.fq' # PE2
 
-        assert is_path(self.outdir)
-
         # gzip
-        if self.args['gzip'] is True:
+        if self.args.get('gzip', False):
             self.fq_out += '.gz'
             self.fq_out1 += '.gz'
             self.fq_out2 += '.gz'
@@ -92,23 +107,11 @@ class Trimmer(object):
         self.out_files = se_out if self.fq2 is None else pe_out
 
 
-    def trim_init(self):
-        """
-        Check arguments: fq, fq2, outdir
-        """
-        args = self.args.copy()
-        args_required = ['fq', 'fq2', 'outdir']
-        chk = [i for i in args_required if not i in args] # missing args
-        if len(chk) > 0:
-            raise Exception('check arguments for: {}'.format(' '.join(chk)))
-        return len(chk) == 0
-
-
     def report(self):
         """
         Report the number of reads in each step
         """
-        args = self.kwargs.copy()
+        args = self.args.copy()
 
         rpt_file = self.fq_out_prefix + '.qc.stat'
         n_input = Fastx(self.fq).count
@@ -133,7 +136,7 @@ class Trimmer(object):
         2. remove temp files: outdir/temp
         3. gzip output files:
         """
-        args = self.kwargs.copy()
+        args = self.args.copy()
 
         ## output
         log_dir = os.path.join(self.outdir, 'log')
@@ -164,7 +167,7 @@ class Trimmer(object):
         """
         Check arguments, target file exists, 
         """
-        args = self.kwargs.copy()
+        args = self.args.copy()
 
         ## save parameters
         args_pickle = self.fq_out_prefix + '.arguments.pickle'
@@ -182,7 +185,7 @@ class Trimmer(object):
 
 
     def run(self):
-        args = self.kwargs.copy()
+        args = self.args.copy()
 
         if self.check():
             log.warning('{:>20} : file exists, skipped ...'.format(self.fqname))
@@ -192,9 +195,7 @@ class Trimmer(object):
             args_logger(args, args_file, True) # update arguments.txt
 
         ## cutadapt directory
-        # cutadapt_dir = os.path.join(self.outdir, 'temp', '01.cutadapt_output')
         args['outdir'] = os.path.join(self.outdir, 'temp', '01.cutadapt_output')
-        # f1, f2 = Cutadapt(self.fq, cutadapt_dir, self.fq2, **args).run()
         f1, f2 = Cutadapt(**args).run()
 
         ## rmdup
@@ -294,45 +295,47 @@ class Cutadapt(object):
 
         """
         # prepare args
-        self.args = args_init(kwargs, trim=True) # init
-        assert self.cut_init()
-        assert is_path(self.args['outdir'])
+        self.args = ArgumentsInit(kwargs, trim=True).dict.__dict__
+        self.args.pop('args_input', None)
+        self.args.pop('cmd_input', None)
+        self.args.pop('dict', None)
+        self.init_cut()
 
-        # variables
-        self.fq = self.fq1 = self.args['fq']
-        self.fq2 = self.args['fq2']
-        self.outdir = self.args['outdir']
-        self.fqname = self.args['fqname']
-        self.fq_out_prefix = self.args['fq_out_prefix']
+
+    def init_cut(self):
+        """
+        Check arguments: fq, fq2, outdir
+        """
+        args = self.args.copy()
+
+        # global vars
+        self.fq1 = self.fq = args.get('fq1', None) # checked in ArgumentsInit
+        self.fq2 = args.get('fq2', None) # as above
+        self.outdir = args.get('outdir', None) # as above
+
+        assert isinstance(self.fq1, str)
+        assert isinstance(self.outdir, str)
+        assert is_path(self.outdir)
+
+        # optional
+        self.fqname = file_prefix(self.fq1)[0]
+        if not self.fq2 is None:
+            self.fqname = re.sub('[._][rR]?1$', '', self.fqname)
+            self.fqname = re.sub('_1$', '', self.fqname)
+        if args.get('smp_name', None):
+            self.fqname = args['smp_name']
+
+        self.fq_out_prefix = os.path.join(self.outdir, self.fqname) #self.args['fq_out_prefix']
         self.fq_out = self.fq_out_prefix + '.fq'    # SE
         self.fq_out1 = self.fq_out_prefix + '_1.fq' # PE1
         self.fq_out2 = self.fq_out_prefix + '_2.fq' # PE2
-        self.log  = self.args['fq_out_prefix'] + '.cutadapt.log'
+        self.log  = self.fq_out_prefix + '.cutadapt.log'
         self.cutadapt = shutil.which('cutadapt') # in PATH
-
-        # # gzip
-        # if self.args['gzip'] is True:
-        #     self.fq_out += '.gz'
-        #     self.fq_out1 += '.gz'
-        #     self.fq_out2 += '.gz'
 
         # files
         se_out = [self.fq_out, None]
         pe_out = [self.fq_out1, self.fq_out2]
         self.out_files = se_out if self.fq2 is None else pe_out
-        self.kwargs = self.args # global
-
-
-    def cut_init(self):
-        """
-        Check arguments: fq, fq2, outdir
-        """
-        args = self.args.copy()
-        args_required = ['fq', 'fq2', 'outdir']
-        chk = [i for i in args_required if not i in args] # missing args
-        if len(chk) > 0:
-            raise Exception('check arguments for: {}'.format(' '.join(chk)))
-        return len(chk) == 0
 
 
     def cut_cut(self, cutadapt_arg=True, read2=False):
@@ -343,7 +346,7 @@ class Cutadapt(object):
         for cutadapt command:
         --cut={cut}
         """
-        args = self.kwargs.copy()
+        args = self.args.copy()
 
         cut_before_trim = args['cut_before_trim']
         cut_opts = cut_before_trim.split(',') if ',' in cut_before_trim else [cut_before_trim]
@@ -366,7 +369,7 @@ class Cutadapt(object):
         for ligation strategy libraries, (eg: iCLIP, eCLIP).
         We need to make sliding windows of the adatpers for adapter removing
         """
-        args = self.kwargs.copy()
+        args = self.args.copy()
 
         ## always, the 3' adapter
         adapter = args['adapter3']
@@ -386,7 +389,7 @@ class Cutadapt(object):
         -a <ad> -m 15 -q 20 --trim-n --max-n=0.1 --error-rate=0.1
 
         """
-        args = self.kwargs.copy()
+        args = self.args.copy()
 
         # 3' adapter
         ad3_list = self.adapter_sliding() if args['adapter_sliding'] else [args['adapter3']]
@@ -502,7 +505,7 @@ class Cutadapt(object):
 
 
     def run_se(self):
-        args = self.kwargs.copy()
+        args = self.args.copy()
 
         cmd_line = self.get_cmd()
 
@@ -519,7 +522,7 @@ class Cutadapt(object):
 
 
     def run_pe(self):
-        args = self.kwargs.copy()
+        args = self.args.copy()
 
         cmd_line = self.get_cmd()
 
@@ -538,7 +541,7 @@ class Cutadapt(object):
 
 
     def run(self):
-        args = self.kwargs.copy()
+        args = self.args.copy()
 
         # SE
         if self.fq2 is None:

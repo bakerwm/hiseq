@@ -69,26 +69,28 @@ class Hiseq(object):
         args = vars(args) # convert to dict
         
         # custom args
-        fq1_list = args.pop('fq1', None) # list
-        outdir = args.pop('outdir', None)
+        fq1_list = args.get('fq1', None) # list
+        outdir = args.get('outdir', None)
 
         ## iterate all fq1
-        if args['fq2'] is None:
+        kwargs = args.copy()
+        if kwargs['fq2'] is None:
             # SE mode
             for fq1 in fq1_list:
-                Trimmer(fq1, outdir, **args).run()
+                kwargs['fq1'] = fq1
+                kwargs['fq2'] = None
+                kwargs['outdir'] = args.get('outdir', None)
+                Trimmer(**kwargs).run()
         else:
             # PE mode
             if not len(fq1_list) == len(args['fq2']):
                 log.error('-i, --fq2 not in the same length')
 
             for fq1, fq2 in zip(fq1_list, args['fq2']):
-                args['fq2'] = fq2
-                Trimmer(fq1, outdir, **args).run()
-
-        # for fq1 in fq1_list:
-        #     print(fq1)
-        #     Trimmer(fq1, outdir, **args).run()
+                kwargs['fq1'] = fq1
+                kwargs['fq2'] = fq2
+                kwargs['outdir'] = args.get('outdir', None)
+                Trimmer(**kwargs).run()
 
 
     def align(self):

@@ -204,9 +204,9 @@ def gzip_cmd(src, dest, decompress=True, rm=True):
 
     # output
     if rm is True:
-        os.remove(f)
+        os.remove(src)
 
-    return t
+    return dest
 
 
 def listfiles(path, full_name=True, recursive=False, include_dir=False):
