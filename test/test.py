@@ -4,6 +4,7 @@
 
 import hiseq
 from hiseq.utils.helper import *
+import trimmer
 # from hiseq.utils import *
 # from call_peak import *
 # from rep_cor import *
@@ -11,10 +12,16 @@ from hiseq.utils.helper import *
 import atac
 
 # # input
-# fq1 = 'data/pe_rep1_1.fq.gz'
-# fq2 = 'data/pe_rep1_2.fq.gz'
+fq1 = 'data/pe_rep1_1.fq.gz'
+fq2 = 'data/pe_rep1_2.fq.gz'
 # outdir = 'results/atac'
-# genome = 'dm6'
+outdir = 'aaa'
+genome = 'dm6'
+
+args = {'fq1': fq1, 'fq2': fq2, 'outdir': outdir}
+trimmer.Trimmer(**args).run()
+
+
 
 # # config = AtacConfig(fq1, fq2, genome, outdir)
 
@@ -35,25 +42,16 @@ import atac
 # args['config'] = 'config.txt' 
 
 # a = AtacBatch(**args).run()
-
-bb = '/data/yulab/wangming/work/yu_2019/projects/20191204_lxh_ATACseq/results/20191230_hiseq_pipeline/results/'
-args = {}
-rep_list = [
-    bb + '/ATACseq_DaGal4Xsh3893_3h_rep1_1',
-    bb + '/ATACseq_DaGal4Xsh3893_3h_rep2_1']
-args['smpname'] = 'demo'
-# args['outdir'] = None
-atac.Aatc2(rep_list)
-
-
-
-
-
-
-
-
-
-
+# 
+# bb = '/data/yulab/wangming/work/yu_2019/projects/20191204_lxh_ATACseq/results/20191230_hiseq_pipeline/results/'
+# args = {}
+# rep_list = [
+#     bb + '/ATACseq_DaGal4Xsh3893_3h_rep1_1',
+#     bb + '/ATACseq_DaGal4Xsh3893_3h_rep2_1']
+# args['smpname'] = 'demo'
+# # args['outdir'] = None
+# atac.Aatc2(rep_list)
+ 
 
 # ## qc
 # fq1 = 'data/pe_rep1_1.fq.gz'
@@ -65,7 +63,12 @@ atac.Aatc2(rep_list)
 # hiseq.qc.trimmer.Cutadapt(fq1, outdir, fq2, cut_after_trim='9,-6').run()
 
 ## trimmer
-# hiseq.qc.trimmer.Trimmer(fq1, outdir).run()
+# args = {'fq1': fq1, 'outdir': outdir}
+# args = {'fq1': fq1, 'fq2': fq2, 'outdir': outdir}
+# args = {'fq1': fq1, 'fq2': fq2, 'outdir': outdir, 'cut_after_trim': '9,-6'}
+
+# hiseq.qc.trimmer.Trimmer(**args).run()
+# trimmer.Trimmer(**args).run()
 # hiseq.qc.trimmer.Trimmer(fq1, outdir, fq2, cut_after_trim='9,-6').run()
 
 # outdir = 'results/align'

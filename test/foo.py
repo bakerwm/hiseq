@@ -1,6 +1,6 @@
 import hiseq
 import os, sys
-import atac
+# import atac
 import atac2
 
 # rep_list = ['results/pe_rep1_1', 'results/pe_rep2_1']
