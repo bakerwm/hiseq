@@ -314,13 +314,15 @@ class AtacConfig(object):
         args = self.args.copy() # global
         assert in_dict(args, 'input_dir') # merge
 
-        # outdir
-        self.outdir = args.get('outdir', 
-            os.path.join(args['input_dir'], 'summary'))
+        # outdir, input_dir + summary
+        self.outdir = args.get('outdir', None)
+        if self.outdir is None:
+            self.outdir = os.path.join(args['input_dir'], 'summary')
 
         ## outdir
+        # print('!xxxx', self.outdir)
+        # sys.exit('!mmmm')
         self.configdir = os.path.join(self.outdir, 'config')
-        # self.qcdir = os.path.join(self.outdir, 'qc')
         self.reportdir = os.path.join(self.outdir, 'report')
 
         if create_dirs:
@@ -343,6 +345,8 @@ class AtacConfig(object):
             elif self.is_atac_merge(x):
                 print('merge', x)
                 self.merge_list.append(x)
+            elif self.is_atac_multiple(x):
+                print('multiple', x)
             else:
                 print('unknown', x)
                 continue
@@ -426,8 +430,38 @@ class AtacConfig(object):
         The directory is a atac multiple samples report directories
         check required attributes:
         ...
-        """
-        pass
+        """        
+        single_list_file = os.path.join(x, 'config', 'sample_list.txt')
+        merge_list_file = os.path.join(x, 'config', 'merge_list.txt')
+
+        ## file exists
+        if not check_file([single_list_file, merge_list_file]):
+            return False
+
+        # for single
+        n = 0
+        single_list = []
+        with open(single_list_file) as r:
+            for line in r:
+                n += 1
+                single_list.append(line.rstrip())
+                if n > 100:
+                    break
+        chk1 = all([self.is_atac_single(i) for i in single_list])
+
+        # for merge
+        n = 0
+        merge_list = []
+        with open(merge_list_file) as r:
+            for line in r:
+                n += 1
+                merge_list.append(line.rstrip())
+                if n > 100:
+                    break
+        chk2 = all([self.is_atac_merge(i) for i in merge_list])
+        log.info('Check files for ATACseq multiple: {}'.format(x))
+
+        return chk1 and chk2
 
 
 class AtacSingle(object):
@@ -1312,8 +1346,9 @@ class Atac(object):
         # for multiple sample:
         # summary report for a project
         # dirname of smp_dirs
-        prj_dir = os.path.dirname(smp_dirs[0])
-        AtacMultiple(input_dir=prj_dir, **self.args).run()
+        # prj_dir = os.path.dirname(smp_dirs[0])
+        self.args['input_dir'] = os.path.dirname(smp_dirs[0])
+        AtacMultiple(**self.args).run()
 
 
 

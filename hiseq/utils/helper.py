@@ -21,7 +21,7 @@ import pysam
 import pybedtools
 import pathlib
 import binascii
-from .args import args_init
+from .args import args_init, ArgumentsInit
 
 
 logging.basicConfig(
@@ -840,7 +840,12 @@ class AlignIndex(object):
           - genome_path
         """
         ## init
-        args = args_init(kwargs, align=True) # init
+        # args = args_init(kwargs, align=True) # init
+        # args = ArgumentsInit(kwargs, align=True)
+        self.args = ArgumentsInit(kwargs, trim=True).dict.__dict__
+        self.args.pop('args_input', None)
+        self.args.pop('cmd_input', None)
+        self.args.pop('dict', None)
 
         self.aligner = aligner
 
@@ -855,7 +860,7 @@ class AlignIndex(object):
             # log.warning('index=, not defined; .search() required')
             pass
         
-        self.kwargs = args        
+        # self.kwargs = args        
 
 
     def get_aligner(self, index=None):
@@ -982,7 +987,7 @@ class AlignIndex(object):
             |- piRNA cluster
 
         """
-        args = self.kwargs.copy()
+        args = self.args.copy()
 
         g_path = args.get('genome_path', './')
         i_prefix = os.path.join(g_path, genome, self.aligner + '_index')

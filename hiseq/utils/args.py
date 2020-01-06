@@ -8,8 +8,16 @@ Default arguments for subcommands
 import os
 import re
 import pathlib
+import logging
+
 from hiseq.utils.helper import *
-# from hiseq.utils.helper import *
+
+logging.basicConfig(
+    format='[%(asctime)s %(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    stream=sys.stdout)
+log = logging.getLogger(__name__)
+
 
 
 ################################################
