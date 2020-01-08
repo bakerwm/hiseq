@@ -122,20 +122,20 @@ def add_align_args():
     parser.add_argument('--fq2', nargs='+', default=None, 
         help='path to HiSeq read2 of pair-end reads, optional, support \
         multiple files separated by white spaces.')
-    parser.add_argument('-o', '--path_out', default=None, 
+    parser.add_argument('-o', '--outdir', default=None, 
         help='The directory to save results, default, \
         current working directory.')
-    parser.add_argument('-g', '--genome', required=True, default='hg19', 
-        choices=['dm3', 'dm6', 'hg19', 'hg38', 'mm10', 'mm9'],
-        help='Reference genome : dm3, hg19, hg39, mm10, default: hg19')
+    parser.add_argument('-g', '--genome', required=True, default='dm6', 
+        choices=[None, 'dm6', 'dm3', 'hg38', 'hg19', 'mm10', 'mm9'],
+        help='Reference genome : dm6, dm3, hg38, hg19, mm10, mm9, default: dm6')
     parser.add_argument('--aligner', default='bowtie', 
         choices=['bowtie', 'bowtie2', 'STAR'],
         help='Choose which aligner to use. default: bowtie')
 
     ## extra: index
     parser.add_argument('-k', '--spikein', default=None, 
-        choices=[None, 'dm3', 'hg19', 'hg38', 'mm10'],
-        help='Spike-in genome : dm3, hg19, hg38, mm10, default: None')
+        choices=[None, 'dm6', 'dm3', 'hg38', 'hg19', 'mm10', 'mm9'],
+        help='Spike-in genome : dm6, dm3, hg38, hg19, mm10, mm9, default: None')
     parser.add_argument('-x', '--ext-index', nargs='+', dest="ext_index",
         help='Provide alignment index(es) for alignment, support multiple\
         indexes. if specified, ignore -g, -k')
