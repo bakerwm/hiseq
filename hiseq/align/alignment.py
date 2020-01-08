@@ -83,7 +83,7 @@ def args_init(x, **kwargs):
     Alternative wrapper for arguments, (temp)
     replace: hiseq.utils.args.args_init()
     """
-    args = ArgumetnsInit(x, **kwargs).dict.__dict__
+    args = ArgumentsInit(x, **kwargs).dict.__dict__
     args.pop('args_input', None)
     args.pop('cmd_input', None)
     args.pop('dict', None)
