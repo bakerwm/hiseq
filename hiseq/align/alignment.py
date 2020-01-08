@@ -56,7 +56,7 @@ import shutil
 import logging
 import pandas as pd
 
-from hiseq.utils.args import args_init
+from hiseq.utils.args import ArgumentsInit # args_init
 from hiseq.utils.seq import Fastx
 from hiseq.utils.helper import * # all help functions
 
@@ -68,18 +68,27 @@ def sam2bam(sam, bam, sort=True, extra_para=''):
     """
     samtools_exe = shutil.which('samtools')
 
-
     cmd = '{} view -Subh {} {} | samtools sort -o {} -'.format(
         samtools_exe,
         extra_para,
         sam,
         bam)
 
-
     run_shell_cmd(cmd)
-
-
     return bam
+
+
+def args_init(x, **kwargs):
+    """
+    Alternative wrapper for arguments, (temp)
+    replace: hiseq.utils.args.args_init()
+    """
+    args = ArgumetnsInit(x, **kwargs).dict.__dict__
+    args.pop('args_input', None)
+    args.pop('cmd_input', None)
+    args.pop('dict', None)
+    return args
+
 
 ## to-do
 ##   - add extra parameters for aligner: '-X 2000' for bowtie2, ...
@@ -101,6 +110,7 @@ class Alignment(object):
         """
         # update
         args = args_init(kwargs, align=True)
+        # args = ArgumentsInit(kwargs, align=True).dict.__dict__
         args['fq'] = args['fq1'] = args['fq1'] #
         args['outdir'] = args['outdir'] # !!! to-do
 
@@ -132,7 +142,8 @@ class AlignConfig(object):
         ...
         """
         ## init
-        args = args_init(kwargs, align=True) # to-do, top-config for args
+        # args = args_init(kwargs, align=True) # to-do, top-config for args
+        args = ArgumentsInit(kwargs, align=True).dict.__dict__
 
         ## update args: aligner, fq, index, outdir, fq2
         args['aligner'] = aligner
@@ -381,6 +392,7 @@ class AlignNFastx(object):
 
         ## init
         args = args_init(kwargs, align=True)
+        # args = ArgumentsInit(kwargs, align=True).dict.__dict__
 
         ## update args: aligner, outdir, index_list
         args['aligner'] = aligner
@@ -429,6 +441,7 @@ class AlignNIndex(object):
 
         ## init
         args = args_init(kwargs, align=True)
+        # args = ArgumentsInit(kwargs, align=True).dict.__dict__
 
         ## update args: aligner, fq, outdir, fq2
         args['aligner'] = aligner
@@ -546,6 +559,7 @@ class AlignOneIndex(object):
 
         ## init
         args = args_init(kwargs, align=True)
+        # args = ArgumentsInit(kwargs, align=True).dict.__dict__
 
         ## update args: aligner, fq, index, outdir, fq2
         args['aligner'] =aligner
@@ -613,6 +627,7 @@ class Bowtie(object):
         """
         assert os.path.exists(fq)
         args = args_init(kwargs, align=True) # init
+        # args = ArgumentsInit(kwargs, align=True).dict.__dict__
 
         ## update args: aligner, fq, index, outdir, fq2, outdir_fixed
         args['aligner'] = 'bowtie'
@@ -799,6 +814,7 @@ class Bowtie2(object):
         """
         assert os.path.exists(fq)
         args = args_init(kwargs, align=True) # init
+        # args = ArgumentsInit(kwargs, align=True).dict.__dict__
 
         ## update args: aligner, fq, index, outdir, fq2, outdir_fixed
         args['aligner'] = 'bowtie2'
@@ -1028,6 +1044,7 @@ class Star(object):
         """
         assert os.path.exists(fq)
         args = args_init(kwargs, align=True) # init
+        # args = ArgumentsInit(kwargs, align=True).dict.__dict__
 
         ## update args: aligner, fq, index, outdir, fq2, outdir_fixed
         args['aligner'] = 'STAR'
@@ -1309,6 +1326,7 @@ class Hisat2(object):
         """
         assert os.path.exists(fq)
         args = args_init(kwargs, align=True) # init
+        # args = ArgumentsInit(kwargs, align=True).dict.__dict__
 
         ## update args: aligner, fq, index, outdir, fq2, outdir_fixed
         args['aligner'] = 'hisat2'
@@ -1447,6 +1465,7 @@ class Bwa(object):
 
         ## init
         args = args_init(kwargs, align=True) # init
+        # args = ArgumentsInit(kwargs, align=True).dict.__dict__
 
         ## output
         fqname = file_prefix(fq)[0]
@@ -1541,6 +1560,7 @@ class AlignIndexBuilder(object):
 
         ## args init
         args = args_init(kwargs, align=True)
+        # args = ArgumentsInit(kwargs, align=True).dict.__dict__
 
         ## update arguments
         self.genome = args.get('genome', 'dm3')
