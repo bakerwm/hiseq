@@ -1057,3 +1057,162 @@ def sam_flag_check(query, subject):
 
     return flag
     
+
+################################################################################
+## functions for pipeline
+def symlink(src, dest, absolute_path=True):
+    """
+    Create symlinks within output dir
+    ../src
+    """
+    if absolute_path:
+        # support: ~, $HOME,
+        srcname = os.path.abspath(os.path.expanduser(os.path.expandvars(src)))
+    else:
+        # only for directories within the same folder
+        srcname = os.path.join('..', os.path.basename(src))
+
+    if not os.path.exists(dest):
+        os.symlink(srcname, dest)
+
+
+def in_dict(d, k):
+    """
+    Check the keys in dict or not
+    """
+    assert isinstance(d, dict)
+    if isinstance(k, str):
+        k_list = [k]
+    elif isinstance(k, list):
+        k_list = list(map(str, k))
+    else:
+        log.warning('expect str and list, not {}'.format(type(k)))
+        return False
+
+    return all([i in d for i in k_list])
+
+
+def in_attr(x, a, return_values=True):
+    """
+    Check a (attributes) in object a or not
+    return the values or not
+    """
+    if isinstance(a, str):
+        a_list = [a]
+    elif isinstance(a, list):
+        a_list = list(map(str, a))
+    else:
+        log.warning('expect str and list, not {}'.format(type(a)))
+        return False
+
+    # status
+    status = all([hasattr(x, i) for i in a_list])
+
+    if status and return_values:
+        # values
+        return [getattr(x, i) for i in a_list]
+    else:
+        return status
+
+
+def check_file(x, show_log=False):
+    """
+    Check if x file, exists
+    """
+    if isinstance(x, str):
+        x_list = [x]
+    elif isinstance(x, list):
+        x_list = x
+    else:
+        log.warning('expect str and list, not {}'.format(type(x)))
+        return False        
+
+    if show_log:
+        for i in x_list:
+            flag = 'ok' if os.path.exists(i) else 'fail'
+            print('{:6s} : {}'.format(flag, i))
+
+    return all(map(os.path.exists, x_list))
+
+
+def check_path(x):
+    """
+    Check if x is path, Create path
+    """
+    if isinstance(x, str):
+        x_list = [x]
+    elif isinstance(x, list):
+        x_list = list(map(str, x))
+    else:
+        log.warning('expect str and list, not {}'.format(type(x)))
+        return False
+
+    return all(map(is_path, x_list))
+
+
+def merge_names(x):
+    """
+    Get the name of replictes
+    common in left-most
+    """
+    assert isinstance(x, list)
+    name_list = [os.path.basename(i) for i in x]
+    name_list = [re.sub('.rep[0-9].*$', '', i) for i in name_list]
+    return list(set(name_list))[0]
+
+
+def dict_to_log(d, x, overwrite=False):
+    """
+    Convert dict to log style
+        key | value
+    """
+    assert isinstance(d, dict)
+    logout = ['%30s |    %-40s' % (k, d[k]) for k in sorted(d.keys())]
+    if overwrite is True or not os.path.exists(x): 
+        with open(x, 'wt') as w:
+            w.write('\n'.join(logout) + '\n')
+
+    return '\n'.join(logout)
+
+
+def dict_to_pickle(d, x):
+    """
+    Convert dict to pickle
+    """
+    assert isinstance(d, dict)
+    with open(x, 'wb') as w:
+        pickle.dump(d, w, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+def pickle_to_dict(x):
+    """
+    Convert pickle file to dict
+    """
+    with open(x, 'rb') as r:
+        return pickle.load(r)
+
+
+def bed2gtf(infile, outfile):
+    """Convert BED to GTF
+    chrom chromStart chromEnd name score strand
+    """
+    with open(infile) as r, open(outfile, 'wt') as w:
+        for line in r:
+            fields = line.strip().split('\t')
+            start = int(fields[1]) + 1
+            w.write('\t'.join([
+                fields[0],
+                'BED_file',
+                'gene',
+                str(start),
+                fields[2],
+                '.',
+                fields[5],
+                '.',
+                'gene_id "{}"; gene_name "{}"'.format(fields[3], fields[3])
+                ]) + '\n')
+    return outfile
+
+
+
+

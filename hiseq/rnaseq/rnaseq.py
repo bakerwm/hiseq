@@ -92,7 +92,6 @@ class RNAseqConfig(object):
 
         if self.rnaseq_type == 'single':
             self.init_rnaseq_single(create_dirs)
-            # self.is_atac_single(self.outdir)
         elif self.rnaseq_type == 'merge':
             self.init_rnaseq_merge(create_dirs)
         elif self.ranseq_type = 'deseq':
@@ -262,4 +261,156 @@ class RNAseqConfig(object):
                 self.motifdir, 
                 self.qcdir, 
                 self.reportdir])
+
+
+
+
+
+class RNAseqSingle(object):
+    def __init__(self, **kwargs):
+        """
+        fq1
+        genomt
+        outdir
+        fq2 (optional)
+
+        align single file to reference genome
+        """    
+        self.args = kwargs
+        self.status = self.init_atac() # update all variables: *.config, *.args
+        
+
+    def init_rnaseq(self):
+        """
+        Initiate directories, config:
+        save config files
+        outdir/config/*json, *pickle, *txt
+        """
+        self.config = RNAseqConfig(**self.args) # update, global
+        self.args.update(self.config.args) # update, global
+        assert in_attr(self.config, ['fq1', 'genome', 'outdir'])
+        assert self.config.atac_type == 'single'
+
+        # required
+        self.fq1 = os.path.abspath(self.args.get('fq1', None))
+        # self.fq2 = os.path.abspath(self.args.get('fq2', None))
+        self.genome = self.args.get('genome', None)
+        self.outdir = os.path.abspath(self.args.get('outdir', None))
+        self.args['fq1'] = self.fq1
+        self.args['fq2'] = self.fq2
+        self.args['outdir'] = self.outdir
+
+        # save config to files
+        args_pickle = os.path.join(self.config.configdir, 'arguments.pickle')
+        args_json = os.path.join(self.config.configdir, 'arguments.json')
+        args_txt = os.path.join(self.config.configdir, 'arguments.txt')
+
+
+
+
+        # check arguments
+        chk1 = args_checker(self.args, args_pickle)
+        Json(self.args).writer(args_json)
+        args_logger(self.args, args_txt)
+        self.args['overwrite'] = self.args.get('overwrite', False)
+        chk2 = self.args['overwrite'] is False
+
+        # status
+        return all([chk1, chk2])
+
+
+    #######################################
+    ## main pipeline
+    def prep_raw(self, copy=False):
+        """
+        Copy raw data to dest dir
+        if not: create a symlink
+        
+        self.fq1, self.fq2 => raw_fq_list
+        """
+        raw_fq1, raw_fq2 = self.config.raw_fq_list
+
+        # copy
+        if copy is True:
+            shutil.copy(self.fq1, raw_fq1)
+            shutil.copy(self.fq2, raw_fq2)
+        else:
+            symlink(self.fq1, raw_fq1, absolute_path=True)
+            symlink(self.fq2, raw_fq2, absolute_path=True)
+
+
+    def trim(self, trimmed=False):
+        """
+        Trim reads:
+        hiseq.qc.trimmer.Trimmer(fq1, outdir, fq2, cut_after_trim='9,-6').run()
+
+        if trimmed:
+            do
+        else:
+            copy/links
+        """
+        # args = self.args.copy()
+        fq1, fq2 = self.config.raw_fq_list
+        clean_fq1, clean_fq2 = self.config.clean_fq_list
+
+        # update args
+        args = self.config.args # all
+        args['fq1'] = args['fq'] = fq1
+        args['fq2'] = fq2
+        args['outdir'] = self.config.cleandir
+        
+        if trimmed is True:
+            print('!xxxx')
+            # create symlink from rawdir
+            # if raw is not gzipped, do it
+            if is_gz(fq1) and is_gz(fq2):
+                symlink(fq1, clean_fq1)
+                symlink(fq2, clean_fq2)
+            else:
+                # gzip files
+                gzip_cmd(fq1, clean_fq1, decompress=False, rm=False)
+                gzip_cmd(fq2, clean_fq2, decompress=False, rm=False)
+        else:
+            print('!yyyy')
+            if check_file(self.config.clean_fq_list):
+                log.info('trim() skipped, file exists: {}'.format(
+                    self.config.clean_fq_list))
+            else:
+                Trimmer(**args).run()
+
+
+    def align(self):
+        """
+        Alignment PE reads to reference genome, using STAR
+        """
+        fq1, fq2 = self.config.clean_fq_list
+
+        # update arguments
+        args = self.config.args
+        args['fq1'] = args['fq'] = fq1
+        args['fq2'] = fq2
+        args['outdir'] = self.config.aligndir
+        args['extra_para'] = '-X 2000' # repeat, 
+        args['aligner'] = 'STAR' # repeat,
+
+        if check_file(self.config.bam_rmdup):
+            log.info('align() skipped, file exists: {}'.format(
+                self.config.bam_rmdup))
+        else:
+            Alignment(**args).run()
+
+
+    def get_raw_bam(self):
+        """
+        Get the align bam file
+        from bamdir/1., 2., ...
+        !!! specific: 2.genome/*.bam
+        """
+        # bamdir = os.path.join(self.config.aligndir, '2.*')
+        bamdir = self.config.align_stat.rstrip('.align.txt')
+        bamlist = listfiles2('*.bam', bamdir, recursive=True)
+        # [chrM, genome]
+        return(bamlist[1]) # genome
+
+
 

@@ -147,6 +147,7 @@ def pickle_to_dict(x):
     with open(x, 'rb') as r:
         return pickle.load(r)
 
+
 def bed2gtf(infile, outfile):
     """Convert BED to GTF
     chrom chromStart chromEnd name score strand
