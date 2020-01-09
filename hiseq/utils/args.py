@@ -154,9 +154,15 @@ class ArgumentsInit(object):
         """
         Input: original kwargs; commands
         return the updated one
+        # keep keys in kwargs
         """
         self.args_input = args[0]
         self.cmd_input = kwargs
+
+        # save all kwargs to attributes
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
         self.dict = self.config()
 
 
@@ -168,6 +174,7 @@ class ArgumentsInit(object):
         args = self.args_input.copy()
 
         ## required, to absolute path
+        self.fq = args.get('fq', None) # deprecated
         self.fq1 = args.get('fq1', None)
         self.fq2 = args.get('fq2', None)
         self.outdir = args.get('outdir', None)
@@ -182,16 +189,18 @@ class ArgumentsInit(object):
         elif isinstance(self.fq2, list):
             self.fq1 = [os.path.abspath(i) for i in self.fq1]
         else:
-            log.warning('fq1=[], str and list expect, get {}'.format(
-                type(self.fq1)))
+            pass
+            # log.warning('fq1=[], str and list expect, get {}'.format(
+            #     type(self.fq1)))
 
         if isinstance(self.fq2, str):
             self.fq2 = os.path.abspath(self.fq2)
         elif isinstance(self.fq2, list):
             self.fq2 = [os.path.abspath(i) for i in self.fq2]
         else:
-            log.warning('fq2=[], str and list expect, get {}'.format(
-                type(self.fq2)))
+            pass
+            # log.warning('fq2=[], str and list expect, get {}'.format(
+            #     type(self.fq2)))
 
         self.outdir = os.path.abspath(self.outdir)
 
@@ -256,13 +265,18 @@ class ArgumentsInit(object):
         """
         args = self.args_input.copy()
 
+        self.aligner = args.get('aligner', 'bowtie')
         self.genome = args.get('genome', None)
         self.spikein = args.get('spikein', None)
+        self.index = args.get('index', None)
+        self.index_list = args.get('index_list', None)
+        self.index_name = args.get('index_name', None)
         self.extra_index = args.get('extra_index', None)
-        self.unique_only = args.get('unique_oinly', True)
-        self.aligner = args.get('aligner', 'bowtie')
+        self.unique_only = args.get('unique_oinly', True)        
         self.align_by_order = args.get('align_by_order', True)
         self.n_map = args.get('n_map', 0)
+
+        self.search_index = args.get('search_index', False)
 
         self.align_to_chrM = args.get('align_to_chrM', False)
         self.align_to_rRNA = args.get('align_to_rRNA', False)
@@ -339,141 +353,157 @@ class ArgumentsInit(object):
 
 
 
-def args_init(kwargs={}, demx=False, trim=False, align=False, call_peak=False, 
-    bam2bw=False):
-        """
-        Inititate the arguments, assign the default values to arg
-        positional arg: smp, genome
-        for 1 read fastq:
-        """
-        args = kwargs.copy() # do not change original dict
-        if not isinstance(args, dict):
-            raise Exception('unknown argument: args=%s' % args)
+def args_init(x, **kwargs):
+    """
+    Alternative wrapper for arguments, (temp)
+    replace: hiseq.utils.args.args_init()
+    """
+    assert isinstance(x, dict)
+    args = ArgumentsInit(x, **kwargs).dict.__dict__
+    args.pop('args_input', None)
+    args.pop('cmd_input', None)
+    args.pop('dict', None)
+    return args
 
-        # required 
-        args['fq1'] = args.get('fq1', None)
-        args['fq2'] = args.get('fq2', None)
-        args['outdir'] = args.get('outdir', str(pathlib.Path.cwd()))
-        assert isinstance(args['fq1'], str)
 
-        ## common args
-        if args['outdir'] is None:
-            args['outdir'] = str(pathlib.Path.cwd())
 
-        # absolute path
-        args['fq1'] = os.path.abspath(args['fq1'])
-        if isinstance(args['fq2'], str):
-            args['fq2'] = os.path.abspath(args['fq2'])
-        args['outdir'] = os.path.abspath(args['outdir'])
+# ## deprecated: 2019-12-11
+# ## not use dict()
+# def args_init(kwargs={}, demx=False, trim=False, align=False, call_peak=False, 
+#     bam2bw=False):
+#         """
+#         Inititate the arguments, assign the default values to arg
+#         positional arg: smp, genome
+#         for 1 read fastq:
+#         """
+#         args = kwargs.copy() # do not change original dict
+#         if not isinstance(args, dict):
+#             raise Exception('unknown argument: args=%s' % args)
 
-        ## optional
-        args['genome_path'] = args.get('genome_path', 
-                os.path.join(str(pathlib.Path.home()), 'data', 'genome'))            
-        args['overwrite'] = args.get('overwrite', False)
-        args['threads'] = args.get('threads', 8)
-        args['smp_name'] = args.get('smp_name', None)
+#         # required 
+#         args['fq1'] = args.get('fq1', None)
+#         args['fq2'] = args.get('fq2', None)
+#         args['outdir'] = args.get('outdir', str(pathlib.Path.cwd()))
+#         assert isinstance(args['fq1'], str)
 
-        ## demx
-        if demx:
-            args['demx_type'] = args.get('demx_type', 'p7') # p7, barcode, both
-            args['n_mismatch'] = args.get('n_mismatch', 0)
-            args['bc_n_left'] = args.get('bc_n_left', 3)
-            args['bc_n_right'] = args.get('bc_n_right', 2)
-            args['bc_in_read'] = args.get('bc_in_read', 1)
-            args['cut'] = args.get('cut', False)
+#         ## common args
+#         if args['outdir'] is None:
+#             args['outdir'] = str(pathlib.Path.cwd())
 
-        ## trimming, cutadapt
-        if trim:
-            # output filename
-            fqname = file_prefix(args['fq1'])[0]
-            if not args['fq2'] is None:
-                fqname = re.sub('_[rR]?1$', '', fqname)
-            args['fqname'] = fqname
-            args['fq_out_prefix'] = os.path.join(args['outdir'], fqname)
+#         # absolute path
+#         args['fq1'] = os.path.abspath(args['fq1'])
+#         if isinstance(args['fq2'], str):
+#             args['fq2'] = os.path.abspath(args['fq2'])
+#         args['outdir'] = os.path.abspath(args['outdir'])
 
-            args['len_min'] = args.get('len_min', 15)
-            args['adapter3'] = Adapter().adapters[0] # TruSeq
-            args['adapter5'] = args.get('adapter5', None)
-            args['keep_name'] = args.get('keep_name', True)
-            args['gzip'] = args.get('gzip', True) # output fastq
-            args['save_temp'] = args.get('save_temp', False) # save temp files
+#         ## optional
+#         args['genome_path'] = args.get('genome_path', 
+#                 os.path.join(str(pathlib.Path.home()), 'data', 'genome'))            
+#         args['overwrite'] = args.get('overwrite', False)
+#         args['threads'] = args.get('threads', 8)
+#         args['smp_name'] = args.get('smp_name', None)
 
-            args['qual_min'] = args.get('qual_min', 20)
-            args['error_rate'] = args.get('error_rate', 0.1)
-            args['overlap'] = args.get('overlap', 3)
-            args['percent'] = args.get('percent', 80)
-            args['trim_times'] = args.get('trim_times', 1)
+#         ## demx
+#         if demx:
+#             args['demx_type'] = args.get('demx_type', 'p7') # p7, barcode, both
+#             args['n_mismatch'] = args.get('n_mismatch', 0)
+#             args['bc_n_left'] = args.get('bc_n_left', 3)
+#             args['bc_n_right'] = args.get('bc_n_right', 2)
+#             args['bc_in_read'] = args.get('bc_in_read', 1)
+#             args['cut'] = args.get('cut', False)
 
-            args['rm_untrim'] = args.get('rm_untrim', False)
-            args['save_untrim'] = args.get('save_untrim', False)
-            args['save_too_short'] = args.get('save_too_short', False)
-            args['save_too_long'] = args.get('save_too_long', False)
+#         ## trimming, cutadapt
+#         if trim:
+#             # output filename
+#             fqname = file_prefix(args['fq1'])[0]
+#             if not args['fq2'] is None:
+#                 fqname = re.sub('_[rR]?1$', '', fqname)
+#             args['fqname'] = fqname
+#             args['fq_out_prefix'] = os.path.join(args['outdir'], fqname)
 
-            args['adapter_sliding'] = args.get('adapter_sliding', False)
-            args['cut_before_trim'] = args.get('cut_before_trim', '0') # NSR
-            args['cut_after_trim'] = args.get('cut_after_trim', '0') # NSR
-            args['rmdup'] = args.get('rmdup', False)
-            args['cut_after_rmdup'] = args.get('cut_after_rmdup', '0')
-            args['cut_to_length'] = args.get('cut_to_length', 0)
+#             args['len_min'] = args.get('len_min', 15)
+#             args['adapter3'] = Adapter().adapters[0] # TruSeq
+#             args['adapter5'] = args.get('adapter5', None)
+#             args['keep_name'] = args.get('keep_name', True)
+#             args['gzip'] = args.get('gzip', True) # output fastq
+#             args['save_temp'] = args.get('save_temp', False) # save temp files
+
+#             args['qual_min'] = args.get('qual_min', 20)
+#             args['error_rate'] = args.get('error_rate', 0.1)
+#             args['overlap'] = args.get('overlap', 3)
+#             args['percent'] = args.get('percent', 80)
+#             args['trim_times'] = args.get('trim_times', 1)
+
+#             args['rm_untrim'] = args.get('rm_untrim', False)
+#             args['save_untrim'] = args.get('save_untrim', False)
+#             args['save_too_short'] = args.get('save_too_short', False)
+#             args['save_too_long'] = args.get('save_too_long', False)
+
+#             args['adapter_sliding'] = args.get('adapter_sliding', False)
+#             args['cut_before_trim'] = args.get('cut_before_trim', '0') # NSR
+#             args['cut_after_trim'] = args.get('cut_after_trim', '0') # NSR
+#             args['rmdup'] = args.get('rmdup', False)
+#             args['cut_after_rmdup'] = args.get('cut_after_rmdup', '0')
+#             args['cut_to_length'] = args.get('cut_to_length', 0)
             
 
-            ## PE trimming options
-            args['AD3'] = args.get('AD3', 'AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT')
-            args['AD5'] = args.get('AD5', None)
-            args['not_trim_adapter'] = args.get('not_trim_adapter', False)
-            args['keep_temp_files'] = args.get('keep_temp_files', False)
+#             ## PE trimming options
+#             args['AD3'] = args.get('AD3', 'AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT')
+#             args['AD5'] = args.get('AD5', None)
+#             args['not_trim_adapter'] = args.get('not_trim_adapter', False)
+#             args['keep_temp_files'] = args.get('keep_temp_files', False)
 
-            ## deprecated
-            # args['rm_dup'] = args.get('rm_dup', True) # Deprecated since v0.3
-            # args['cut_before_trim'] = args.get('cut_before_trim', '0') # Deprecated since v0.3
-            # args['gzipped'] = args.get('gzipped', True) # Deprecated since v0.3
-            # args['double_trim'] = args.get('double_trim', False) # Deprecated since v0.3
+#             ## deprecated
+#             # args['rm_dup'] = args.get('rm_dup', True) # Deprecated since v0.3
+#             # args['cut_before_trim'] = args.get('cut_before_trim', '0') # Deprecated since v0.3
+#             # args['gzipped'] = args.get('gzipped', True) # Deprecated since v0.3
+#             # args['double_trim'] = args.get('double_trim', False) # Deprecated since v0.3
 
-        ## alignment
-        if align:
-            args['genome'] = args.get('genome', None)
-            args['spikein'] = args.get('spikein', None)
-            #args['index_ext'] = args.get('index_ext', None)
-            args['extra_index'] = args.get('extra_index', None)
-            args['unique_only'] = args.get('unique_only', True) # unique map
-            args['aligner'] = args.get('aligner', 'bowtie') # bowtie alignment
-            args['te_index'] = args.get('te_index', None) #
-            # args['align_to_te'] = args.get('align_to_te', False) # deprecated
-            args['align_by_order'] = args.get('align_by_order', True) # align reads to multiple index by order
-            args['n_map'] = args.get('n_map', 0)
+#         ## alignment
+#         if align:
+#             args['genome'] = args.get('genome', None)
+#             args['spikein'] = args.get('spikein', None)
+#             #args['index_ext'] = args.get('index_ext', None)
+#             args['extra_index'] = args.get('extra_index', None)
+#             args['unique_only'] = args.get('unique_only', True) # unique map
+#             args['aligner'] = args.get('aligner', 'bowtie') # bowtie alignment
+#             args['te_index'] = args.get('te_index', None) #
+#             # args['align_to_te'] = args.get('align_to_te', False) # deprecated
+#             args['align_by_order'] = args.get('align_by_order', True) # align reads to multiple index by order
+#             args['n_map'] = args.get('n_map', 0)
 
-            args['align_to_chrM'] = args.get('align_to_chrM', False)
-            args['align_to_rRNA'] = args.get('align_to_rRNA', False)
-            args['align_to_MT_trRNA'] = args.get('align_to_MT_trRNA', False)
+#             args['align_to_chrM'] = args.get('align_to_chrM', False)
+#             args['align_to_rRNA'] = args.get('align_to_rRNA', False)
+#             args['align_to_MT_trRNA'] = args.get('align_to_MT_trRNA', False)
 
-            args['repeat_masked_genome'] = args.get('repeat_masked_genome', False)
-            args['merge_rep'] = args.get('merge_rep', True)
-            args['small_genome'] = args.get('small_genome', False)
-            args['simplify_name'] = args.get('simplify_name', True)
-            args['simple_name'] = args.get('simple_name', False) # deprecated, instead simplify_name
-            args['index_parallel'] = args.get('index_parallel', False) # for multiple index
-            args['extra_para'] = args.get('extra_para', None)
+#             args['repeat_masked_genome'] = args.get('repeat_masked_genome', False)
+#             args['merge_rep'] = args.get('merge_rep', True)
+#             args['small_genome'] = args.get('small_genome', False)
+#             args['simplify_name'] = args.get('simplify_name', True)
+#             args['simple_name'] = args.get('simple_name', False) # deprecated, instead simplify_name
+#             args['index_parallel'] = args.get('index_parallel', False) # for multiple index
+#             args['extra_para'] = args.get('extra_para', None)
 
-            # check-point
-            if args['spikein'] == args['genome']:
-                args['spikein'] = None
+#             # check-point
+#             if args['spikein'] == args['genome']:
+#                 args['spikein'] = None
 
-        ## peak-calling
-        if call_peak:
-            args['peak_caller'] = args.get('peak_caller', 'pyicoclip')
+#         ## peak-calling
+#         if call_peak:
+#             args['peak_caller'] = args.get('peak_caller', 'pyicoclip')
 
-            ## rtstop-calling
-            args['threshold'] = args.get('threshold', 1)
-            args['intersect'] = args.get('intersect', 0)
-            args['threads'] = args.get('threads', 8)
+#             ## rtstop-calling
+#             args['threshold'] = args.get('threshold', 1)
+#             args['intersect'] = args.get('intersect', 0)
+#             args['threads'] = args.get('threads', 8)
 
-        ## bam2bw
-        if bam2bw:
-            args['filterRNAstrand'] = args.get('filterRNAstrand', None)
-            args['samFlagExclude'] = args.get('samFlagExclude', None)
-            args['samFlagInclude'] = args.get('samFlagInclude', None)
-            args['binsize'] = args.get('binsize', 10)
+#         ## bam2bw
+#         if bam2bw:
+#             args['filterRNAstrand'] = args.get('filterRNAstrand', None)
+#             args['samFlagExclude'] = args.get('samFlagExclude', None)
+#             args['samFlagInclude'] = args.get('samFlagInclude', None)
+#             args['binsize'] = args.get('binsize', 10)
 
-        return args
+#         return args
 
 
