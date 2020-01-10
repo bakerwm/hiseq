@@ -272,7 +272,7 @@ class ArgumentsInit(object):
         self.index_list = args.get('index_list', None)
         self.index_name = args.get('index_name', None)
         self.extra_index = args.get('extra_index', None)
-        self.unique_only = args.get('unique_oinly', True)        
+        self.unique_only = args.get('unique_only', True)        
         self.align_by_order = args.get('align_by_order', True)
         self.n_map = args.get('n_map', 0)
 
