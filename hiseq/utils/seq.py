@@ -120,9 +120,8 @@ class Fastx(object):
                 if fx1 == fx2:
                     fx_out = fx1
                 else:
-                    raise Exception(
-                        'error, file extension ({}) and content ({}) not \
-                        consistent:'.foramt(fx1, fx2))
+                    raise Exception('error, filename {} and content {} not \
+                        match: {}'.format(fx1, fx2, fn))
         else:
             fx_out = fx1
 
@@ -357,6 +356,85 @@ class Fastx(object):
                 else:
                     qual = cut_cut(qual)
                     w.write('\n'.join(['@'+name, seq, '+', qual]) + '\n')
+
+
+    def cut_pe(self, input2, out1, out2, len_min=15, **kwargs):
+        """
+        Cut bases from either ends of fasta/q
+
+        7, cut 7-nt from right of sequence (3')
+        -5, cut 5-nt from left of sequence (5')
+        
+        Cut to specific length, from right/left
+        
+
+        len_min:
+        cut: [7, -5, '7,-5']
+        cut_to_length: [30, -25]
+        discard_tooshort: [True, False]
+
+        """
+        # arguments
+        args = kwargs
+
+        cut = args.get('cut', 0)
+        cut_to_length = args.get('cut_to_length', 0) # defualt: skip
+        discard_tooshort = args.get('discard_tooshort', True)
+
+        # subseq = seq[start:end]
+        def cut_sub(x):
+            if isinstance(cut, int):
+                return x[cut:] if cut > 0 else x[:cut]
+            elif isinstance(cut, str):
+                if re.match('^\d+,-\d+$', cut):
+                    s, e = cut.split(',', 1)
+                    s = eval(s)
+                    e = eval(e)
+                    return x[s:e]
+                else:
+                    raise Exception('unknown format for cut={}'.format(cut))
+
+        # cut to length
+        def cut_sub2(x):
+            if isinstance(cut_to_length, int):
+                if abs(cut_to_length) < len(x):
+                    cut_n = len(x) - abs(cut_to_length)
+                    return x[cut_n:] if cut_to_length > 0 else x[:-cut_n]
+                else:
+                    return x
+            else:
+                raise Exception('unknown format, cut_to_length={}'.format(cut_to_length))
+
+        # merge two funcs
+        def cut_cut(x):
+            # cut
+            x_cut = cut_sub(x)
+
+            # cut to length
+            if not cut_to_length == 0:
+                x_cut = cut_sub2(x_cut)
+
+            return x_cut
+
+        with xopen(self.input) as r1, xopen(input2) as r2, \
+            xopen(out1, 'wt') as w1, xopen(out2, 'wt') as w2:
+            for read1, read2 in zip(self.readfq(r1), self.readfq(r2)):
+                name1, seq1, qual1 = read1
+                name2, seq2, qual2 = read2
+                seq1_cut = cut_cut(seq1)
+                seq2_cut = cut_cut(seq2)
+                if discard_tooshort:
+                    if len(seq1_cut) < len_min or len(seq2_cut) < len_min:
+                        continue # skip pair reads
+                # write
+                if qual1 is None: # fa
+                    w1.write('\n'.join(['>' + name1, seq1]) + '\n')
+                    w2.write('\n'.join(['>' + name2, seq2]) + '\n')
+                else:
+                    qual1_cut = cut_cut(qual1)
+                    qual2_cut = cut_cut(qual2)
+                    w1.write('\n'.join(['@' + name1, seq1_cut, '+', qual1_cut]) + '\n')
+                    w2.write('\n'.join(['@' + name2, seq2_cut, '+', qual2_cut]) + '\n')
 
 
     def collapse(self, out, fq_out=False):
