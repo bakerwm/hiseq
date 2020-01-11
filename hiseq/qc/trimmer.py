@@ -19,7 +19,7 @@ import re
 import shutil
 import logging
 
-from hiseq.utils.args import Adapter, args_init, ArgumentsInit
+from hiseq.utils.args import args_init
 from hiseq.utils.seq import Fastx
 from hiseq.utils.helper import * # all help functions
 
@@ -65,17 +65,13 @@ class Trimmer(object):
         """
         Main function
         """
-        # prepare args
-        self.args = ArgumentsInit(kwargs, trim=True).dict.__dict__
-        self.args.pop('args_input', None)
-        self.args.pop('cmd_input', None)
-        self.args.pop('dict', None)
+        self.args = args_init(kwargs, trim=True)
         self.init_trimmer()
 
 
     def init_trimmer(self):
         # global vars
-        self.fq1 = self.fq = self.args.get('fq1', None) # checked in ArgumentsInit
+        self.fq1 = self.args.get('fq1', None) # checked in ArgumentsInit
         self.fq2 = self.args.get('fq2', None) # as above
         self.outdir = self.args.get('outdir', None) # as above
         assert isinstance(self.fq1, str)
@@ -112,9 +108,8 @@ class Trimmer(object):
         Report the number of reads in each step
         """
         args = self.args.copy()
-
         rpt_file = self.fq_out_prefix + '.qc.stat'
-        n_input = Fastx(self.fq).count
+        n_input = Fastx(self.fq1).count
         n_output = Fastx(self.out_files[0]).count # first one of output
 
         rpt_line = '#sample\tinput\toutput\tpercent\n'
@@ -194,16 +189,16 @@ class Trimmer(object):
             args_file = self.fq_out_prefix + '.arguments.txt'
             args_logger(args, args_file, True) # update arguments.txt
 
-        ## cutadapt directory
+        ## 1.cutadapt directory
         args['outdir'] = os.path.join(self.outdir, 'temp', '01.cutadapt_output')
         f1, f2 = Cutadapt(**args).run()
 
-        ## rmdup
+        ## 2.rmdup
         rmdup_dir = os.path.join(self.outdir, 'temp', '02.rmdup_output')
         rmdup_f1 = os.path.join(rmdup_dir, os.path.basename(f1))
         rmdup_f2 = None if f2 is None else os.path.join(rmdup_dir, os.path.basename(f2))
 
-        ## cut-after-trim
+        ## 3.cut-after-trim
         cut2_dir = os.path.join(self.outdir, 'temp', '03.cut_after_trim')
         cut2_f1 = os.path.join(rmdup_dir, 'cut.' + os.path.basename(f1))
         cut2_f2 = None if f2 is None else os.path.join(rmdup_dir, 'cut.' + os.path.basename(f2))
@@ -245,12 +240,17 @@ class Trimmer(object):
                 rmdup_f2 = f2
 
             # cut2
-            if eval(args['cut_after_trim']):
+            if eval(args['cut_after_trim']): # default: '0'
                 args['cut'] = args.get('cut_after_trim', 0) # eg: 5,-3
                 args['cut_to_length'] = args.get('cut_to_length', 0) # eg: 5,-3
                 args['discard_tooshort'] = args.get('discard_tooshort', True)
-                Fastx(rmdup_f1).cut(cut2_f1, **args)
-                Fastx(rmdup_f2).cut(cut2_f2, **args)
+                if args['rmdup']:
+                    ## if rmdup + cut2
+                    Fastx(rmdup_f1).cut(cut2_f1, **args)
+                    Fastx(rmdup_f2).cut(cut2_f2, **args)
+                else:
+                    ## if only cut2, require: PE pairs
+                    Fastx(rmdup_f1).cut_pe(input2=rmdup_f2, out1=cut2_f1, out2=cut2_f2, **args)
             else:
                 cut2_f1 = rmdup_f1
                 cut2_f2 = rmdup_f2
