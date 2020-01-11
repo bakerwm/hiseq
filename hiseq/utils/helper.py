@@ -597,7 +597,7 @@ class Bam(object):
 
 
     ##########################################
-    ## code from cgat
+    ## code from cgat: BEGIN
     ##########################################
     def isPaired(self, topn=1000):
         """
@@ -817,11 +817,9 @@ class Bam(object):
         """
         samfile = pysam.AlignmentFile(self.bam)
         return samfile.mapped
-
     ##########################################
-    ## code from cgat
+    ## code from cgat: END
     ##########################################
-
 
 
 ## for index
