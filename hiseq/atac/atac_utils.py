@@ -183,21 +183,28 @@ def cal_FRiP(inbed, inbam, genome="dm6"):
 
     gsize = Genome(genome).get_fasize()
     tmp = os.path.basename(inbed) + '.count.tmp'
-    # reads in peak
-    p = "sort -k1,1 -k2,2n {} | \
-        bedtools intersect -c -a - -b {} | \
-        {} > {}".format(
-        inbed, inbam, "awk '{s+=$NF}END{print s}'", tmp)
-    
-    run_shell_cmd(p)
 
-    with open(tmp) as r:
-        n = eval(r.readline().strip())
+    try:
+        # reads in peak
+        p = "sort -k1,1 -k2,2n {} | \
+            bedtools intersect -c -a - -b {} | \
+            {} > {}".format(
+            inbed, inbam, "awk '{s+=$NF}END{print s}'", tmp)
+        
+        run_shell_cmd(p)
 
-    frip = '{:.2f}%'.format(n/total*100)
+        with open(tmp) as r:
+            n = eval(r.readline().strip())
 
-    # clean
-    os.remove(tmp)
+        frip = '{:.2f}%'.format(n/total*100)
+
+        # clean
+        os.remove(tmp)
+    except:
+        log.warning('cal_FRiP() failed, skip {}'.format(inbed))
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        frip = n = total = 0 # init
 
     return (frip, n, total)
 

@@ -46,6 +46,11 @@ arg_str
 
 input: fq(s), index, args
 output: sam, unmap, log
+
+## update: 2020-01-08
+1. uniform code style: self ->  dict -> arguments.txt + pickle
+
+
 """
 
 import os
@@ -57,6 +62,7 @@ import logging
 import pandas as pd
 
 from hiseq.utils.args import args_init
+# from args import args_init
 from hiseq.utils.seq import Fastx
 from hiseq.utils.helper import * # all help functions
 
@@ -68,25 +74,56 @@ def sam2bam(sam, bam, sort=True, extra_para=''):
     """
     samtools_exe = shutil.which('samtools')
 
-
     cmd = '{} view -Subh {} {} | samtools sort -o {} -'.format(
         samtools_exe,
         extra_para,
         sam,
         bam)
 
-
     run_shell_cmd(cmd)
-
-
     return bam
+
+
+def pickFq(x, check_exists=True, is_str=True):
+    """
+    arguments:
+    x, path to the fastq fils, str or list
+    check_exists, boolen, 
+    is_str, if not, choose the first one
+    
+    if x is None, warning
+    """
+    if isinstance(x, list):
+        if is_str:
+            log.warning('choose the first file: {}'.format(x))
+            fq = x[0]
+        else:
+            fq = x
+    elif isinstance(x, str):
+        fq = x
+    else:
+        # log.warning('expect str, list, not {}'.format(type(x)))
+        fq = None
+
+    # exists
+    if check_exists:
+        if isinstance(fq, list):
+            tag = all(map(os.path.exists, fq))
+        elif isinstance(fq, str):
+            tag = os.path.exists(fq)
+        else:
+            tag = False
+    else:
+        tag = True
+
+    return fq if tag else None
+
 
 ## to-do
 ##   - add extra parameters for aligner: '-X 2000' for bowtie2, ...
 ## level-1
 @Logger('INFO')
 class Alignment(object):
-
     def __init__(self, **kwargs):
         """
         The top level of alignment function
@@ -98,20 +135,26 @@ class Alignment(object):
           - outdir
           - fq2
           - index_list
+
+        # required:
+        fq1, outdir, genome
         """
-        # update
-        args = args_init(kwargs, align=True)
-        args['fq'] = args['fq1'] = args['fq1'] #
-        args['outdir'] = args['outdir'] # !!! to-do
+        args = args_init(kwargs, align=True) # global
 
         if args['fq1'] is None:
             raise Exception('{:>10} : -i, --fq1 no input detected'.format('error'))
 
-        self.kwargs = args
+        if isinstance(args['fq1'], str):
+            args['fq1'] = [args['fq1']]
+        if isinstance(args['fq2'], str):
+            args['fq2'] = [args['fq2']]
+
+        self.args = args
 
 
     def run(self):
-        return AlignNFastx(**self.kwargs).run()
+        return AlignNFastx(**self.args).run()
+
 
 ##------ Align core: BEGIN ------##
 
@@ -123,50 +166,34 @@ class Alignment(object):
 ## for 1 fq, 1 index
 class AlignConfig(object):
 
-    def __init__(self, aligner, fq, index, outdir, fq2=None, 
-        outdir_fixed=False, search_index=False, **kwargs):
+    def __init__(self, outdir_fixed=False, search_index=False, **kwargs):
         """
         Config for alignment, for one fq, one index
         directories
         files
         ...
         """
-        ## init
-        args = args_init(kwargs, align=True) # to-do, top-config for args
+        args = args_init(kwargs, align=True)
+        # print('!BBBB', args)
 
         ## update args: aligner, fq, index, outdir, fq2
-        args['aligner'] = aligner
-        args['fq'] = args['fq1'] = fq
-        args['index'] = index
-        args['outdir'] = outdir
-        args['fq2'] = fq2
         args['outdir_fixed'] = outdir_fixed
-
-        ## update args: for index_list
-        args['genome'] = args.get('genome', 'dm3')
-        args['spikein'] = args.get('spikein', None)
-        args['align_to_chrM'] = args.get('align_to_chrM', True)
-        args['align_to_rRNA'] = args.get('align_to_rRNA', True)
-        args['align_to_MT_trRNA'] = args.get('align_to_MT_trRNA', True)
-        args['extra_index'] = args.get('extra_index', None)
-
-        ## update args:
+        args['search_index'] = search_index
         args['current_dir'] = args.get('current_dir', str(pathlib.Path.cwd()))
 
         ## update spikein
         if args['spikein'] == args['genome']:
             args['spikein'] = None
 
-
         ## global: variables for Class
-        self.aligner = aligner
-        self.fq = self.fq1 = fq
-        self.fq2 = fq2
-        self.index = index
-        self.outdir = outdir
+        self.aligner = args['aligner']
+        self.fq1 = args['fq1']
+        self.fq2 = args['fq2']
+        self.index = args.get('index', None)
+        self.outdir = args['outdir']
         self.outdir_fixed = outdir_fixed
-        self.fx_type = self.format = Fastx(fq).format # fasta, fastq
-        self.kwargs = args
+        self.fx_type = self.format = Fastx(args['fq1']).format # fasta, fastq # pigz ?!
+        self.args = args
 
         self.index_list = self.get_index_list()
         if not search_index:
@@ -198,24 +225,22 @@ class AlignConfig(object):
         return files:
         prefix, bam, bed, log, unmap
         """
+        args = self.args.copy()
+
         ## check args
         # assert aligner_supported(aligner) # !!! to-do
         assert isinstance(self.aligner, str)
-        assert isinstance(self.fq, str)
-        assert os.path.exists(self.fq)
-        assert isinstance(self.index, str)
-        assert AlignIndex(self.aligner, self.index).is_index()
         assert isinstance(self.outdir, str) # the top-level output directory
         assert isinstance(self.outdir_fixed, bool)
-
-        args = self.kwargs.copy()
-
-        fqname = file_prefix(self.fq)[0]
+        assert os.path.exists(self.fq1)
+        assert isinstance(self.index, str)
+        assert AlignIndex(self.aligner, self.index).is_index()
+        
+        fqname = file_prefix(self.fq1)[0]
         if not self.fq2 is None:
             fqname = re.sub('[._][rR]?1$', '', fqname)
-
         ## remove 'unmap' suffix
-        fqname = re.sub('.unmap$', '', fqname) #!!!
+        fqname = re.sub('.unmap$', '', fqname) # deprecated
 
         if args['simplify_name']:
             fqname = re.sub('.not_\w+|.map_\w+', '', fqname)
@@ -269,7 +294,7 @@ class AlignConfig(object):
         """
         Check arguments, target file exists
         """
-        args = self.kwargs.copy()
+        args = self.args.copy()
 
         ## check args:
         args_pickle = self.out_prefix + '.arguments.pickle' # out_prefix
@@ -302,7 +327,7 @@ class AlignConfig(object):
         3. extra_index (str|None)
         Return the list of index
         """
-        args = self.kwargs.copy()
+        args = self.args.copy()
 
         ## extra
         ##   : list of index, str
@@ -357,54 +382,34 @@ class AlignConfig(object):
 ## level-2: N fastx -> N index
 class AlignNFastx(object):
 
-    def __init__(self, aligner, fq, outdir, fq2=None, index_list=None, **kwargs):
+    def __init__(self, **kwargs):
         """
         Top level for Alignment
         for N fastq and N index
         """
-        ## check fastq files
-        ## fq1
-        if isinstance(fq, str):
-            fq = [fq]
-        assert isinstance(fq, list)
-
-        ## fq2
-        if isinstance(fq2, str):
-            fq2 = [fq2]
-        if fq2 is None:
-            fq2 = [None] * len(fq) # same list, None
-        assert isinstance(fq2, list)
+        args = args_init(kwargs, align=True)
+        args['fq1'] = pickFq(args['fq1'], is_str=False)
+        args['fq2'] = pickFq(args['fq2'], is_str=False)
+        assert isinstance(args['fq1'], list)
+        if args['fq2'] is None:
+            args['fq2'] = [None] * len(args['fq1'])
 
         ## pair: fq1 == fq2
-        if not len(fq) == len(fq2):
+        if not len(args['fq1']) == len(args['fq2']):
             raise Exception('{:>10} : fq1 and fq2 not paired for PE reads'.format('error'))
 
-        ## init
-        args = args_init(kwargs, align=True)
-
-        ## update args: aligner, outdir, index_list
-        args['aligner'] = aligner
-        args['outdir'] = outdir
-        args['index_list'] = index_list
-
-        # fq, fq2, is list
-        args.pop('fq', None)
-        args.pop('fq2', None)
-        args.pop('index', None)
-
-        self.fq = fq
-        self.fq2 = fq2
-        self.kwargs = args
+        ## index
+        args['index_list'] = args.get('index_list', None)
+        self.args = args
 
 
     def run(self):
-        args = self.kwargs.copy()
+        args = self.args.copy()
 
         bam_list = []
-        for fq1, fq2 in zip(self.fq, self.fq2):
-            ## update args: fq1, fq2
-            args['fq'] = args['fq1'] = fq1
-            args['fq2'] = fq2
+        for fq1, fq2 in zip(args['fq1'], args['fq2']):
+            args['fq1'] = fq1 # update
+            args['fq2'] = fq2 # update
             fq_bams = AlignNIndex(**args).run()
             bam_list.append(fq_bams)
 
@@ -414,45 +419,42 @@ class AlignNFastx(object):
 ## level-3: 1 fastx -> N index
 class AlignNIndex(object):
     """
-    Align fq/fa to multiple reference
-      - in_parallel
-      - sequential
+    Align 1 fq to N index
+
+    required:
+    aligner=
+    fq1=
+    outdir=
+    index_list=
+
+    optional:
+    fq2=
     """
-
-    def __init__(self, aligner, fq, outdir, fq2=None, index_list=None, **kwargs):
+    def __init__(self, **kwargs):
         """
-        one fq, align to N index.
+        required arguments:
+        fq1, outdir, fq2, index_list
         """
-        assert isinstance(fq, str)
-        if not fq2 is None:
-            assert isinstance(fq2, str)
-
-        ## init
         args = args_init(kwargs, align=True)
+        args['fq1'] = pickFq(args['fq1'], is_str=True)
+        args['fq2'] = pickFq(args['fq2'], is_str=True)
+        assert isinstance(args['fq1'], str)
 
-        ## update args: aligner, fq, outdir, fq2
-        args['aligner'] = aligner
-        args['fq'] = args['fq1'] = fq
-        args['outdir'] = outdir
-        args['fq2'] = fq2
+        index_list = args.get('index_list', None) # input
 
         ## get index list
-        ## if empty, search for it
         if index_list is None or len(index_list) == 0:
             args['index'] = '' # require searching for index
             args['search_index'] = True # switch on, for index searching
             index_list = AlignConfig(**args).index_list # exception 
             args['search_index'] = False # switch off !!! important
-            # index_list = AlignIndexBuilder(**args).index_list
 
         if len(index_list) == 0:
             raise Exception('{:>10} : index not detected'.format('error'))
 
-        self.outdir = outdir
-        self.index_list = index_list
+        args['index_list'] = index_list
         self.index_parallel = args.get('index_parallel', False) # for multiple index
-
-        self.kwargs = args
+        self.args = args
 
 
     def wrap_log(self, path=None):
@@ -503,15 +505,12 @@ class AlignNIndex(object):
         """
         Run Alignment() one by one
         """
-        args = self.kwargs.copy()
+        args = self.args.copy()
 
-        # align_stat_list = []
         bam_list = []
-        for i, index in enumerate(self.index_list):
-            args['index'] = index ## update args: index
-
-            ## update args: index_name
-            args['index_name'] = str(i + 1) + '.' + AlignIndex(args['aligner'], index).name
+        for i, index in enumerate(args['index_list']):
+            args['index'] = index # update args: index
+            args['index_name'] = str(i + 1) + '.' + AlignIndex(args['aligner'], index).name # update name
 
             ## single align port:
             align = AlignOneIndex(**args)
@@ -538,36 +537,31 @@ class AlignNIndex(object):
 ## level-4: 1 fastx -> 1 index
 class AlignOneIndex(object):
     """
-    Align fa/fq to reference, 1 to 1
+    Align 1 fq to 1 index
     """
+    def __init__(self, **kwargs):
+        args = args_init(kwargs, align=True) # init
+        args['fq1'] = pickFq(args['fq1'], is_str=True)
+        args['fq2'] = pickFq(args['fq2'], is_str=True)
+        assert isinstance(args['fq1'], str)
 
-    def __init__(self, aligner, fq, index, outdir, fq2=None, **kwargs):
+        index = args.get('index', None)
+        if isinstance(index, list):
+            log.warning('Choose the first index for alignment, {}'.format(index))
+            index = index[0]
         assert isinstance(index, str) # required
 
-        ## init
-        args = args_init(kwargs, align=True)
-
-        ## update args: aligner, fq, index, outdir, fq2
-        args['aligner'] =aligner
-        args['fq'] = args['fq1'] = fq
-        args['index'] = index
-        args['outdir'] = outdir
-        args['fq2'] = fq2
-
-        self.kwargs = args
-        self.args = args
-
         ## pick aligner
-        aligner_pick = self.get_aligner() # which aligner
-        self.aligner_port = aligner_pick(**args)
-        self.config = self.aligner_port.config # config
+        self.args = args
+        self.aligner_pick = self.get_aligner() # which aligner class()
+        self.config = self.aligner_pick(**args).config # config
 
 
     def get_aligner(self):
         """
-        Determine the class object for aligner
+        Choose Aligner() class
         """
-        args = self.kwargs.copy()
+        args = self.args.copy()
         aligner = args['aligner'].lower()
 
         if aligner == 'bowtie':
@@ -587,7 +581,7 @@ class AlignOneIndex(object):
 
 
     def run(self):
-        return self.aligner_port.run()
+        return self.aligner_pick(**self.args).run()
 
 ##------ Align core: END ------##
 
@@ -597,77 +591,75 @@ class AlignOneIndex(object):
 ## return bam
 ## object().config
 ## add aligners, modify AlignOneIndex().get_aligner()
-class Bowtie(object):
+##
+## save all configs to self.object (dict)
 
-    def __init__(self, fq, index, outdir, fq2=None, **kwargs):
+class Bowtie(object):
+    def __init__(self, **kwargs):
         """
-        Align reads to reference
-        return: 
-        - sam
-        - align count
-        - unique
-        - multi
-        - unmap
-        - reference
-        - ...
+        required arguments:
+        fq1, single fastq file, or read1 of PE
+        index, path to the index file
+        outdir, path to the output directory
+        fq2, optional, read2 of PE
+        ...        
         """
-        assert os.path.exists(fq)
         args = args_init(kwargs, align=True) # init
+        args['fq1'] = pickFq(args['fq1'], is_str=True)
+        args['fq2'] = pickFq(args['fq2'], is_str=True)
+        assert isinstance(args['index'], str)
+        assert isinstance(args['fq1'], str)
 
         ## update args: aligner, fq, index, outdir, fq2, outdir_fixed
-        args['aligner'] = 'bowtie'
-        args['fq'] = args['fq1'] = fq
-        args['index'] = index
-        args['outdir'] = outdir # Top-level dir; AlignConfig -> target dir
-        args['fq2'] = fq2
-        outdir_fixed = False
+        args['aligner'] = 'bowtie' # fix
+        outdir_fixed = False # whether save to: outdir/fqname 
 
         ## saving common configs for alignment
-        ## in Class, ignore outdir
+        self.args = args
         self.config = AlignConfig(**args)
-        self.kwargs = self.args = args
         self.aligner_exe = shutil.which('bowtie')
 
 
     def get_cmd(self):
         """
-        Create basic alignment command line
+        Generate the command line for bowtie:
         1. bowtie [options] -U <fq> 
         2. bowtie [options] -1 fq1 -2 fq2
         """
-        args = self.kwargs.copy()
-
-        n_map = args.get('n_map', 0)
+        args = self.args.copy()
 
         ## multi map
-        if n_map < 1:
-            n_map = 1
+        if args['n_map'] < 1:
+            args['n_map'] = 1 # bowtie default: -k 1
 
         ## unique
         if args['unique_only']:
-            arg_unique = '-m 1'
+            cmd_unique = '-m 1' # unique
         else:
-            arg_unique = '-v 2 -k {}'.format(n_map)
+            cmd_unique = '-v 2 -k {}'.format(args['n_map']) # multi
 
-        arg_fx = '-f' if self.config.format == 'fasta' else '-q'
+        ## fastq type
+        cmd_fx = '-f' if self.config.format == 'fasta' else '-q'
 
         ## cmd
         cmd = '{} {} {} {} -p {} --mm --best --sam --no-unal --un {}'.format(
             self.aligner_exe,
             args['index'],
-            arg_fx,
-            arg_unique,
-            args.get('threads', 4),
+            cmd_fx,
+            cmd_unique,
+            args['threads'],
             self.config.unmap)
 
         ## extra align para
         if not args['extra_para'] is None:
             cmd += ' ' + args['extra_para']
 
+        # print('!aaaa', args)
+
         ## se or pe
         if args['fq2'] is None: 
             cmd += ' {} 1>{} 2>{}'.format(
-                args['fq'],
+                args['fq1'],
                 self.config.sam,
                 self.config.log)
         else:
@@ -685,7 +677,6 @@ class Bowtie(object):
         Wrapper bowtie log
 
         Bowtie:
-
         # reads processed: 10000
         # reads with at least one reported alignment: 3332 (33.32%)
         # reads that failed to align: 457 (4.57%)
@@ -698,13 +689,17 @@ class Bowtie(object):
         # reads that failed to align: 457 (4.57%)
 
         unique, multiple, unmap, map, total
+
+        skip: Warning, ...
         """
-        args = self.kwargs.copy()
+        args = self.args.copy()
 
         dd = {}
         with open(self.config.log) as fh:
             for line in fh:
-                if not ':' in line or line.startswith('Warning'):
+                # if not ':' in line or line.startswith('Warning'):
+                #     continue
+                if not line.startswith('#'):
                     continue
                 num = line.strip().split(':')[1]
                 value = num.strip().split(' ')[0]
@@ -734,14 +729,11 @@ class Bowtie(object):
         dd['index_name'] = self.config.index_name
 
         # # sort by keys
-        # dd = dict(sorted(dd.items(), key=lambda kv: kv[1], reverse=True))
         self.log_dict = dd
 
         # save dict to plaintext file
         self.align_stat = self.config.out_prefix + '.align.stat'
         with open(self.align_stat, 'wt') as w:
-            # for k, v in sorted(dd.items()):
-            #     w.write('\t'.join([self.config.fqname, self.config.index_name, k, str(v)]) + '\n')
             w.write('#') # header line
             w.write('\t'.join(list(map(str, dd.keys()))) + '\n')
             w.write('\t'.join(list(map(str, dd.values()))) + '\n')
@@ -751,12 +743,10 @@ class Bowtie(object):
 
     def get_json(self):
         """
-        get alignment records as Json
+        save alignment stat to Json file
         """
         log_json = self.config.out_prefix + '.align.json'
-
         self.align_stat = self.wrap_log() # update: self.log_dict
-
         ## save to json file
         Json(self.log_dict).writer(log_json)
 
@@ -767,25 +757,26 @@ class Bowtie(object):
         """
         Run bowtie command line
         """
-        args = self.kwargs.copy()
+        args = self.args.copy()
         cmd = self.get_cmd() # output
 
         ## para, bam, overwrite
         if self.config.check_status:
             log.info('{:>20} : file exists, alignment skipped'.format(self.config.fqname))
         else:
-            run_shell_cmd(cmd)
-            sam2bam(self.config.sam, self.config.bam, sort=True) # convert to bam
-
-        # save to file
-        self.get_json() # log_json
+            try:
+                run_shell_cmd(cmd)
+                sam2bam(self.config.sam, self.config.bam, sort=True) # convert to bam
+                self.get_json() # log_json
+            except:
+                log.error('Bowtie().run() failed, outdir: {}'.format(args['outdir']))
 
         return self.config.bam
         
 
 class Bowtie2(object):
 
-    def __init__(self, fq, index, outdir, fq2=None, **kwargs):
+    def __init__(self, **kwargs):
         """
         Align reads to reference
         return: 
@@ -797,21 +788,19 @@ class Bowtie2(object):
         - reference
         - ...
         """
-        assert os.path.exists(fq)
         args = args_init(kwargs, align=True) # init
+        args['fq1'] = pickFq(args['fq1'], is_str=True) # only 1 fq
+        args['fq2'] = pickFq(args['fq2'], is_str=True) # only 1 fq
+        assert isinstance(args['index'], str)
+        assert isinstance(args['fq1'], str)
 
         ## update args: aligner, fq, index, outdir, fq2, outdir_fixed
-        args['aligner'] = 'bowtie2'
-        args['fq'] = args['fq1'] = fq
-        args['index'] = index
-        args['outdir'] = outdir # Top-level dir; AlignConfig -> target dir
-        args['fq2'] = fq2
-        outdir_fixed = False
+        args['aligner'] = 'bowtie2' # fix
+        outdir_fixed = False # whether save to: outdir/fqname 
 
         ## saving common configs for alignment
-        ## in Class, ignore outdir
+        self.args = args
         self.config = AlignConfig(**args)
-        self.kwargs = self.args = args
         self.aligner_exe = shutil.which('bowtie2')
 
 
@@ -821,36 +810,28 @@ class Bowtie2(object):
         1. bowtie [options] -U <fq> 
         2. bowtie [options] -1 fq1 -2 fq2
         """
-        args = self.kwargs.copy()
-
-        ## unique
-        if args['unique_only']:
-            arg_unique = '-q 30' # samtools filtering
-        else:
-            arg_unique = ''
-
-        self.arg_unique = arg_unique # pass to other func
+        args = self.args.copy()
 
         ## multi map
         n_map = args.get('n_map', 1)
         if n_map < 1:
-            # n_map = 1 # default 1, report 1 hit for each read
-            arg_multi = '' # default: 1
+            cmd_multi = '' # default: best hit
         else:
-            arg_multi = '-k {}'.format(n_map)
+            cmd_multi = '-k {}'.format(n_map)
 
         ## fx type
-        arg_fx = '-f' if self.config.format == 'fasta' else '-q'
+        cmd_fx = '-f' if self.config.format == 'fasta' else '-q'
 
         ## cmd
         cmd = '{} -x {} {} -p {} {} --sensitive-local --mm --no-unal'.format(
             self.aligner_exe,
             args['index'],
-            arg_fx,
-            args.get('threads', 4),
-            arg_multi)
+            cmd_fx,
+            args['threads'],
+            cmd_multi)
 
         ## extra align para
+        ## eg: -X 2000,
         if not args['extra_para'] is None:
             cmd += ' ' + args['extra_para']
 
@@ -858,7 +839,7 @@ class Bowtie2(object):
         if args['fq2'] is None: 
             cmd += ' --un {} {} 1>{} 2>{}'.format(
                 self.config.unmap,
-                args['fq'],
+                args['fq1'],
                 self.config.sam,
                 self.config.log)
         else:
@@ -906,7 +887,7 @@ class Bowtie2(object):
 
         unique, multiple, unmap, map, total
         """
-        args = self.kwargs.copy()
+        args = self.args.copy()
 
         dd = {}
         se_tag = 1 #
@@ -984,63 +965,69 @@ class Bowtie2(object):
         return log_json
 
 
+    def get_unique(self, bam):
+        """
+        Get the unique mapped reads, using samtools -q 30
+        Move bam to bam.tmp
+        """
+        bam_old = os.path.splitext(bam)[0] + '.raw.bam'
+        if os.path.exists(bam):
+            shutil.move(bam, bam_old)
+        # unique: -q 30
+        sam2bam(bam_old, bam, sort=True, extra_para='-q 30')
+        return(bam)
+
+
     def run(self):
         """
         Run bowtie command line
         """
-        args = self.kwargs.copy()
+        args = self.args.copy()
         cmd = self.get_cmd() # output
 
         ## para, bam, overwrite
         if self.config.check_status:
-            log.info('{:>20} : file exists, alignment skipped'.format(self.config.fqname))
+            log.info('{:>20} : file exists, alignment skipped'.format(
+                self.config.fqname))
         else:
-            run_shell_cmd(cmd)
-            sam2bam(self.config.sam, self.config.bam, sort=True, extra_para=self.arg_unique) # convert to bam
-            # update unmap files, samtools filtering
-            # !!!! to-do
-        # save to file
-        self.get_json() # log_json
+            try:
+                run_shell_cmd(cmd)
+                if args['unique_only']:
+                    self.get_unique(self.config.bam)
+                else:
+                    sam2bam(self.config.sam, self.config.bam, sort=True, 
+                        extra_para='-F 4')
+                self.get_json() # save to json
+            except:
+                log.error('Bowtie2().run() failed, outdir: {}'.format(
+                    args['outdir']))
 
         return self.config.bam
-        
+
 
 class Star(object):
-
-    def __init__(self, fq, index, outdir, fq2=None, **kwargs):
+    def __init__(self, **kwargs):
         """
-        Align reads to reference
-        return: 
-        - sam
-        - align count
-        - unique
-        - multi
-        - unmap
-        - reference
-        - ...
-
-        use '--outFilterMultimapNmax' to control uniquely mapped reads
-
-        # update 2019-03-21
-        since 99% of the reads do not map to Blumeria, STAR takes a lot of time trying to squeeze the reads into the wrong genome. The best solution is to make a combined genome of Barley and Blumeria, which will alloy mapping simultaneously to the two genomes, with the best alignments winning.
-        Another option (if you insist on mapping to Blumeria alone) is to reduce --seedPerWindowNmax to 20 or even smaller values. More discussion on it here: https://groups.google.com/d/msg/rna-star/hJL_DUtliCY/HtpiePlMBtYJ .
-        see: https://github.com/alexdobin/STAR/issues/329#issuecomment-334879474
+        required arguments:
+        fq1, single fastq file, or read1 of PE
+        index, path to the index file
+        outdir, path to the output directory
+        fq2, optional, read2 of PE
+        ...        
         """
-        assert os.path.exists(fq)
         args = args_init(kwargs, align=True) # init
+        args['fq1'] = pickFq(args['fq1'], is_str=True)
+        args['fq2'] = pickFq(args['fq2'], is_str=True)
+        assert isinstance(args['index'], str)
+        assert isinstance(args['fq1'], str)
 
         ## update args: aligner, fq, index, outdir, fq2, outdir_fixed
-        args['aligner'] = 'STAR'
-        args['fq'] = args['fq1'] = fq
-        args['index'] = index
-        args['outdir'] = outdir # Top-level dir; AlignConfig -> target dir
-        args['fq2'] = fq2
-        outdir_fixed = False
+        args['aligner'] = 'STAR' # fix
+        outdir_fixed = False # whether save to: outdir/fqname 
 
         ## saving common configs for alignment
-        ## in Class, ignore outdir
+        self.args = args
         self.config = AlignConfig(**args)
-        self.kwargs = self.args = args
         self.aligner_exe = shutil.which('STAR')
 
 
@@ -1049,7 +1036,7 @@ class Star(object):
         Create basic alignment command line
         1. STAR
         """
-        args = self.kwargs.copy()
+        args = self.args.copy()
 
         ## for small genome
         ## mapping takes too long,
@@ -1073,16 +1060,16 @@ class Star(object):
             n_map = 10 # default
         if args['unique_only']:
             n_map = 1 # unique # not working
-        arg_unique = '--outFilterMultimapNmax {} --seedPerWindowNmax {}'.format(n_map, seed_max)
+        cmd_unique = '--outFilterMultimapNmax {} --seedPerWindowNmax {}'.format(
+            n_map, seed_max)
         
         ## file type
-        arg_reader = 'zcat' if args['fq'].endswith('.gz') else '-'
+        cmd_reader = 'zcat' if args['fq1'].endswith('.gz') else '-'
 
         ## convert None to empty string ''
         if args['fq2'] is None:
             args['fq2'] = ''
 
-        # cmd
         ## output prefix
         out_prefix = self.config.out_prefix
         cmd = '{} --runMode alignReads \
@@ -1102,12 +1089,11 @@ class Star(object):
                 args['index'],
                 args['fq1'],
                 args['fq2'],
-                arg_reader,
+                cmd_reader,
                 self.config.out_prefix,
-                args.get('threads', 4),
+                args['threads'],
                 self.config.unmap,
-                arg_unique)
-
+                cmd_unique)
 
         ## extra align para
         if not args['extra_para'] is None:
@@ -1125,7 +1111,7 @@ class Star(object):
         unmap: *Unmapped.out.mate1 -> *.unmap.1.fastq
                *Unmapped.out.mate1 -> *.unmap.1.fastq
         """
-        args = self.kwargs.copy()
+        args = self.args.copy()
 
         ## default output of STAR
         bam_from = self.config.out_prefix + 'Aligned.sortedByCoord.out.bam'
@@ -1133,14 +1119,16 @@ class Star(object):
         unmap = unmap1 = self.config.out_prefix + 'Unmapped.out.mate1'
         unmap2 = self.config.out_prefix + 'Unmapped.out.mate2'
 
-        if not keep_old:
+        if keep_old:
+            return bam_from
+        else:
             ## rename files
             ## move BAM, unmap
             ## copy log
             flag = 0
             if os.path.exists(bam_from) and not os.path.exists(self.config.bam):
-                # shutil.copy(bam_from, self.config.bam) # original, contains unique + multiple
-                os.symlink(os.path.basename(bam_from), self.config.bam) # symlink
+                # os.symlink(os.path.basename(bam_from), self.config.bam) # symlink
+                shutil.move(bam_from, self.config.bam)
                 flag += 1
             if os.path.exists(log_from):
                 shutil.copy(log_from, self.config.log)
@@ -1159,8 +1147,6 @@ class Star(object):
                     shutil.move(unmap2, self.config.unmap2)
 
             return self.config.bam
-        else:
-            return bam_from
 
 
     def wrap_log(self):
@@ -1207,7 +1193,7 @@ class Star(object):
 
         unique, multiple, unmap, map, total
         """
-        args = self.kwargs.copy()
+        args = self.args.copy()
 
         dd = {}
         with open(self.config.log, 'rt') as ff:
@@ -1256,45 +1242,54 @@ class Star(object):
         get alignment records as Json
         """
         log_json = self.config.out_prefix + '.json'
-
         self.wrap_log() # self.log_dict
-
         ## save to json file
         Json(self.log_dict).writer(log_json)
-
         return log_json
+
+
+    def get_unique(self, bam):
+        """
+        Get the unique mapped reads, using samtools -q 30
+        Move bam to bam.tmp
+        """
+        bam_old = os.path.splitext(bam)[0] + '.raw.bam'
+        if os.path.exists(bam):
+            shutil.move(bam, bam_old)
+        # unique: -q 30
+        sam2bam(bam_old, bam, sort=True, extra_para='-q 30')
+        return(bam)
 
 
     def run(self):
         """
         Run STAR command line
         """
-        args = self.kwargs.copy()
+        args = self.args.copy()
         cmd = self.get_cmd() # output
 
         ## para, bam, overwrite
         if self.config.check_status:
-            log.info('{:>20} : file exists, alignment skipped'.format(self.config.fqname))
+            log.info('{:>20} : file exists, alignment skipped'.format(
+                self.config.fqname))
         else:
-            run_shell_cmd(cmd)
-            ## unique
-            ## -q 30
-            bam_from = self.update_names(False)
-            if args['unique_only']:
-                sam2bam(bam_from, self.config.bam, sort=True, extra_para='-q 30')
-                os.remove(bam_from)
-            self.update_names(True)
-        
-        # save to file
-        self.get_json() # log_json
+            try:
+                run_shell_cmd(cmd)
+                self.update_names(keep_old=False)
+                if args['unique_only']:
+                    self.get_unique(self.config.bam)
+                self.get_json() # save to json
+            except:
+                log.error('Star().run() failed, outdir: {}'.format(
+                    args['outdir']))
 
-        return self.config.bam
+        return self.config.bam      
 
 
 ## !!! to-do: wrap_log()
 class Hisat2(object):
 
-    def __init__(self, fq, index, outdir, fq2=None, **kwargs):
+    def __init__(self, **kwargs):
         """
         Align reads to reference
         return: 
@@ -1307,21 +1302,19 @@ class Hisat2(object):
         - ...
 
         """
-        assert os.path.exists(fq)
         args = args_init(kwargs, align=True) # init
+        args['fq1'] = pickFq(args['fq1'], is_str=True) # only 1 fq
+        args['fq2'] = pickFq(args['fq2'], is_str=True) # only 1 fq
+        assert isinstance(args['index'], str)
+        assert isinstance(args['fq1'], str)
 
         ## update args: aligner, fq, index, outdir, fq2, outdir_fixed
-        args['aligner'] = 'hisat2'
-        args['fq'] = args['fq1'] = fq
-        args['index'] = index
-        args['outdir'] = outdir # Top-level dir; AlignConfig -> target dir
-        args['fq2'] = fq2
-        outdir_fixed = False
+        args['aligner'] = 'hisat2' # fix
+        outdir_fixed = False # whether save to: outdir/fqname 
 
         ## saving common configs for alignment
-        ## in Class, ignore outdir
+        self.args = args
         self.config = AlignConfig(**args)
-        self.kwargs = self.args = args
         self.aligner_exe = shutil.which('hisat2')
 
 
@@ -1331,40 +1324,40 @@ class Hisat2(object):
         1. hisat2 [options] -U <fq> 
         2. hisat2 [options] -1 fq1 -2 fq2
         """
-        args = self.kwargs.copy()
+        args = self.args.copy()
 
-        ## unique
-        if args['unique_only']:
-            arg_unique = '-q 30' # samtools filtering
-        else:
-            arg_unique = ''
+        # ## unique
+        # if args['unique_only']:
+        #     arg_unique = '-q 30' # samtools filtering
+        # else:
+        #     arg_unique = ''
 
-        self.arg_unique = arg_unique # pass to other func
+        # self.arg_unique = arg_unique # pass to other func
 
         ## multi map
         n_map = args.get('n_map', 1)
         if n_map < 1:
             # n_map = 1 # default 1, report 1 hit for each read
-            arg_multi = '' # default: 1
+            cmd_multi = '' # default: 1
         else:
-            arg_multi = '-k {}'.format(n_map)
+            cmd_multi = '-k {}'.format(n_map)
 
         ## fx type
-        arg_fx = '-f' if self.config.format == 'fasta' else '-q'
+        cmd_fx = '-f' if self.config.format == 'fasta' else '-q'
 
         ## cmd
         cmd = '{} -x {} {} {} -p {} --no-discordant --mm --new-summary'.format(
             self.aligner_exe,
             args['index'],
-            arg_fx,
-            arg_unique,
-            args.get('threads', 4))
+            cmd_fx,
+            cmd_multi,
+            args['threads'])
 
         ## se or pe
         if args['fq2'] is None: 
             cmd += ' --un {} {} 1>{} 2>{}'.format(
                 self.config.unmap,
-                args['fq'],
+                args['fq1'],
                 self.config.sam,
                 self.config.log)
         else:
@@ -1395,31 +1388,49 @@ class Hisat2(object):
         get alignment records as Json
         """
         log_json = self.config.out_prefix + '.json'
-
         self.wrap_log() # self.log_dict
-
         ## save to json file
         Json(self.log_dict).writer(log_json)
 
         return log_json
 
 
+    def get_unique(self, bam):
+        """
+        Get the unique mapped reads, using samtools -q 30
+        Move bam to bam.tmp
+        """
+        bam_old = os.path.splitext(bam)[0] + '.raw.bam'
+        if os.path.exists(bam):
+            shutil.move(bam, bam_old)
+        # unique: -q 30
+        sam2bam(bam_old, bam, sort=True, extra_para='-q 30')
+        return(bam)
+
+
     def run(self):
         """
         Run hisat2 command line
         """
-        args = self.kwargs.copy()
+        args = self.args.copy()
         cmd = self.get_cmd() # output
 
         ## para, bam, overwrite
         if self.config.check_status:
-            log.info('{:>20} : file exists, alignment skipped'.format(self.config.fqname))
+            log.info('{:>20} : file exists, alignment skipped'.format(
+                self.config.fqname))
         else:
-            run_shell_cmd(cmd)
-            sam2bam(self.config.sam, self.config.bam, sort=True, extra_para=self.arg_unique) # convert to bam
-
-        # save to file
-        self.get_json() # log_json
+            try:
+                run_shell_cmd(cmd)
+                if args['unique_only']:
+                    self.get_unique(self.config.bam)
+                else:
+                    sam2bam(self.config.sam, self.config.bam, sort=True, 
+                        extra_para='-F 4')
+                self.get_json() # save to json
+            except:
+                log.error('Hisat2().run() failed, outdir: {}'.format(
+                    args['outdir']))
 
         return self.config.bam
 
