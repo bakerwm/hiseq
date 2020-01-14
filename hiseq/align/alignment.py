@@ -763,12 +763,12 @@ class Bowtie(object):
         if self.config.check_status:
             log.info('{:>20} : file exists, alignment skipped'.format(self.config.fqname))
         else:
-            try:
-                run_shell_cmd(cmd)
-                sam2bam(self.config.sam, self.config.bam, sort=True) # convert to bam
-                self.get_json() # log_json
-            except:
-                log.error('Bowtie().run() failed, outdir: {}'.format(args['outdir']))
+            # try:
+            run_shell_cmd(cmd)
+            sam2bam(self.config.sam, self.config.bam, sort=True) # convert to bam
+            self.get_json() # log_json
+            # except:
+            #     log.error('Bowtie().run() failed, outdir: {}'.format(args['outdir']))
 
         return self.config.bam
         
@@ -989,17 +989,17 @@ class Bowtie2(object):
             log.info('{:>20} : file exists, alignment skipped'.format(
                 self.config.fqname))
         else:
-            try:
-                run_shell_cmd(cmd)
-                if args['unique_only']:
-                    self.get_unique(self.config.bam)
-                else:
-                    sam2bam(self.config.sam, self.config.bam, sort=True, 
-                        extra_para='-F 4')
-                self.get_json() # save to json
-            except:
-                log.error('Bowtie2().run() failed, outdir: {}'.format(
-                    args['outdir']))
+            # try:
+            run_shell_cmd(cmd)
+            if args['unique_only']:
+                self.get_unique(self.config.bam)
+            else:
+                sam2bam(self.config.sam, self.config.bam, sort=True, 
+                    extra_para='-F 4')
+            self.get_json() # save to json
+            # except:
+            #     log.error('Bowtie2().run() failed, outdir: {}'.format(
+            #         args['outdir']))
 
         return self.config.bam
 
@@ -1272,15 +1272,15 @@ class Star(object):
             log.info('{:>20} : file exists, alignment skipped'.format(
                 self.config.fqname))
         else:
-            try:
-                run_shell_cmd(cmd)
-                self.update_names(keep_old=False)
-                if args['unique_only']:
-                    self.get_unique(self.config.bam)
-                self.get_json() # save to json
-            except:
-                log.error('Star().run() failed, outdir: {}'.format(
-                    args['outdir']))
+            # try:
+            run_shell_cmd(cmd)
+            self.update_names(keep_old=False)
+            if args['unique_only']:
+                self.get_unique(self.config.bam)
+            self.get_json() # save to json
+            # except:
+            #     log.error('Star().run() failed, outdir: {}'.format(
+            #         args['outdir']))
 
         return self.config.bam      
 
@@ -1419,17 +1419,17 @@ class Hisat2(object):
             log.info('{:>20} : file exists, alignment skipped'.format(
                 self.config.fqname))
         else:
-            try:
-                run_shell_cmd(cmd)
-                if args['unique_only']:
-                    self.get_unique(self.config.bam)
-                else:
-                    sam2bam(self.config.sam, self.config.bam, sort=True, 
-                        extra_para='-F 4')
-                self.get_json() # save to json
-            except:
-                log.error('Hisat2().run() failed, outdir: {}'.format(
-                    args['outdir']))
+            # try:
+            run_shell_cmd(cmd)
+            if args['unique_only']:
+                self.get_unique(self.config.bam)
+            else:
+                sam2bam(self.config.sam, self.config.bam, sort=True, 
+                    extra_para='-F 4')
+            self.get_json() # save to json
+            # except:
+            #     log.error('Hisat2().run() failed, outdir: {}'.format(
+            #         args['outdir']))
 
         return self.config.bam
 
