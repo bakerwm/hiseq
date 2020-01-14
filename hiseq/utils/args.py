@@ -323,7 +323,7 @@ class ArgumentsInit(object):
         args = self.args_input.copy()
 
         # required
-        self.outdir = args.get('outdir', self.outdir = str(pathlib.Path.cwd()))
+        self.outdir = args.get('outdir', str(pathlib.Path.cwd()))
 
         # optional
         self.strandness = args.get('strandness', 0)
