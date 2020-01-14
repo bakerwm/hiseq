@@ -194,7 +194,6 @@ class AlignConfig(object):
         self.outdir_fixed = outdir_fixed
         self.fx_type = self.format = Fastx(args['fq1']).format # fasta, fastq # pigz ?!
         self.args = args
-
         self.index_list = self.get_index_list()
         if not search_index:
             ## main configuration:
@@ -210,6 +209,7 @@ class AlignConfig(object):
             args['unmap1'] = self.unmap1
             args['unmap2'] = self.unmap2
             args['sub_outdir'] = self.sub_outdir
+            args['index_list'] = self.index_list
 
             ## check step: fq, bam, overwrite
             self.check_status = self.check()
@@ -332,7 +332,7 @@ class AlignConfig(object):
         ## extra
         ##   : list of index, str
         if not args['extra_index'] is None:
-            if isinstance(self.extra_index, str):
+            if isinstance(args['extra_index'], str):
                 args['extra_index'] = [args['extra_index']]
             elif isinstance(args['extra_index'], list):
                 pass
@@ -439,7 +439,6 @@ class AlignNIndex(object):
         args['fq1'] = pickFq(args['fq1'], is_str=True)
         args['fq2'] = pickFq(args['fq2'], is_str=True)
         assert isinstance(args['fq1'], str)
-
         index_list = args.get('index_list', None) # input
 
         ## get index list
