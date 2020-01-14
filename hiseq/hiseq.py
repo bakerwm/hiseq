@@ -172,6 +172,35 @@ class Hiseq(object):
         Atac(**args).run()
 
 
+    def rnaseq(self):
+        """
+        RNA-seq pipeline
+        """
+        parser = add_rnaseq_args()
+        args = parser.parse_args(sys.argv[2:])
+        # help
+        if len(sys.argv) < 3:
+            parser.parse_args(['-h'])
+        # main
+        args = vars(args) # convert to dict
+        # check config or --fq1,--fq2,--genome,--outdir
+        config = args.get('config', None)
+        design = args.get('design', None)
+        fq1 = args.get('fq1', None)
+        fq2 = args.get('fq2', None)
+        genome = args.get('genome', None)
+        outdir = args.get('outdir', None)
+        chk1 = config is None
+        chk2 = design is None
+        chk3 = [i is None for i in [fq1, fq2, genome, outdir]]
+
+        # if config is None and not all(chk2):
+        if all([chk1, chk2, chk3]):
+            sys.exit('required: --config, or --design, or --fq1, --fq2, --genome, --outdir')
+
+        RNAseq(**args).run()        
+
+
 def main():
     Hiseq()
 

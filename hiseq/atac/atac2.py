@@ -561,7 +561,6 @@ class AtacSingle(object):
         args['outdir'] = self.config.cleandir
         
         if trimmed is True:
-            print('!xxxx')
             # create symlink from rawdir
             # if raw is not gzipped, do it
             if is_gz(fq1) and is_gz(fq2):
@@ -571,10 +570,7 @@ class AtacSingle(object):
                 # gzip files
                 gzip_cmd(fq1, clean_fq1, decompress=False, rm=False)
                 gzip_cmd(fq2, clean_fq2, decompress=False, rm=False)
-            # for s, d in zip(self.config.raw_fq_list, self.config.clean_fq_list):
-            #     self.symlink(s, d)
         else:
-            print('!yyyy')
             if check_file(self.config.clean_fq_list):
                 log.info('trim() skipped, file exists: {}'.format(
                     self.config.clean_fq_list))
