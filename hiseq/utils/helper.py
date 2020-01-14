@@ -957,9 +957,14 @@ class AlignIndex(object):
             index = self.index
         if os.path.isdir(index):
             # STAR
-            iname = os.path.basename(index)
-        else:
+            # iname = os.path.basename(index)
+            iname = os.path.basename(os.path.dirname(index))
+        elif os.path.basename(index) == 'genome':
+            # ~/data/genome/dm3/bowtie2_index/genome
             # bowtie, bowtie2, bwa, hisat2
+            # iname = os.path.basename(index)
+            iname = os.path.basename(os.path.dirname(os.path.dirname(index)))
+        else:
             iname = os.path.basename(index)
 
         return iname
