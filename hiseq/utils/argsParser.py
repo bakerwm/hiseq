@@ -136,7 +136,7 @@ def add_align_args():
     parser.add_argument('-k', '--spikein', default=None, 
         choices=[None, 'dm6', 'dm3', 'hg38', 'hg19', 'mm10', 'mm9'],
         help='Spike-in genome : dm6, dm3, hg38, hg19, mm10, mm9, default: None')
-    parser.add_argument('-x', '--ext-index', nargs='+', dest="ext_index",
+    parser.add_argument('-x', '--extra-index', nargs='+', dest="extra_index",
         help='Provide alignment index(es) for alignment, support multiple\
         indexes. if specified, ignore -g, -k')
     parser.add_argument('-n', '--smp_name', required=False,

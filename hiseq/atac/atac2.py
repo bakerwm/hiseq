@@ -1150,6 +1150,8 @@ class Atac(object):
         fq2 = args.get('fq2', None)
         genome = args.get('genome', None)
         outdir = args.get('outdir', None)
+        
+        assert is_path(outdir)
 
         if check_file(config, show_log=False):
             # update config to list
@@ -1273,8 +1275,8 @@ class Atac(object):
         assert in_dict(args, ['fq1', 'fq2', 'genome', 'outdir'])
         assert isinstance(args['fq1'], list)
         assert isinstance(args['fq2'], list)
-        assert isinstance(self.genome, str)
-        assert isinstance(self.outdir, str)
+        assert isinstance(args['genome'], str)
+        assert isinstance(args['outdir'], str)
         if not len(self.args['fq1']) == len(self.args['fq2']):
             raise Exception('fq1 and fq2 are not in same length')
 
@@ -1285,13 +1287,13 @@ class Atac(object):
             fqname = re.sub('_1$', '', fqname)
 
             # sample dir
-            suboutdir = os.path.join(outdir, fqname)
+            suboutdir = os.path.join(args['outdir'], fqname)
             config_json = suboutdir + '.config.json'
             config_pickle = suboutdir + '.config.pickle'
             d = {
                 'fq1': fq1, 
                 'fq2': fq2, 
-                'genome': genome, 
+                'genome': args['genome'], 
                 'outdir': suboutdir}
             d.update(args) # global config
             Json(d).writer(config_json)
