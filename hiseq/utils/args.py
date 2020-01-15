@@ -41,7 +41,6 @@ def file_prefix(fn, with_path=False):
     return [p1, px]
 
 
-
 class Adapter(object):
     """
     The default adapters, TrueSeq, Nextera, smallRNA,
@@ -49,7 +48,7 @@ class Adapter(object):
     Nextera: atacseq, dnaseq,
     smallRNA: smallRNAseq
 
-    ## options for trimming
+    ## options for trim
     nsr: cut 7, -7, -m 20
     chipseq: -m 20 
     iclip: -m 15, rmdup, cut 9, discard-untrimmed, 
@@ -59,47 +58,78 @@ class Adapter(object):
 
     """
 
-    def __init__(self, lib='truseq'):
-        libtype = {
+    def __init__(self, libtype='truseq', **kwargs):
+        self.kwargs = kwargs
+        self.libtype = libtype
+        self.adapters = self.get_adapters() # default, truseq
+        self.trim_args = self.get_args()
+
+
+    def get_adapters(self):
+        """
+        Default, return TruSeq adapters
+        """
+        ## default adapters: 3' adapter, 5' adapter
+        ads = {
             'truseq': ['AGATCGGAAGAGC', 'AGATCGGAAGAGC'],
             'nextera': ['CTGTCTCTTATACACATCT', 'CTGTCTCTTATACACATCT'],
             'smrna': ['TGGAATTCTCGGGTGCCAAGG', '']}
+        ## all TruSeq
+        ads['nsr'] = ads['chipseq'] = ads['iclip'] = ads['eclip'] = ads['clip_nsr'] = ads['smrna_nsr'] = ads['truseq']
 
-        self.lib = lib
-        self.adapters = libtype.get(lib, ['AGATCGGAAGAGC', 'AGATCGGAAGAGC'])
-        self.libtype = libtype
+        ## default
+        if self.libtype is None:
+            libtype = 'truseq'
+        else:
+            libtype = self.libtype.lower()
 
-
-    def adapter(self):
-        return self.adapters
-
-
-    def for_trimmer(self):
-        ## minimum
-        args_mini = {
-            'adapter': self.libtype['truseq'],
-            'len_min': 20,
-            'rmdup': False,
-            'cut_after_trim': '0'
-        }
+        ## check
+        if not libtype.lower() in ads:
+            libtype = 'truseq'
+        
+        return ads[libtype]
 
 
-        ## default parameters
-        args_trimmer = {
-            'rnaseq' : {
-                'adapter': self.libtype['truseq'],
+    def get_args(self):
+         ## default parameters
+        args_default = {
+            # TruSeq
+            'truseq': {
+                'len_min': 20,
+                'rmdup': False,
+            },
+            # Nextera
+            'nextera': {
+                'len_min': 20,
+                'rmdup': False,
+                'cut_after_trim': '0',
+                'adapter_sliding': False,
+            },
+            # smRNA
+            'smrna': {
+                'len_min': 18,
+                'rmdup': True,
+            },
+            # smRNA_NSR
+            'smrna_nsr': {
+                'len_min': 18,
+                'rmdup': True,
+                'cut_after_trim': '7,-7',
+            },
+            # NSR
+            'nsr' : {
                 'len_min': 20,
                 'rmdup': False,
                 'cut_after_trim': '7,-7',
             },
+            # ChIPseq
             'chipseq': {
-                'adapter': self.libtype['truseq'],
                 'len_min': 20,
                 'rmdup': False,
                 'cut_after_trim': '0'
             },
+            # iCLIP
             'iclip': {
-                'adapter': self.libtype['truseq'],
                 'len_min': 15,
                 'rmdup': True,
                 'cut_after_rmdup': '9',
@@ -107,8 +137,8 @@ class Adapter(object):
                 'trim_times': 4,
                 'rm_untrim': True
             },
+            # eCLIP
             'eclip' : {
-                'adapter': self.libtype['truseq'],
                 'len_min': 15,
                 'rmdup': True,
                 'cut_after_trim': '-7',
@@ -117,33 +147,31 @@ class Adapter(object):
                 'trim_times': 4,
                 'rm_untrim': True
             },
-            'clipnsr' : {
-                'adapter': self.libtype['truseq'],
+            # CLIP_NSR
+            'clip_nsr' : {
                 'len_min': 15,
                 'rmdup': True,
                 'cut_after_trim': '7,-7',
                 'adapter_sliding': True,
                 'trim_times': 4,
                 'rm_untrim': True
-            },
-            'atacseq': {
-                'adapter': self.libtype['truseq'],
-                'len_min': 20,
-                'rmdup': False,
-                'cut_after_trim': '0',
-                'adapter_sliding': True,
-            },
-            'smrna': {
-                'adapter': self.libtype['smrna'],
-                'len_min': 18,
-                'rmdup': True,
-                'cut_after_trim': '7,-7',
             }
         }
+ 
+        ## original args
+        kwargs = self.kwargs
 
-        ## library-type
-        return args_trimmer.get(self.lib, args_mini)
+        ## return
+        ## update kwargs, only if libtype in dict
+        if isinstance(self.libtype, str) and self.libtype.lower() in args_default:
+            self.libtype = self.libtype.lower()
+            kwargs.update(args_default[self.libtype])
+            kwargs['adapter_list'] = self.get_adapters()
+            ## update adapters
+            kwargs['adapter3'], kwargs['adapter5'] = kwargs['adapter_list']
+            kwargs['AD3'], kwargs['AD5'] = kwargs['adapter_list']
 
+        return kwargs
 
 
 class ArgumentsInit(object):
@@ -228,6 +256,7 @@ class ArgumentsInit(object):
 
     def args_trim(self):
         args = self.args_input.copy()
+        self.library_type = args.get('library_type', None)
         self.len_min = args.get('len_min', 15)
         self.adapter3 = args.get('adapter3', Adapter().adapters[0]) # TruSeq
         self.adapter5 = args.get('adapter5', None)
