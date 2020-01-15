@@ -970,6 +970,8 @@ class Bowtie2(object):
         Move bam to bam.tmp
         """
         bam_old = os.path.splitext(bam)[0] + '.raw.bam'
+
+        # run_shell_cmd('mv {} {}'.format(bam, bam_old))
         if os.path.exists(bam):
             shutil.move(bam, bam_old)
         # unique: -q 30
@@ -991,11 +993,10 @@ class Bowtie2(object):
         else:
             # try:
             run_shell_cmd(cmd)
+            sam2bam(self.config.sam, self.config.bam, sort=True, 
+                extra_para='-F 4')            
             if args['unique_only']:
                 self.get_unique(self.config.bam)
-            else:
-                sam2bam(self.config.sam, self.config.bam, sort=True, 
-                    extra_para='-F 4')
             self.get_json() # save to json
             # except:
             #     log.error('Bowtie2().run() failed, outdir: {}'.format(
@@ -1421,11 +1422,18 @@ class Hisat2(object):
         else:
             # try:
             run_shell_cmd(cmd)
+<<<<<<< HEAD
             if args['unique_only']:
                 self.get_unique(self.config.bam)
             else:
                 sam2bam(self.config.sam, self.config.bam, sort=True, 
                     extra_para='-F 4')
+=======
+            sam2bam(self.config.sam, self.config.bam, sort=True, 
+                extra_para='-F 4')            
+            if args['unique_only']:
+                self.get_unique(self.config.bam)
+>>>>>>> fix-align
             self.get_json() # save to json
             # except:
             #     log.error('Hisat2().run() failed, outdir: {}'.format(
