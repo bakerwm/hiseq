@@ -20,7 +20,7 @@ class Macs2(object):
     """
 
     def __init__(self, ip, genome, output, prefix=None, control=None, 
-        atac=False, overwrite=False, **kwargs):
+        atac=False, overwrite=False, genome_size=0, **kwargs):
         """Parse the parameters
         venv, the virtualenv created for macs2, running in Python2
         """
@@ -29,6 +29,7 @@ class Macs2(object):
         self.output = output
         self.control = control
         self.overwrite = overwrite
+        self.genome_size = genome_size
         self.prefix = prefix
         self.atac = atac
 
@@ -56,7 +57,13 @@ class Macs2(object):
           'hg38': 'hs',
           'GRCh38': 'hs'}
 
-        return d.get(self.genome, None)
+        # prefer: if input genome_size is int
+        if isinstance(self.genome_size, int) and self.genome_size > 0:
+            gsize = self.genome_size # from args
+        else:
+            gsize = d.get(self.genome, None) # from macs2
+
+        return gsize
 
 
     def _tmp(self):
@@ -69,7 +76,6 @@ class Macs2(object):
 
     def callpeak(self):
         """Call peaks using MACS"""
-        # genome_size = self.get_gsize()
         log = os.path.join(self.output, self.prefix + '.macs2.callpeak.out')
         if self.atac is True:
             # ATAC-seq

@@ -301,13 +301,17 @@ def add_atac_args():
     parser.add_argument('-k', '--spikein', default=None, 
         choices=[None, 'dm3', 'hg19', 'hg38', 'mm10'],
         help='Spike-in genome : dm3, hg19, hg38, mm10, default: None')
-    parser.add_argument('-x', '--ext-index', nargs='+', dest="ext_index",
+    parser.add_argument('-x', '--extra-index', nargs='+', dest="extra_index",
         help='Provide alignment index(es) for alignment, support multiple\
         indexes. if specified, ignore -g, -k')
 
     ## extra: para
     parser.add_argument('--extra-para', dest='extra_para', default=None,
         help='Extra parameters for aligner, eg: -X 2000 for bowtie2. default: [None]')
+
+    ## extra: call-peak
+    parser.add_argument('--genome-size', dest='genome_size', default=0,
+        type=int, help='The genome size for the genome. default: [0]; use --genome')
 
     return parser
 
