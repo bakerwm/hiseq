@@ -19,7 +19,7 @@ import re
 import shutil
 import logging
 
-from hiseq.utils.args import args_init
+from hiseq.utils.args import args_init, Adapter
 from hiseq.utils.seq import Fastx
 from hiseq.utils.helper import * # all help functions
 
@@ -181,6 +181,9 @@ class Trimmer(object):
 
     def run(self):
         args = self.args.copy()
+
+        ## update 'library-type'
+        args = Adapter(libtype=args['library_type'], **args).trim_args
 
         if self.check():
             log.warning('{:>20} : file exists, skipped ...'.format(self.fqname))
@@ -363,7 +366,7 @@ class Cutadapt(object):
         return out
 
 
-    def adapter_sliding(self, step=2, window=15):
+    def adapter_sliding(self, adapter, step=2, window=15):
         """
         For some situation, the adapter (3') in library was differ, especially
         for ligation strategy libraries, (eg: iCLIP, eCLIP).
@@ -371,10 +374,11 @@ class Cutadapt(object):
         """
         args = self.args.copy()
 
-        ## always, the 3' adapter
-        adapter = args['adapter3']
+        # ## always, the 3' adapter
+        # adapter = args['adapter3']
 
         ## sliding
+        print(adapter, window, step)
         adapter_sliders = [adapter[i:i+window] for i in range(0, len(adapter)-window, step) if i >= 0]
         if not adapter_sliders:
             adapter_sliders = [adapter] # full length
@@ -392,7 +396,7 @@ class Cutadapt(object):
         args = self.args.copy()
 
         # 3' adapter
-        ad3_list = self.adapter_sliding() if args['adapter_sliding'] else [args['adapter3']]
+        ad3_list = self.adapter_sliding(args['adapter3']) if args['adapter_sliding'] else [args['adapter3']]
         arg_ad3 = ' '.join(['-a {}'.format(i) for i in ad3_list])
 
         # SE mode

@@ -11,7 +11,7 @@ Parse arguments from command line
 """
 
 import argparse
-
+       
 
 def add_qc_args():
     """
@@ -27,19 +27,22 @@ def add_qc_args():
     parser.add_argument('-o', '--outdir', default=None, 
         help='The directory to save results.')
 
-    parser.add_argument('--library-type', dest='library_type', default=1,
-        type=int, choices=[1, 2, 3, 4, 5],
+    parser.add_argument('--library-type', dest='library_type', default='unknown',
+        type=str, choices=['TruSeq', 'Nextera', 'smRNA', 'NSR', 'ChIPseq', 'iCLIP', 'eCLIP', 
+            'CLIP_NSR', 'smRNA_NSR', 'unknown'],
         help='Type of the library structure, \
-        1=TruSeq standard libraries \
-        2=Tn5 standard libraries, \
-        3=NSR (TruSeq), cut 7-nt at the left-end of both reads, \
-        4=eCLIP, (TruSeq), cut 10-nt at left-end, 7-nt at-right end of read1, \
+        TruSeq, TruSeq standard libraries \
+        Nextera, Tn5 standard libraries, \
+        NSR, (TruSeq), cut 7-nt at the left-end of both reads, \
+        eCLIP, (TruSeq), cut 10-nt at left-end, 7-nt at-right end of read1, \
                  cut 7-nt at left-end and 10-nt at right-end of read2, \
                  This is Yulab version eCLIP, random barcode (N10) at P5, \
                  and barcode (6-nt + 1A) at P7 end. \
-        5=iCLIP, (TruSeq), cut 9-nt at left-end of read1 (barcode) \
-        determine the way to trim the raw reads, default: [1] \
-        ignore --cut-after-trim')
+        iCLIP, (TruSeq), cut 9-nt at left-end of read1 (barcode) \
+        determine the way to trim the raw reads, default: [unknown] \
+        ignore --cut-after-trim \
+        the following arguments are masked, if --library-type is not unknown: \
+        --adapter3, --adapter5, --AD3, --AD5, --len-min, --rmdup, --cut-after-trim, ...')
 
     parser.add_argument('-m', '--len_min', default=15, metavar='len_min', 
         type=int, help='Minimum length of reads after trimming, defualt [15]')
