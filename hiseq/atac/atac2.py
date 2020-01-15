@@ -61,8 +61,12 @@ class AtacConfig(object):
         create_dirs = kwargs.get('create_dirs', True)
 
         if self.atac_type == 'single':
+            # self.atac_type = self.mission()
+            if os.path.exists(self.args.get('design', None)):
+                # for --fq1, --fq2, ...
+                args_in = Json(self.args['design']).dict
+                self.args.update(args_in)
             self.init_atac_single(create_dirs)
-            # self.is_atac_single(self.outdir)
         elif self.atac_type == 'merge':
             self.init_atac_merge(create_dirs)
         elif self.atac_type == 'multiple':
@@ -92,13 +96,16 @@ class AtacConfig(object):
 
         # atac single
         if not design is None:
+            print('!BBB1')
             args_in = Json(args['design']).dict
             self.args.update(args_in) # update global self. args
             flag = 'single'
         elif all([not i is None for i in [fq1, fq2, genome, outdir]]):
-            flag = 'single'
+            print('!BBB2')
+            flag = 'multiple'
         # atac merge
         elif isinstance(rep_list, list):
+            print('!BBB3')
             flag = 'merge'
         # atac multiple
         elif isinstance(input_dir, str):
@@ -1118,8 +1125,6 @@ class AtacMultiple(object):
         self.report()
 
 
-
-
 class Atac(object):
     """
     Main port for ATAC pipeline
@@ -1273,8 +1278,12 @@ class Atac(object):
         print('!CCCC1')
         args = self.args.copy()
         assert in_dict(args, ['fq1', 'fq2', 'genome', 'outdir'])
-        assert isinstance(args['fq1'], list)
-        assert isinstance(args['fq2'], list)
+        # assert isinstance(args['fq1'], list)
+        # assert isinstance(args['fq2'], list)
+        if isinstance(args['fq1'], str):
+            args['fq1'] = [args['fq1']]
+        if isinstance(args['fq2'], str):
+            args['fq2'] = [args['fq2']]
         assert isinstance(args['genome'], str)
         assert isinstance(args['outdir'], str)
         if not len(self.args['fq1']) == len(self.args['fq2']):
@@ -1295,11 +1304,11 @@ class Atac(object):
                 'fq2': fq2, 
                 'genome': args['genome'], 
                 'outdir': suboutdir}
-            d.update(args) # global config
-            Json(d).writer(config_json)
-            dict_to_pickle(d, config_pickle)
+            # d.update(args) # global config
+            args.update(d)
+            Json(args).writer(config_json)
+            dict_to_pickle(args, config_pickle)
             json_list.append(config_json)
-            print('!CCCC2', config_json)
 
         self.json_list = json_list
         return json_list
@@ -1350,7 +1359,8 @@ class Atac(object):
         # dirname of smp_dirs
         # prj_dir = os.path.dirname(smp_dirs[0])
         self.args['input_dir'] = os.path.dirname(smp_dirs[0])
-        AtacMultiple(**self.args).run()
+        if len(self.json_list) > 1:
+            AtacMultiple(**self.args).run()
 
 
 
