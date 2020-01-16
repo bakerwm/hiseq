@@ -893,11 +893,13 @@ class Bowtie2(object):
         with open(self.config.log, 'rt') as ff:
             for line in ff:
                 value = line.strip().split(' ')[0]
+                if len(re.sub('[0-9]', '', value)) > 0:
+                    continue
                 if '%' in value:
                     continue
                 if line.strip().startswith('----'):
                     continue
-                value = int(value)
+                value = eval(value)
 
                 ## paired tag
                 if 'were paired; of these' in line:
