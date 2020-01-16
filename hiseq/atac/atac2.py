@@ -643,7 +643,9 @@ class AtacSingle(object):
         # bamdir = os.path.join(self.config.aligndir, '2.*')
         bamdir = self.config.align_stat.rstrip('.align.txt')
         bamlist = listfiles2('*.bam', bamdir, recursive=True)
+        bamlist = [i for i in bamlist if not os.path.basename(i).endswith('.raw.bam')] # remove raw.bam
         # [chrM, genome]
+        print('!AAAA1', bamlist)
         return(bamlist[1]) # genome
 
 
