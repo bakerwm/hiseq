@@ -280,8 +280,8 @@ def add_atac_args():
     parser.add_argument('-m', '--len_min', default=15, metavar='len_min', 
         type=int, help='Minimum length of reads after trimming, defualt [15]')
     parser.add_argument('-a', '--adapter3', metavar='adapter', type=str,
-        default='AGATCGGAAGAGCACACGTCTGAACTCCAGTCAC',         
-        help='3-Adapter, default: [AGATCGGAAGAGCACACGTCTGAACTCCAGTCAC].')
+        default='CTGTCTCTTATACACATCT',         
+        help='3-Adapter, default: [CTGTCTCTTATACACATCT].')
 
     ## extra arguments - 3
     parser.add_argument('--cut-before-trim', default='0', metavar='cut1', 
