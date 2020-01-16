@@ -97,22 +97,22 @@ class AtacConfig(object):
         rep_list = args.get('rep_list', None)
         input_dir = args.get('input_dir', None)
 
+        # atac multiple
+        if isinstance(input_dir, str):
+            flag = 'multiple'
+        # atac merge
+        elif isinstance(rep_list, list):
+            # print('!BBB3')
+            flag = 'merge'
         # atac single
-        if not design is None:
+        elif not design is None:
             # print('!BBB1')
             args_in = Json(args['design']).dict
             self.args.update(args_in) # update global self. args
             flag = 'single'
         elif all([not i is None for i in [fq1, fq2, genome, outdir]]):
             # print('!BBB2')
-            flag = 'multiple'
-        # atac merge
-        elif isinstance(rep_list, list):
-            # print('!BBB3')
-            flag = 'merge'
-        # atac multiple
-        elif isinstance(input_dir, str):
-            flag = 'multiple'
+            flag = 'single'
         # atac, parse all
         else:
             raise Exception("""unknown ATAC() arguments;
@@ -121,6 +121,16 @@ class AtacConfig(object):
                 ATAC multiple: input_dir=;
                 """)
         return flag
+
+
+    def unique_names(self, name_list):
+        """
+        Get the name of replicates
+        common in left-most
+        """
+        name_list = [os.path.basename(i) for i in name_list]
+        name_list = [re.sub('.rep[0-9].*', '', i) for i in name_list]
+        return list(set(name_list))
 
 
     def init_atac_single(self, create_dirs=True):
@@ -268,12 +278,16 @@ class AtacConfig(object):
         self.outdir = args.get('outdir', None)
         
         if self.smpname is None:
-            self.smpname = merge_names(args['rep_list'])
+            self.smpname = self.unique_names(args['rep_list'])[0]
 
+        ## determine outputdir
         if self.outdir is None:
             self.outdir = os.path.join(
                 os.path.dirname(args['rep_list'][0]), 
                 self.smpname)
+        else:
+            self.outdir = os.path.join(
+                self.outdir, self.smpname)
         
         ## absolute path
         self.outdir = os.path.abspath(self.outdir)
@@ -325,9 +339,13 @@ class AtacConfig(object):
         assert in_dict(args, 'input_dir') # merge
 
         # outdir, input_dir + summary
-        self.outdir = args.get('outdir', None)
-        if self.outdir is None:
-            self.outdir = os.path.join(args['input_dir'], 'summary')
+        # self.outdir = args.get('outdir', None)
+        # if self.outdir is None:
+        self.outdir = os.path.join(args['input_dir'], 'summary')
+
+        # absolute path
+        self.outdir = os.path.abspath(self.outdir)
+        self.input_dir = os.path.abspath(args['input_dir'])
 
         ## outdir
         # print('!xxxx', self.outdir)
@@ -569,6 +587,7 @@ class AtacSingle(object):
         args['fq1'] = args['fq'] = fq1
         args['fq2'] = fq2
         args['outdir'] = self.config.cleandir
+        args['library_type'] = 'Nextera'
         
         if trimmed is True:
             # print('!xxxx')
@@ -823,8 +842,10 @@ class AtacMerge(object):
         outdir/config/*json, *pickle, *txt
         """
         self.config = AtacConfig(**self.args) # update, global
+        print('!cccc', self.args)
+
         self.args.update(self.config.args) # update, global
-        # assert in_attr(self., ['rep_list'])        
+        # assert in_attr(self., ['rep_list'])
         assert self.config.atac_type == 'merge'
         self.args['rep_list'] = [os.path.abspath(i) for i in self.args['rep_list']]
 
@@ -895,9 +916,9 @@ class AtacMerge(object):
             log.info('callpeak() skipped, file exists: {}'.format(
                 self.config.peak))
         else:
-            args['genome_size'] = self.args.get('genome_size', 0)
+            self.args['genome_size'] = self.args.get('genome_size', 0)
             m = Macs2(bam, genome, output, prefix, atac=True,
-                genome_size=genome_size).callpeak()
+                genome_size=self.args['genome_size']).callpeak()
 
 
     def bam_cor(self, window=500):
@@ -1067,6 +1088,7 @@ class AtacMultiple(object):
         save config files
         outdir/config/*json, *pickle, *txt
         """
+        print('!dddd1', self.args)
         self.config = AtacConfig(**self.args) # update, global
         self.args.update(self.config.args) # update, global
         assert self.config.atac_type == 'multiple'
@@ -1298,11 +1320,12 @@ class Atac(object):
         ## convert to design (Json file)
         json_list = []
         for fq1, fq2 in zip(args['fq1'], args['fq2']):
+            print('!AAAA1', fq1, fq2)
             fqname = file_prefix(fq1)[0]
             fqname = re.sub('_1$', '', fqname)
 
             # sample dir
-            suboutdir = os.path.join(args['outdir'], fqname)
+            suboutdir = os.path.join(self.args['outdir'], fqname)
             config_json = suboutdir + '.config.json'
             config_pickle = suboutdir + '.config.pickle'
             d = {
@@ -1312,6 +1335,7 @@ class Atac(object):
                 'outdir': suboutdir}
             # d.update(args) # global config
             args.update(d)
+            print('!AAAA2', args)
             Json(args).writer(config_json)
             dict_to_pickle(args, config_pickle)
             json_list.append(config_json)
@@ -1344,23 +1368,31 @@ class Atac(object):
         self.args.pop('design', None) # 
         self.args.pop('rep_list', None) # 
 
+        ########################
+        ## for single sample: ##
+        ########################
         for i in self.json_list:
             s = AtacSingle(design=i, **self.args).run()
             smp_dirs.append(re.sub('\.config.json', '', i))
 
-        # for merge sample:
+        #######################
+        ## for merge sample: ##
+        #######################
         smp_names = self.unique_names(smp_dirs)
-        # print('!aaaa', smp_names)
+        print('!bbbb1', smp_names)
         for x in smp_names:
-            # print('!MMMM1')
             x_list = self.get_samples(smp_dirs, x)
+            print('!bbbb2', x_list)
             if len(x_list) < 2:
                 continue
             else:
-                # print('!MMMM2')
-                AtacMerge(rep_list=x_list, **self.args).run()
+                print('!bbbb3')
+                self.args['rep_list'] = x_list
+                AtacMerge(**self.args).run()
 
-        # for multiple sample:
+        ##########################
+        ## for multiple sample: ##
+        ##########################
         # summary report for a project
         # dirname of smp_dirs
         # prj_dir = os.path.dirname(smp_dirs[0])
