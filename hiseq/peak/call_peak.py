@@ -80,7 +80,7 @@ class Macs2(object):
         if self.atac is True:
             # ATAC-seq
             macs2_cmd = 'macs2 callpeak --nomodel --shift -100 --extsize 200 \
-                -f BAM -t {} -g {} --outdir {} -n {} 2> {}'.format(
+                -t {} -g {} --outdir {} -n {} 2> {}'.format(
                     self.ip,
                     self.gsize,
                     self.output,
@@ -89,7 +89,7 @@ class Macs2(object):
             peak = os.path.join(self.output, self.prefix + '_peaks.narrowPeak')
         else:
             # ChIP-seq
-            macs2_cmd = 'macs2 callpeak -f BAM -t {} -g {} --outdir {} -n {} \
+            macs2_cmd = 'macs2 callpeak -t {} -g {} --outdir {} -n {} \
                 --keep-dump auto -B --SPMR'.format(
                     self.ip, 
                     self.gsize,
