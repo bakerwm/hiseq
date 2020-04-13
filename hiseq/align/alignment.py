@@ -978,7 +978,7 @@ class Bowtie2(object):
             shutil.move(bam, bam_old)
             print('!AAA2', bam, bam_old)
         # unique: -q 30
-        sam2bam(bam_old, bam, sort=True, extra_para='-q 30')
+        sam2bam(bam_old, bam, sort=True, extra_para='-q 255')
         return(bam)
 
 
