@@ -643,6 +643,7 @@ class AtacSingle(object):
         # bamdir = os.path.join(self.config.aligndir, '2.*')
         bamdir = self.config.align_stat.rstrip('.align.txt')
         bamlist = listfiles2('*.bam', bamdir, recursive=True)
+        bamlist = sorted(bamlist)
         bamlist = [i for i in bamlist if not os.path.basename(i).endswith('.raw.bam')] # remove raw.bam
         # [chrM, genome]
         print('!AAAA1', bamlist)
@@ -672,12 +673,34 @@ class AtacSingle(object):
             Bam(self.config.bam_proper_pair).index()
 
 
+    def bam2bw(self, norm=1000000):
+        """
+        Create bigWig
+        bam -> bigWig
+        """
+        args = self.config.args.copy()
+        tmp = args.pop('outdir', None)
+        bam = self.config.bam_proper_pair
+        outdir = self.config.bwdir
+        bw = self.config.bw
+        ## read counts BAM
+        ntotal = Bam(bam).getNumberOfAlignments()
+        if Bam(bam).isPaired():
+            ntotal = ntotal / 2
+        scale = norm / ntotal # norm to 1M
+
+        return bam_to_bw(bam, outdir, scale=scale, **args)
+
+
+
     def callpeak(self):
         """
         Call peaks using MACS2
         """
         args = self.config.args.copy()
         bam = self.config.bam_proper_pair
+        bed = os.path.splitext(bam)[0] + '.bed'
+        Bam(bam).to_bed(bed)
         genome = args.pop('genome', None)
         output = args.pop('peakdir', None)
         prefix = args.pop('fqname', None)
@@ -687,7 +710,7 @@ class AtacSingle(object):
                 self.config.peak))
         else:
             args['genome_size'] = args.get('genome_size', 0)
-            Macs2(bam, genome, output, prefix, atac=True, **args).callpeak()
+            Macs2(bed, genome, output, prefix, atac=True, **args).callpeak()
 
 
     def qc_lendist(self):
@@ -723,6 +746,7 @@ class AtacSingle(object):
             log.info('qc_frip() skipped, file exists: {}'.format(
                 self.config.frip_txt))
         else:
+            print("!XXXX " + self.config.bam_proper_pair)
             frip, n, total = cal_FRiP(self.config.peak, 
                 self.config.bam_proper_pair)
 
@@ -812,6 +836,9 @@ class AtacSingle(object):
 
         # 4. rmdup
         self.bam_rmdup(rmdup)
+
+        # 5. bw
+        #self.bam2bw()
 
         # 5. peak 
         self.callpeak()
@@ -904,6 +931,24 @@ class AtacMerge(object):
                 run_shell_cmd(cmd)
             except:
                 log.warning('mergebam() failed.')
+
+
+    def bam2bw(self, norm=1000000):
+        """
+        Create bigWig
+        bam -> bigWig
+        """
+        args = self.config.args.copy()
+        bam = self.config.bam
+        outdir = self.config.bwdir
+        bw = self.config.bw
+        ## read counts BAM
+        ntotal = Bam(bam).getNumberOfAlignments()
+        if Bam(bam).isPaired():
+            ntotal = ntotal / 2
+        scale = norm / ntotal # norm to 1M
+
+        return bam_to_bw(bam, outdir, scale=scale, **args)
 
 
     def callpeak(self):
@@ -1186,7 +1231,7 @@ class Atac(object):
         genome = args.get('genome', None)
         outdir = args.get('outdir', None)
         
-        assert is_path(outdir)
+        # assert is_path(outdir)
 
         if check_file(config, show_log=False):
             # update config to list
