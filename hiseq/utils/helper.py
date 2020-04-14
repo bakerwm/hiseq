@@ -9,6 +9,7 @@ file modification,
 
 import os
 import sys
+import re
 import gzip
 import shutil
 import json
@@ -139,6 +140,30 @@ def file_prefix(fn, with_path=False):
     return [p1, px]
 
 
+def fq_name(x):
+    """
+    parse the name of fastq file:
+    .fq.gz
+    .fastq.gz
+    .fq
+    .fastq
+    (also for fasta, fa)
+    """
+    if isinstance(x, str):
+        fname = file_prefix(x)[0]
+        fname = re.sub('[._][rR]?1$', '', fname)
+        fname = re.sub('_\d$', '', fname)
+    elif isinstance(x, list):
+        fname = [fq_name(f) for f in x]
+    elif x is None:
+        log.warning('None type detected')
+        fname = None
+    else:
+        log.warning('unknown input detected')
+        fname = None
+    return fname
+
+
 def args_checker(d, x, update=False):
     """Check if dict and x are consitent
     d is dict
@@ -187,20 +212,23 @@ def gzip_cmd(src, dest, decompress=True, rm=True):
 
     # check the src file by extension: .gz
     """
-    if decompress:
-        if is_gz(src):
-            with gzip.open(src, 'rb') as r, open(dest, 'wb') as w:
-                shutil.copyfileobj(r, w)
-        else:
-            log.warning('not a gzipped file: {}'.format(src))
-            shutil.copy(src, dest)
+    if os.path.exists(dest):
+        log.warning('file exists, skipped - {}'.format(dest))
     else:
-        if is_gz(src):
-            log.warning('input is gzipped file, no need gzip')
-            shutil.copy(src, dest)
+        if decompress:
+            if is_gz(src):
+                with gzip.open(src, 'rb') as r, open(dest, 'wb') as w:
+                    shutil.copyfileobj(r, w)
+            else:
+                log.warning('not a gzipped file: {}'.format(src))
+                shutil.copy(src, dest)
         else:
-            with open(src, 'rb') as r, gzip.open(dest, 'wb') as w:
-                shutil.copyfileobj(r, w)
+            if is_gz(src):
+                log.warning('input is gzipped file, no need gzip')
+                shutil.copy(src, dest)
+            else:
+                with open(src, 'rb') as r, gzip.open(dest, 'wb') as w:
+                    shutil.copyfileobj(r, w)
 
     # output
     if rm is True:
@@ -209,6 +237,7 @@ def gzip_cmd(src, dest, decompress=True, rm=True):
     return dest
 
 
+### deprecated - BEGIN ###
 def listfiles(path, full_name=True, recursive=False, include_dir=False):
     """
     List all the files within the path
@@ -251,6 +280,52 @@ def listfiles2(pattern, path='.', full_name=True, recursive=False):
     fn_list = listfiles(path, full_name, recursive, include_dir=False)
     fn_list = [f for f in fn_list if fnmatch.fnmatch(f, pattern)]
     return fn_list
+### deprecated - END ###
+
+
+def listdir(path, full_name=True, recursive=False, include_dir=False):
+    """
+    List all the files within the path
+    """
+    out = []
+    for root, dirs, files in os.walk(path):
+        if full_name:
+            dirs = [os.path.join(root, d) for d in dirs]
+            files = [os.path.join(root, f) for f in files]
+        out += files
+
+        if include_dir:
+            out += dirs
+
+        if recursive is False:
+            break
+
+    return sorted(out)
+
+
+def listfile(path='.', pattern='*', full_name=True, recursive=False):
+    """
+    Search files by the pattern, within directory
+    fnmatch.fnmatch()
+
+    pattern:
+
+    *       matches everything
+    ?       matches any single character
+    [seq]   matches any character in seq
+    [!seq]  matches any char not in seq
+
+    An initial period in FILENAME is not special.
+    Both FILENAME and PATTERN are first case-normalized
+    if the operating system requires it.
+    If you don't want this, use fnmatchcase(FILENAME, PATTERN).
+
+    example:
+    listfile('./', '*.fq')
+    """
+    fn_list = listdir(path, full_name, recursive, include_dir=False)
+    fn_list = [f for f in fn_list if fnmatch.fnmatch(f, pattern)]
+    return sorted(fn_list)
 
 
 class Json(object):
