@@ -183,20 +183,26 @@ class Hiseq(object):
             parser.parse_args(['-h'])
         # main
         args = vars(args) # convert to dict
-        # check config or --fq1,--fq2,--genome,--outdir
-        config = args.get('config', None)
+        # check design or --fq1,--fq2,--genome,--outdir or smp_path/dirs_ctl/dirs_exp
         design = args.get('design', None)
+
         fq1 = args.get('fq1', None)
         fq2 = args.get('fq2', None)
         genome = args.get('genome', None)
         outdir = args.get('outdir', None)
+
+        smp_path = args.get('smp_path', None)
+        dirs_ctl = args.get('dirs_ctl', None)
+        dirs_exp = args.get('dirs_exp', None)
+
         chk1 = config is None
         chk2 = design is None
-        chk3 = [i is None for i in [fq1, fq2, genome, outdir]]
-
+        chk3 = all([i is None for i in [fq1, fq2, genome, outdir]])
+        chk4 = smp_path is None
+        chk5 = dirs_ctl is None and dirs_exp is None
         # if config is None and not all(chk2):
-        if all([chk1, chk2, chk3]):
-            sys.exit('required: --config, or --design, or --fq1, --fq2, --genome, --outdir')
+        if all([chk1, chk2, chk3, chk4, chk5]):
+            sys.exit('required: --design, or --fq1, --fq2, --genome, --outdir or --smp-path, --dirs-ctl, --dirs-exp')
 
         RNAseq(**args).run()        
 
