@@ -3,34 +3,34 @@
 """
 ## Design
 
-input: 
+input:
 
-- control (rep1, rep2, ...) 
+- control (rep1, rep2, ...)
 - treatment (rep1, rep2, ...)
 - genome
 
 output:
 
-  - single: 
+  - single:
     - raw_data
-    - clean_data 
+    - clean_data
     - align
-    - count 
-    - qc 
+    - count
+    - qc
     - report
     ...
 
   - pair:
     - count
-    - deseq 
+    - deseq
     - qc
     - report
 
 
 ## figures/tables
-1. scatter plot  
-2. MA plot 
-3. volcano 
+1. scatter plot
+2. MA plot
+3. volcano
 4. heatplot
 ...
 
@@ -51,7 +51,7 @@ DEseq2, edgeR, ...
 
 Alignment:
 
-gene, 
+gene,
 TE
 piRNA cluster
 ...
@@ -65,7 +65,6 @@ import pysam
 import shutil
 import tempfile
 import pandas as pd
-from itertools import combinations
 from hiseq.utils.helper import *
 from hiseq.qc.trimmer import Trimmer
 from hiseq.align.alignment import Alignment
@@ -74,10 +73,13 @@ from hiseq.align.alignment import Alignment
 class RNAseqReader(object):
     """
     Return the config, files for RNAseq direcotory
-    
+
     RNAseqSingle: config/
     RNAseqMultiple: config/
-    RNAseqDeseq: config/
+    DeseqSingle: config/
+
+    # to-do
+    DEseqMultiple: ? (RNAseqMultiple)
     """
     def __init__(self, path, **kwargs):
         self.path = path
@@ -93,7 +95,7 @@ class RNAseqReader(object):
             outdir/feature/config/arguments.pickle
         multiple - config:
             outdir/config/feature/config/arguments.pickle
-        deseq - config:
+        deseq - single:
             outdir/feature/config/arguments.pickle
         """
         x1 = os.path.join(self.path, self.feature, 'config', 'arguments.pickle')
@@ -123,7 +125,7 @@ class RNAseqReader(object):
         Check if the directory is of RNAseq single sample
         outdir/feature/config/arguments.pickle
         """
-        return self.rnaseq_type == 'single'
+        return self.rnaseq_type == 'rnaseq_single'
 
 
     def is_rnaseq_multi(self):
@@ -131,20 +133,28 @@ class RNAseqReader(object):
         Check if the directory is of RNAseq multiple sample
         outdir/config/feature/config/arguments.pickle
         """
-        return self.rnaseq_type == 'multiple'
+        return self.rnaseq_type == 'rnaseq_multiple'
 
 
-    def is_rnaseq_deseq(self):
+    def is_deseq_single(self):
         """
         Check if the directory if of RNAseq DESeq analysis
         outdir/feature/config/arguments.pickle
         """
-        return self.rnaseq_tyep == 'deseq'
+        return self.rnaseq_type == 'deseq_single'
+
+
+    def is_deseq_multiple(self):
+        """
+        Check if the directory if of RNAseq DESeq analysis
+        outdir/feature/config/arguments.pickle
+        """
+        return self.rnaseq_type == 'deseq_single'
 
 
 class RNAseqConfig(object):
     """
-    UPDATED: 
+    UPDATED:
     directory type: single, pair
     config: init_atac, single, merge, multiple
     list all files (objects)
@@ -159,31 +169,45 @@ class RNAseqConfig(object):
         self.rnaseq_type = self.mission_type()
 
         # required
-        self.genome = args['genome']
-        self.outdir = os.path.abspath(args['outdir'])
-        self.feature = args.get('feature', 'gene')
+        self.genome = self.args.get('genome', 'mm10')
+        self.outdir = os.path.abspath(self.args.get('outdir', str(pathlib.Path.cwd())))
+        self.feature = self.args.get('feature', 'gene')
+        self.read1_only = self.args.get('read1_only', False) #
+        # 2020-04-16: PE map pct% low value.
 
         # for RNAseq checker
-        create_dirs = kwargs.get('create_dirs', True)
+        create_dirs = self.args.get('create_dirs', True)
 
-        if self.rnaseq_type == 'single':
+        if self.rnaseq_type == 'from_pickle':
+            log.info('read args from pickle')
+            args = pickle_to_dict(self.args['pickle'])
+            for k, v in args.items():
+                setattr(self, k, v) # update all
+        elif self.rnaseq_type == 'build_design':
+            self.init_build_design(create_dirs)
+        elif self.rnaseq_type == 'rnaseq_single':
             self.init_rnaseq_single(create_dirs)
-        elif self.rnaseq_type == 'multiple':
+        elif self.rnaseq_type == 'rnaseq_multiple':
             self.init_rnaseq_multiple(create_dirs)
-        elif self.rnaseq_type == 'deseq':
-            self.init_rnaseq_deseq(create_dirs)
+        elif self.rnaseq_type == 'deseq_single':
+            self.init_deseq_single(create_dirs)
+        elif self.rnaseq_type == 'deseq_multiple':
+            self.init_deseq_multiple(create_dirs)
         else:
-            log.error('unknown')
+            log.error('unknown rnaseq type: {}'.format(self.rnaseq_type))
             pass
 
 
     def mission_type(self):
         """
         Determine the purpose the RNAseq analysis
-        1. single 
+        1. single
         2. pair
         ...
         """
+        ## check pickle file
+        self.args_pickle = self.args.get('pickle', None)
+
         ## check design
         design = self.args.get('design', None) # 1 single
         if not design is None:
@@ -194,36 +218,93 @@ class RNAseqConfig(object):
         fq1 = args.get('fq1', None)
         self.dirs_ctl = args.get('dirs_ctl', None)
         self.dirs_exp = args.get('dirs_exp', None)
+        self.smp_path = args.get('smp_path', None)
+        self.group = args.get('group', None)
+        self.build_design = args.get('build_design', False)
 
-        if isinstance(self.dirs_ctl, list) and isinstance(self.dirs_exp, list):
-            flag = 'deseq'
-        elif isinstance(fq1, str):
-            flag = 'single'
+        if not self.args_pickle is None:
+            if not self.args_pickle.endswith('.pickle'):
+                raise Exception('not like a pickle file:\n--pickle {}'.format(self.args_pickle))
+            flag = 'from_pickle'
+        elif self.build_design is True:
+            flag = 'build_design'
+        elif isinstance(self.smp_path, list): # and isinstance(self.group, list):
+            flag = 'deseq_multiple'
+        elif isinstance(self.dirs_ctl, list) and isinstance(self.dirs_exp, list):
+            flag = 'deseq_single'
         elif isinstance(fq1, list):
-            flag = 'multiple'
+            flag = 'rnaseq_multiple'
+        elif isinstance(fq1, str):
+            flag = 'rnaseq_single'
         else:
             raise Exception("""unknown RNAseq() arguments:
-                single: fq1, fq2, genome, outdir; 
-                multiple: [fq1], [fq2], genome, outdir | design.txt
-                deseq: dirs_ctl, dirs_exp;
+                RNAseq-single:   fq1, fq2, genome, outdir;
+                RNAseq-multiple: [fq1], [fq2], genome, outdir | design.txt
+                DESeq-single:    dirs_ctl, dirs_exp;
+                DESeq-multiple:  smp_path
                 """)
 
         return flag
+
+
+    def init_build_design(self, create_dirs=True):
+        """
+        Create design.txt for project
+        required:
+            fq1, (fq2)
+            genome
+            outdir
+            feature
+            gtf
+
+        rnaseq:
+        names=['RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'fq1', 'fq2']
+        rnaseq:
+        names=['RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'smp_path']
+
+        atacseq:
+        names=['ATACseq', 'group', 'name', 'genome', 'outdir', 'fq1', 'fq2']
+        """
+        args = self.args.copy()
+        self.outdir = os.path.abspath(args.get('outdir', str(pathlib.Path.cwd())))
+        self.feature = args.get('feature', 'gene')
+
+        # required args
+        self.fq1 = args.get('fq1', None)
+        self.fq2 = args.get('fq2', None)
+        self.fq1 = file_abspath(self.fq1)
+        self.fq2 = None if self.read1_only else file_abspath(self.fq2)
+
+        ## outdir
+        self.projectdir = os.path.join(self.outdir, self.feature)
+        self.configdir = os.path.join(self.projectdir, 'config')
+
+        ## config
+        self.auto_design = os.path.join(self.configdir, 'RNAseq_auto_design.txt') # new created
+        self.config_txt = os.path.join(self.configdir, 'arguments.txt')
+        self.config_pickle = os.path.join(self.configdir, 'arguments.pickle')
+        self.config_json = os.path.join(self.configdir, 'arguments.json')
+
+        if create_dirs is True:
+            check_path([self.outdir, self.configdir])
 
 
     def init_rnaseq_single(self, create_dirs=True):
         """
         Initiate the config, directories, files for rnaseq single
         update self.
-        fq1, fq2, genome, outdir: args, 
+        fq1, fq2, genome, outdir: args,
         or:
         design
         """
         args = self.args.copy() # global
-        # self.rnaseq_type = 'single'
 
         self.fq1 = os.path.abspath(args['fq1'])
         self.fq2 = os.path.abspath(args['fq2']) if args['fq2'] else args['fq2']
+        # read1_only
+        if self.read1_only:
+            self.fq2 = None
+
         self.genome = args['genome']
         self.outdir = os.path.abspath(args['outdir'])
         self.feature = args.get('feature', 'gene')
@@ -237,7 +318,7 @@ class RNAseqConfig(object):
             self.gtf = Genome(genome=self.genome).gene_gtf('ensembl') # ucsc version
 
         ## outdir
-        self.projectdir = os.path.join(self.outdir, self.feature) 
+        self.projectdir = os.path.join(self.outdir, self.feature)
         self.configdir = os.path.join(self.projectdir, 'config')
         self.rawdir = os.path.join(self.projectdir, 'raw_data')
         self.cleandir = os.path.join(self.projectdir, 'clean_data')
@@ -248,17 +329,19 @@ class RNAseqConfig(object):
         self.reportdir = os.path.join(self.projectdir, 'report')
         self.out_prefix = os.path.join(self.projectdir, self.fqname)
 
-        ## raw
+        ## raw data
         self.raw_fq_list = [
-            os.path.join(self.rawdir, os.path.basename(self.fq1)),
-            os.path.join(self.rawdir, os.path.basename(self.fq2))]
+            os.path.join(self.rawdir, os.path.basename(self.fq1))]
+        fq2_raw = None if self.fq2 is None else os.path.join(self.rawdir, os.path.basename(self.fq2))
+        self.raw_fq_list.append(fq2_raw)
 
-        ## clean = fq.gz
+        ## clean data
         self.clean_fq_list = [
-            os.path.join(self.cleandir, file_prefix(self.fq1)[0] + '.fq.gz'),
-            os.path.join(self.cleandir, file_prefix(self.fq2)[0] + '.fq.gz')]
-        
-        ## 
+            os.path.join(self.cleandir, fq_name(self.fq1) + '.fq.gz')]
+        fq2_clean = None if self.fq2 is None else os.path.join(self.cleandir, fq_name(self.fq2) + '.fq.gz')
+        self.clean_fq_list.append(fq2_clean)
+
+        ## files
         self.trim_stat = os.path.join(self.cleandir, self.fqname + '.qc.stat')
         self.bam_raw = os.path.join(self.aligndir, self.fqname, '2.*', self.fqname + '.bam')
         self.align_stat = os.path.join(self.aligndir, self.fqname + '.align.txt')
@@ -277,15 +360,13 @@ class RNAseqConfig(object):
         if create_dirs is True:
             check_path([
                 self.configdir,
-                self.rawdir, 
-                self.cleandir, 
-                self.aligndir, 
-                self.bamdir, 
-                self.bwdir, 
-                self.countdir, 
+                self.rawdir,
+                self.cleandir,
+                self.aligndir,
+                self.bamdir,
+                self.bwdir,
+                self.countdir,
                 self.reportdir])
-
-        ## update all parameters, in self
 
 
     def init_rnaseq_multiple(self, create_dirs=True):
@@ -312,7 +393,7 @@ class RNAseqConfig(object):
         else:
             raise Exception('unknown fq2: {}'.args['fq2'])
 
-        ## required 
+        ## required
         self.genome = args['genome']
         self.outdir = os.path.abspath(args['outdir'])
         self.feature = args.get('feature', 'gene')
@@ -355,15 +436,23 @@ class RNAseqConfig(object):
         return args.get(name, None)
 
 
-    def init_rnaseq_deseq(self, create_dirs=True):
+    def init_deseq_single(self, create_dirs=True):
         """
+        1-vs-1:
         DE analysis for two group of samples
-        feature, dirs_ctl, dirs_exp, outdir
+        dirs_ctl:
+        dirs_exp:
+        genome:
+        outdir:
+        feature:
         """
         args = self.args.copy() # global
 
         # RNAseq single dirs
-        chk1 = chk2 = q1 = q2 = []
+        chk1 = []
+        chk2 = []
+        q1 = []
+        q2 = []
         for i, j in zip(self.dirs_ctl, self.dirs_exp):
             ta = RNAseqReader(i)
             tb = RNAseqReader(j)
@@ -385,10 +474,10 @@ class RNAseqConfig(object):
         self.fqname_exp = q2
         self.prefix_ctl = args.get('group_ctl', None) if args.get('group_ctl', None) else p1
         self.prefix_exp = args.get('group_exp', None) if args.get('group_exp', None) else p2
-        self.project_name = '{}.vs.{}'.format(prefix_ctl, prefix_exp)
+        self.project_name = '{}.vs.{}'.format(self.prefix_ctl, self.prefix_exp)
         self.project_outdir = os.path.join(self.outdir, self.project_name, self.feature)
         # project dir
-        self.configdir = os.path.join(self.project_outdir, 'config') 
+        self.configdir = os.path.join(self.project_outdir, 'config')
         self.countdir = os.path.join(self.project_outdir, 'count')
         self.deseqdir = os.path.join(self.project_outdir, 'deseq')
         self.enrichdir = os.path.join(self.project_outdir, 'enrich')
@@ -400,18 +489,37 @@ class RNAseqConfig(object):
         self.config_json = os.path.join(self.configdir, 'arguments.json')
         # list of count
         self.count_ctl = [RNAseqReader(i).args.get('count_sens', None) for i in self.dirs_ctl]
-        self.count_exp = [RNAseqReader(i).args.get('count_exp', None) for i in self.dirs_exp]
+        self.count_exp = [RNAseqReader(i).args.get('count_sens', None) for i in self.dirs_exp]
         # design name group count_txt
-        self.design = os.path.join(self.configdir, 'design.txt')
+        self.deseq_design = os.path.join(self.configdir, 'deseq_design.txt')
 
         ## create directories
         if create_dirs is True:
             check_path([
                 self.configdir,
-                self.countdir, 
+                self.countdir,
                 self.deseqdir,
                 self.enrichdir,
                 self.reportdir])
+
+
+    def init_deseq_multiple(self, create_dirs=True):
+        """
+        N: pairs deseq
+        1-vs-1:
+        DE analysis for N groups of samples
+        smp_path:
+        group:
+        genome:
+        outdir:
+        feature:
+        """
+        pass
+        # groups = self.args.get('group', None)
+        # if self.group is None:
+        #     groups = [fq_name(i).rstrip('rep|r|REP|R||_|.|1|2') for i in self.args.get('smp_path', None)]
+
+        # self.group_pairs = self.get_group_pairs(groups)
 
 
     def is_rnaseq_single(self, x=None, return_config=False):
@@ -423,12 +531,13 @@ class RNAseqConfig(object):
         xpath = x if x else args.get('outdir', str(pathlib.Path.cwd()))
         feature = args.get('feature', 'gene')
         x_pickle = os.path.join(xpath, feature, 'config', 'arguments.pickle')
+        x_pickle = x if x else x_pickle # update
 
         tag = None
         args_config = {}
         if os.path.exists(x_pickle):
             args_config = pickle_to_dict(x_pickle)
-            tag = args_config.get('rnaseq_type', None) == 'single'
+            tag = args_config.get('rnaseq_type', None) == 'rnaseq_single'
 
         if return_config:
             return (tag, args_config)
@@ -441,16 +550,17 @@ class RNAseqConfig(object):
         Check if the directory is of RNAseq multiple sample
         outdir/feature/config/arguments.pickle
         """
-        args = self.args.copy()
-        outdir = args.get('outdir', str(pathlib.Path.cwd()))
-        feature = args.get('feature', 'gene')
-        x_pickle = x if x else outdir + '.config.pickle'
+        # args = self.args.copy()
+        outdir = self.args.get('outdir', str(pathlib.Path.cwd()))
+        feature = self.args.get('feature', 'gene')
+        x_pickle = os.path.join(outdir, 'config', feature, 'config', 'arguments.pickle')
+        x_pickle = x if x else x_pickle # update
 
         tag = None
         args_config = {}
         if os.path.exits(x_pickls):
             args_config = pickle_to_dict(x_pickle)
-            tag = args_config.get('rnaseq_type', None) == 'multiple'
+            tag = args_config.get('rnaseq_type', None) == 'rnaseq_multiple'
 
         if return_config:
             return (tag, args_config)
@@ -458,8 +568,26 @@ class RNAseqConfig(object):
             return tag
 
 
-    def is_rnaseq_deseq(self, x):
-        pass
+    def is_deseq_single(self, x, return_config=False):
+        """
+        Check if the directory is DESseq analysis
+        outdir/feature/config/arguments.pickle
+        """
+        feature = self.args['feature']
+        outdir = self.args['outdir']
+        x_pickle = os.path.join(outdir, feature, 'config', 'arguments.pickle')
+        x_pickle = x if x else x_pickle # update
+
+        tag = None
+        args_config = {}
+        if os.path.exists(x_pickle):
+            args_config = pickle_to_dict(x_pickle)
+            tag = args_config.get('rnaseq_type', None) == 'deseq_single'
+
+        if return_config:
+            return (tag, args_config)
+        else:
+            return tag
 
 
 class RNAseqSingle(object):
@@ -471,10 +599,10 @@ class RNAseqSingle(object):
         fq2 (optional)
 
         align single file to reference genome
-        """    
+        """
         self.args = kwargs
         self.status = self.init_rnaseq() # update all variables: *.config, *.args
-        
+
 
     def init_rnaseq(self):
         """
@@ -485,12 +613,7 @@ class RNAseqSingle(object):
         self.config = RNAseqConfig(**self.args) # update, global
         self.args.update(self.config.__dict__) # update, global
         assert in_attr(self.config, ['fq1', 'genome', 'outdir'])
-        assert self.config.rnaseq_type == 'single'
-
-        # # save config to files
-        # args_pickle = os.path.join(self.config.configdir, 'arguments.pickle')
-        # args_json = os.path.join(self.config.configdir, 'arguments.json')
-        # args_txt = os.path.join(self.config.configdir, 'arguments.txt')
+        assert self.config.rnaseq_type == 'rnaseq_single'
 
         # check arguments
         chk1 = args_checker(self.args, self.config.config_pickle)
@@ -509,7 +632,7 @@ class RNAseqSingle(object):
         """
         Copy raw data to dest dir
         if not: create a symlink
-        
+
         self.fq1, self.fq2 => raw_fq_list
         """
         raw_fq1, raw_fq2 = self.config.raw_fq_list
@@ -533,7 +656,6 @@ class RNAseqSingle(object):
         else:
             copy/links
         """
-        # args = self.args.copy()
         fq1, fq2 = self.config.raw_fq_list
         clean_fq1, clean_fq2 = self.config.clean_fq_list
 
@@ -542,17 +664,22 @@ class RNAseqSingle(object):
         args['fq1'] = args['fq'] = fq1
         args['fq2'] = fq2
         args['outdir'] = self.config.cleandir
-        
+
         if trimmed is True:
             # create symlink from rawdir
             # if raw is not gzipped, do it
-            if is_gz(fq1) and is_gz(fq2):
+            ## fq1
+            if is_gz(fq1):
                 symlink(fq1, clean_fq1)
-                symlink(fq2, clean_fq2)
             else:
-                # gzip files
                 gzip_cmd(fq1, clean_fq1, decompress=False, rm=False)
-                gzip_cmd(fq2, clean_fq2, decompress=False, rm=False)
+            ## fq2
+            if not fq2 is None:
+                if is_gz(fq2):
+                    symlink(fq2, clean_fq2)
+                else:
+                    gzip_cmd(fq2, clean_fq2, decompress=False, rm=False)
+
         else:
             if check_file(self.config.clean_fq_list):
                 log.info('trim() skipped, file exists: {}'.format(
@@ -603,7 +730,7 @@ class RNAseqSingle(object):
 
         # determine the strandness
         strand, strand_status = RNAseqLibrary(
-            bam=self.get_raw_bam(), 
+            bam=self.get_raw_bam(),
             gtf=self.config.gtf).run(with_status=True)
 
         # save to status
@@ -620,7 +747,7 @@ class RNAseqSingle(object):
 
         # run sense
         args_fwd = {
-            'gtf': self.config.gtf, 
+            'gtf': self.config.gtf,
             'bam_list': self.get_raw_bam(),
             'outdir': self.config.countdir,
             'strandness': strand_fwd,
@@ -629,7 +756,7 @@ class RNAseqSingle(object):
 
         # run anti
         args_rev = {
-            'gtf': self.config.gtf, 
+            'gtf': self.config.gtf,
             'bam_list': self.get_raw_bam(),
             'outdir': self.config.countdir,
             'strandness': strand_rev,
@@ -657,7 +784,7 @@ class RNAseqSingle(object):
 
     def run(self):
         """
-        Run pipeline for RNAseq, 
+        Run pipeline for RNAseq,
         process
         """
         # init dir
@@ -684,6 +811,8 @@ class RNAseqSingle(object):
         # 6.report
         self.report()
 
+        return self.config.outdir
+
 
 class RNAseqMultiple(object):
     """
@@ -696,7 +825,7 @@ class RNAseqMultiple(object):
         fq2 (optional)
         genome
         outdir
-        """    
+        """
         self.args = kwargs
         self.status = self.init_rnaseq() # update all variables: *.config, *.args
 
@@ -710,7 +839,7 @@ class RNAseqMultiple(object):
         self.config = RNAseqConfig(**self.args) # update, global
         self.args.update(self.config.__dict__) # update, global
         assert in_attr(self.config, ['fq1', 'genome', 'outdir'])
-        assert self.config.rnaseq_type == 'multiple'
+        assert self.config.rnaseq_type == 'rnaseq_multiple'
 
         # check arguments
         chk1 = args_checker(self.args, self.config.config_pickle)
@@ -722,7 +851,7 @@ class RNAseqMultiple(object):
         # status
         return all([chk1, chk2])
 
-     
+
     def run(self):
         """
         check each sample
@@ -741,14 +870,17 @@ class RNAseqMultiple(object):
             args_i['fqname'] = args['fqname_list'][i]
             args_i['smp_name'] = args_i['fqname']
             args_i['outdir'] = os.path.join(args['outdir'], args_i['fqname'])
-            args_i['rnaseq_type'] = 'single'
+            args_i['rnaseq_type'] = 'rnaseq_single'
             smp_dirs.append(args_i['outdir'])
+            # make sure to run RNAseq single
+            args_i['smp_path'] = args_i['dirs_ctl'] = args_i['dirs_exp'] = None
+            args_i['pickle'] = None # if pickle input !!!
             RNAseqSingle(**args_i).run()
 
         return smp_dirs
 
 
-class RNAseqDeseq(object):
+class RNAseqDeseqSingle(object):
     """
     Run RNAseq for multiple samples
 
@@ -768,15 +900,18 @@ class RNAseqDeseq(object):
     """
     def __init__(self, **kwargs):
         """
-        feature
+        dirs_ctl
+        dirs_exp
+        genome
         outdir
+        feature
         group_ctl (None)
         group_exp (None)
         merge replicates
-        """    
+        """
         self.args = kwargs
         self.status = self.init_rnaseq() # update all variables: *.config, *.args
-        
+
 
     def init_rnaseq(self):
         """
@@ -786,7 +921,7 @@ class RNAseqDeseq(object):
         """
         self.config = RNAseqConfig(**self.args) # update, global
         self.args.update(self.config.__dict__) # update, global
-        assert self.config.rnaseq_type == 'deseq'
+        assert self.config.rnaseq_type == 'deseq_single'
 
         # check arguments
         chk1 = args_checker(self.args, self.config.config_pickle)
@@ -836,14 +971,18 @@ class RNAseqDeseq(object):
             dlines.append('\t'.join(
                 [self.config.prefix_exp, n, self.config.feature, f_new]))
 
-        if os.path.exists(self.config.design):
-            log.info('file exists - {}'.format(self.config.design))
+        if os.path.exists(self.config.deseq_design):
+            log.info('file exists - {}'.format(self.config.deseq_design))
         else:
-            with open(self.config.design, 'wt') as w:
+            with open(self.config.deseq_design, 'wt') as w:
                 w.write('\n'.join(dlines) + '\n')
 
 
     def deseq2(self):
+        """
+        ## quality control
+        ## PCA/Cor/...
+        """
         pass
 
 
@@ -861,11 +1000,116 @@ class RNAseqDeseq(object):
         self.deseq2()
 
 
+class RNAseqDeseqMultiple(object):
+    """
+    args:
+    smp_path:
+
+    description:
+    Create paires for input `smp_path`
+    run RNAseqDeseqSingle() for each pair
+    """
+    def __init__(self, **kwargs):
+        """
+        smp_path: (output of RNAseqSingle)
+        group: (optional, parse from basename(smp_path))
+        """
+        self.args = kwargs
+
+        ## for smp_path
+        self.smp_path = kwargs.get('smp_path', [])
+        self.status = self.init_rnaseq()
+
+
+    def init_rnaseq(self):
+        # for group:
+        self.group = self.args.get('group', None)
+        if self.group is None:
+            # self.group = [fq_name(i).rstrip('rep|r|REP|R||_|.|1|2') for i in self.smp_path]
+            self.group = [fq_name_rmrep(i) for i in self.smp_path]
+        self.group_pairs = design_combinations(self.group, n=2, return_index=True)
+
+        ## check
+        # check
+        chk0 = len(self.smp_path) > 1
+        chk1 = isinstance(self.smp_path, list)
+        chk2 = len(self.group) > 1
+
+        return all([chk0, chk1, chk2])
+
+
+    def run(self):
+        ## index for groups
+        if self.status is True:
+            for (ia, ib) in self.group_pairs:
+                args_i = self.args.copy()
+                args_i['dirs_ctl'] = [self.smp_path[i] for i in ia]
+                args_i['dirs_exp'] = [self.smp_path[i] for i in ib]
+                args_i['smp_path'] = None # clear
+                # update args
+                config_i = RNAseqConfig(**args_i) # init
+                args_i.update(config_i.__dict__) # update args
+                RNAseqDeseqSingle(**args_i).run() # run single
+        else:
+            log.warning('DEseq multiple, skipped')
+
+
+class RNAseqBuildDesign(object):
+    """
+    Create design.txt for experiment
+    """
+    def __init__(self, **kwargs):
+        """
+        required arguments:
+        fq1, (fq2)
+        genome
+        outdir
+        """
+        self.args = kwargs
+        self.config = RNAseqConfig(**self.args)
+        self.args.update(self.config.__dict__)
+        self.status = self.init_rnaseq()
+
+
+    def init_rnaseq(self):
+        # for build design
+        args = self.args.copy()
+        args['design'] = self.config.auto_design # add design
+
+        # check arguments
+        chk1 = args_checker(args, self.config.config_pickle)
+        Json(args).writer(self.config.config_json)
+        args_logger(args, self.config.config_txt)
+        args['overwrite'] = self.args.get('overwrite', False)
+        chk2 = args['overwrite'] is False
+        return all([chk1, chk2])
+
+
+    def run(self):
+        self.auto_design = self.config.auto_design
+        DesignBuilder(**self.args).to_file(self.auto_design)
+        # print(self.config.auto_design)
+        ## log
+        lines = '\n' + '#'*104 + '\n'
+        lines += '# {:<100s} #\n'.format('Create design for RNAseq anslysis')
+        lines += '# {:<100s} #\n'.format('1. design file:')
+        lines += '# {:<100s} #\n'.format(self.auto_design)
+        lines += '# {:<100s} #\n'.format('2. arguments in pickle: ')
+        lines += '# {:<100s} #\n'.format(self.config.config_pickle)
+        lines += '# {:<100s} #\n'.format('')
+        lines += '# {:<100s} #\n'.format('Run the following command to finish analysis:')
+        lines += '# {:<100s} #\n'.format('')
+        lines += '$ hiseq rnaseq -d {} \n'.format(self.auto_design)
+        lines += 'or\n'
+        lines += '$ hiseq rnaseq --pickle {}\n'.format(self.config.config_pickle)
+        log.info(lines)
+
+
 class RNAseq(object):
     def __init__(self, **kwargs):
         """
-        options: 
-        global options: feature(gene/te/piRNAcluster/...), gtf, 
+        options:
+        global options: feature(gene/te/piRNAcluster/...), gtf,
         1. design: design.txt (single/multiple/deseq)
         2. single/multiple: --fq1, --fq2, --genome, --outdir
         3. deseq: --dirs-ctl, --dirs-exp, --outdir
@@ -874,65 +1118,43 @@ class RNAseq(object):
         self.args = kwargs
         self.config = RNAseqConfig(**self.args) # init
         self.args.update(self.config.__dict__) # update global
-        self.groups = self.args('group', [])
-
-
-    def run_rnaseq_multiple(self):
-        """
-        run alignment + quantification for each sample
-        parallel
-        """
-        args = self.args.copy()
-        RNAseqMultiple(**args).run()
-
-
-    def run_rnaseq_deseq(self):
-        """
-        Create ctl vs exp design
-        then run DESeq2 analysis
-        """
-        args = self.args.copy()
-        RNAseqSingle(**args).run()
-
-
-    def get_rnaseq_pairs(self):
-        """
-        Get the count list for each samples
-        groups, a vs b
-        """
-        groups = list(set(groups))
-        if len(groups) > 1:
-            pairs = list(combinatinos(groups, 2))
-        else:
-            pairs = []
-
-        return pairs
+        self.args['pickle'] = None # terminate `pickle`: top-level, after 1st round RNAseqConfig(), !!!
+        self.group = self.args.get('group', [])
 
 
     def run(self):
         """
         Run all RNAseq analysis
-        """        
-        if self.config.rnaseq_type == 'deseq':
-            self.run_rnaseq_deseq()
-        elif self.config.rnaseq_type == 'single':
-            self.run_rnaseq_single()
-        elif self.config.rnaseq_type == 'multiple':
-            single_dirs = self.run_rnaseq_multiple() #
-            pairs = self.get_rnaseq_pairs()
-            if len(pairs) > 0:
-                for (sa, sb) in pairs:
-                    args_i = self.args.copy()
-                    args_i['dirs_ctl'] = [single_dirs[i] for i, x in enumerate(self.groups) if x == sa]
-                    args_i['dirs_exp'] = [single_dirs[i] for i, x in enumerate(self.groups) if x == sb]
-                    RNAseqDeseq(**args_i).run()
+        """
+        args = self.args.copy()
+
+        if self.config.rnaseq_type == 'build_design':
+            RNAseqBuildDesign(**args).run()
+        elif self.config.rnaseq_type == 'deseq_single':
+            RNAseqDeseqSingle(**args).run()
+        elif self.config.rnaseq_type == 'deseq_multiple':
+            RNAseqDeseqMultiple(**args).run()
+        elif self.config.rnaseq_type == 'rnaseq_single':
+            RNAseqSingle(**args).run()
+        elif self.config.rnaseq_type == 'rnaseq_multiple':
+            # env: rnaseq_multiple
+            smp_path = RNAseqMultiple(**args).run()
+            # env: deseq_multiple
+            args_i = args
+            args_i['smp_path'] = smp_path
+            self.config = RNAseqConfig(**args_i)
+            args_i.update(self.config.__dict__)
+            args_i['smp_path'] = smp_path # covered by RNAseqConfig
+            RNAseqDeseqMultiple(**args_i).run()
+        else:
+            pass
 
 
 class RNAseqLibrary(object):
     """
     Determine the RNAseq library type:
     strandness: 1 ++, 1 --, / 2 +-, 2 -+ :
-    dUTP, NSR: 1 +-, 1 -+, / 2 ++, 2 -- :  
+    dUTP, NSR: 1 +-, 1 -+, / 2 ++, 2 -- :
     ###
     or:
     infer_experiment.py from RSeQC package.
@@ -972,7 +1194,7 @@ class RNAseqLibrary(object):
         ## input a BED file
         if self.gtf.lower().endswith('.bed'):
             self.bed = self.gtf
-            self.gtf = os.path.join(self.outdir, 
+            self.gtf = os.path.join(self.outdir,
                 os.path.basename(os.path.splitext(self.gtf)[0]) + '.gtf')
             # convert
             self.bed2gtf(self.bed, self.gtf)
@@ -1022,7 +1244,7 @@ class RNAseqLibrary(object):
         dest_bam = os.path.join(dest, bname)
         samfile = pysam.AlignmentFile(self.bam, 'rb')
         subfile = pysam.AlignmentFile(dest_bam, 'wb', template=samfile)
-        
+
         # count
         n = 0
         for read in samfile.fetch():
@@ -1037,14 +1259,14 @@ class RNAseqLibrary(object):
     def stat(self, strandness=1):
         """
         strandness; 1 or 2; for featureCounts
-        
+
         using -s 1, -s 2
         and return the mapping reads
         """
         ## -s 1
         outname = 'count.s_' + str(strandness) + '.txt'
         args = {
-            'gtf': self.gtf, 
+            'gtf': self.gtf,
             'bam_list': self.bam_sub,
             'outdir': self.outdir,
             'strandness': strandness,
@@ -1100,7 +1322,7 @@ class FeatureCounts(object):
     Run featureCounts for GTF + BAM(s)
     mission()
     count.txt
-    determin: library type: +-/-+; -+/+-; 
+    determin: library type: +-/-+; -+/+-;
     map reads, scale
     FPKM/RPKM;
     map pct:
@@ -1161,7 +1383,7 @@ class FeatureCounts(object):
         self.count_txt = os.path.join(self.outdir, self.outname)
         self.summary = self.count_txt + '.summary'
         self.log_file = os.path.join(self.outdir, 'featureCounts.log')
-        ## summary 
+        ## summary
 
         ## PE reads
         self.pe_flag = self.is_PE_bam()
@@ -1204,7 +1426,7 @@ class FeatureCounts(object):
         cmd += '-s {} -T {} -a {} -o {} {} 2> {}'.format(
             self.strandness,
             self.threads,
-            self.gtf, 
+            self.gtf,
             self.count_txt,
             ' '.join(self.bam_list),
             self.log_file)
@@ -1222,7 +1444,7 @@ class FeatureCounts(object):
 
     def wrap_log(self):
         """
-        save output file to log, 
+        save output file to log,
         """
         df = pd.read_csv(self.summary, '\t', index_col=0)
         df.columns = [os.path.basename(i) for i in df.columns.tolist()]
@@ -1260,6 +1482,6 @@ class FeatureCounts(object):
             self.count_txt))
         else:
             run_shell_cmd(cmd)
-            
+
         return self.wrap_log()
 
