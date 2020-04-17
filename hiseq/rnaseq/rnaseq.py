@@ -301,9 +301,7 @@ class RNAseqConfig(object):
 
         self.fq1 = os.path.abspath(args['fq1'])
         self.fq2 = os.path.abspath(args['fq2']) if args['fq2'] else args['fq2']
-        # read1_only
-        if self.read1_only:
-            self.fq2 = None
+        if self.read1_only: self.fq2 = None  # read1_only
 
         self.genome = args['genome']
         self.outdir = os.path.abspath(args['outdir'])
