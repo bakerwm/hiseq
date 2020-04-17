@@ -3,7 +3,7 @@
 
 """
 Common functions for pipeline construction
-file modification, 
+file modification,
 ...
 """
 
@@ -23,10 +23,10 @@ import pybedtools
 import pathlib
 import binascii
 import pandas as pd
-from .args import args_init, ArgumentsInit
-from hiseq.rnaseq.rnaseq import RNAseqReader
-# from args import args_init, ArgumentsInit  # for local test
-# from rnaseq import RNAseqReader # for local test
+from itertools import combinations
+# from .args import args_init, ArgumentsInit
+### local test ###
+from args import args_init, ArgumentsInit # for local test
 
 
 logging.basicConfig(
@@ -51,8 +51,8 @@ class Logger(object):
         def decorated(*args, **kwargs):
             try:
                 self.logger.info('{0} - {1} - {2}'.format(
-                    fn.__name__, 
-                    args, 
+                    fn.__name__,
+                    args,
                     kwargs))
                 result = fn(*args, **kwargs)
                 self.logger.info(result)
@@ -64,230 +64,7 @@ class Logger(object):
         return decorated
 
 
-def is_gz(filepath):
-    if os.path.exists(filepath):
-        with open(filepath, 'rb') as test_f:
-            return binascii.hexlify(test_f.read(2)) == b'1f8b'
-    else:
-        if filepath.endswith('.gz'):
-            return True
-        else:
-            return False
-
-
-def is_path(path, create = True):
-    """
-    Check path, whether a directory or not
-    if not, create it
-    """
-    assert isinstance(path, str)
-    if os.path.exists(path):
-        return True
-    else:
-        if create:
-            try:
-                os.makedirs(path)
-                return True
-            except IOError:
-                log.error('failed to create directories: %s' % path)
-        else:
-            return False
-
-
-def run_shell_cmd(cmd):
-    """This command is from 'ENCODE-DCC/atac-seq-pipeline'
-    https://github.com/ENCODE-DCC/atac-seq-pipeline/blob/master/src/encode_common.py
-    """
-    p = subprocess.Popen(['/bin/bash','-o','pipefail'], # to catch error in pipe
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        universal_newlines=True,
-        preexec_fn=os.setsid) # to make a new process with a new PGID
-    pid = p.pid
-    pgid = os.getpgid(pid)
-    log.info('run_shell_cmd: PID={}, PGID={}, CMD={}'.format(pid, pgid, cmd))
-    stdout, stderr = p.communicate(cmd)
-    rc = p.returncode
-    err_str = 'PID={}, PGID={}, RC={}\nSTDERR={}\nSTDOUT={}'.format(
-        pid, 
-        pgid, 
-        rc,
-        stderr.strip(), 
-        stdout.strip())
-    if rc:
-        # kill all child processes
-        try:
-            os.killpg(pgid, signal.SIGKILL)
-        except:
-            pass
-        finally:
-            raise Exception(err_str)
-    else:
-        log.info(err_str)
-    return stdout.strip('\n')
-
-
-def file_prefix(fn, with_path=False):
-    """
-    extract the prefix of a file
-    remove extensions
-    .gz, .fq.gz
-    """
-    assert isinstance(fn, str)
-    p1 = os.path.splitext(fn)[0]
-    px = os.path.splitext(fn)[1]
-    if px.endswith('gz') or px.endswith('.bz2'):
-        px = os.path.splitext(p1)[1] + px
-        p1 = os.path.splitext(p1)[0]
-    if not with_path:
-        p1 = os.path.basename(p1)
-    return [p1, px]
-
-
-def fq_name(x):
-    """
-    parse the name of fastq file:
-    .fq.gz
-    .fastq.gz
-    .fq
-    .fastq
-    (also for fasta, fa)
-    """
-    if isinstance(x, str):
-        fname = file_prefix(x)[0]
-        fname = re.sub('[._][rR]?1$', '', fname)
-        fname = re.sub('_\d$', '', fname)
-    elif isinstance(x, list):
-        fname = [fq_name(f) for f in x]
-    elif x is None:
-        log.warning('None type detected')
-        fname = None
-    else:
-        log.warning('unknown input detected')
-        fname = None
-    return fname
-
-
-def args_checker(d, x, update=False):
-    """Check if dict and x are consitent
-    d is dict
-    x is pickle file
-    """
-    assert isinstance(d, dict)
-    flag = None
-    if os.path.exists(x):
-        # read file to dict
-        with open(x, 'rb') as fh:
-            d_checker = pickle.load(fh)
-        if d == d_checker:
-            flag = True
-        else:
-            if update:
-                with open(x, 'wb') as fo:
-                    pickle.dump(d, fo, protocol=pickle.HIGHEST_PROTOCOL)
-    elif isinstance(x, str):
-        # save dict to new file
-        with open(x, 'wb') as fo:
-            pickle.dump(d, fo, protocol=pickle.HIGHEST_PROTOCOL)
-    else:
-        log.error('illegal x= argument: %s' % x)
-
-    return flag
-
-
-def args_logger(d, x, overwrite=False):
-    """Format dict, save to file
-        key: value
-    """
-    assert isinstance(d, dict)
-    n = ['%30s |    %-40s' % (k, d[k]) for k in sorted(d.keys())]
-    if os.path.exists(x) and overwrite is False:
-        return True
-    else:
-        with open(x, 'wt') as fo:
-            fo.write('\n'.join(n) + '\n')
-        return '\n'.join(n)
-
-
-def gzip_cmd(src, dest, decompress=True, rm=True):
-    """
-    Gzip Compress or Decompress files using gzip module in python 
-    rm, True/False, whether remove old file
-
-    # check the src file by extension: .gz
-    """
-    if os.path.exists(dest):
-        log.warning('file exists, skipped - {}'.format(dest))
-    else:
-        if decompress:
-            if is_gz(src):
-                with gzip.open(src, 'rb') as r, open(dest, 'wb') as w:
-                    shutil.copyfileobj(r, w)
-            else:
-                log.warning('not a gzipped file: {}'.format(src))
-                shutil.copy(src, dest)
-        else:
-            if is_gz(src):
-                log.warning('input is gzipped file, no need gzip')
-                shutil.copy(src, dest)
-            else:
-                with open(src, 'rb') as r, gzip.open(dest, 'wb') as w:
-                    shutil.copyfileobj(r, w)
-
-    # output
-    if rm is True:
-        os.remove(src)
-
-    return dest
-
-
-### deprecated - BEGIN ###
-def listfiles(path, full_name=True, recursive=False, include_dir=False):
-    """
-    List all the files within the path
-    """
-    out = []
-    for root, dirs, files in os.walk(path):
-        if full_name:
-            dirs = [os.path.join(root, d) for d in dirs]
-            files = [os.path.join(root, f) for f in files]
-        out += files
-
-        if include_dir:
-            out += dirs
-
-        if recursive is False:
-            break
-    return out
-
-
-def listfiles2(pattern, path='.', full_name=True, recursive=False):
-    """
-    List all the files in specific directory
-    fnmatch.fnmatch()
-
-    pattern:
-
-    *       matches everything
-    ?       matches any single character
-    [seq]   matches any character in seq
-    [!seq]  matches any char not in seq
-
-    An initial period in FILENAME is not special.
-    Both FILENAME and PATTERN are first case-normalized
-    if the operating system requires it.
-    If you don't want this, use fnmatchcase(FILENAME, PATTERN).
-
-    example:
-    listfiles('*.fq', './')
-    """
-    fn_list = listfiles(path, full_name, recursive, include_dir=False)
-    fn_list = [f for f in fn_list if fnmatch.fnmatch(f, pattern)]
-    return fn_list
-### deprecated - END ###
-
-
+## 1. files and path ##
 def listdir(path, full_name=True, recursive=False, include_dir=False):
     """
     List all the files within the path
@@ -333,11 +110,637 @@ def listfile(path='.', pattern='*', full_name=True, recursive=False):
     return sorted(fn_list)
 
 
+def list_fq_files(path, pattern='*'):
+    """
+    Parse fastq files within path, using the prefix
+    PE reads
+    SE reads
+
+    *.fastq
+    *.fq
+    *.fastq.gz
+    *.fq.gz
+
+    _1.
+    _2.
+    """
+    # all fastq files: *f[astq]+(.gz)?
+    fq_list = listfile('*q.gz', path) # *fastq.gz, *fq.gz
+    fq_list.extend(listfile('*q', path)) # *fastq, *fq
+
+    # filter
+    if pattern == '*':
+        hit_list = fq_list
+    else:
+        p = re.compile(r'(_[12])?.f(ast)?q(.gz)?$')
+        hit_list = [f for f in all_files if p.search(f) and x in f]
+
+    # chk1
+    if len(hit_list) == 0:
+        log.error('no fastq files found: {}'.format(path))
+
+    # determine SE or PE
+    r0 = r1 = r2 = []
+    for i in hit_list:
+        p1 = re.compile(r'_[rR]?1.f(ast)?q(.gz)?$') # read1
+        p2 = re.compile(r'_[rR]?2.f(ast)?q(.gz)?$') # read2
+        if p1.search(i):
+            r1.append(i)
+        elif p2.search(i):
+            r2.append(i)
+        else:
+            r0.append(i)
+
+    # chk2
+    if len(r2) > 0 and not len(r1) == len(r2):
+        log.error('read1 and read2 not equal: \nread1: {}\nread2: {}'.format(r1, r2))
+
+    # organize [[r1, r2], [r1, r2], ...]
+    out_list = []
+    for i, j in zip(r1, r2):
+        out_list.append([i, j])
+
+    for i in r0:
+        out_list.append([i, None])
+
+    # if len(r1) > 6:
+    #     log.warning('too many records matched : {} \n{}'.format(pattern, r1))
+
+    return out_list
+
+
+def is_gz(filepath):
+    if os.path.exists(filepath):
+        with open(filepath, 'rb') as test_f:
+            return binascii.hexlify(test_f.read(2)) == b'1f8b'
+    else:
+        if filepath.endswith('.gz'):
+            return True
+        else:
+            return False
+
+
+def file_prefix(fn, with_path=False):
+    """
+    extract the prefix of a file
+    remove extensions
+    .gz, .fq.gz
+    """
+    assert isinstance(fn, str)
+    p1 = os.path.splitext(fn)[0]
+    px = os.path.splitext(fn)[1]
+    if px.endswith('gz') or px.endswith('.bz2'):
+        px = os.path.splitext(p1)[1] + px
+        p1 = os.path.splitext(p1)[0]
+    if not with_path:
+        p1 = os.path.basename(p1)
+    return [p1, px]
+
+
+def symlink(src, dest, absolute_path=True):
+    """
+    Create symlinks within output dir
+    ../src
+    """
+    if src is None or dest is None:
+        log.warning('symlink skipped: {}, to: {}'.format(src, dest))
+    else:
+        if absolute_path:
+            # support: ~, $HOME,
+            srcname = os.path.abspath(os.path.expanduser(os.path.expandvars(src)))
+        else:
+            # only for directories within the same folder
+            srcname = os.path.join('..', os.path.basename(src))
+
+        if not os.path.exists(dest):
+            os.symlink(srcname, dest)
+
+
+def check_file(x, show_log=False):
+    """
+    if x (file, list) exists or not
+    """
+    if isinstance(x, str):
+        flag = 'ok' if os.path.exists(x) else 'failed'
+        if show_log is True:
+            log.info('{:<6s} : {}'.format(flag, x))
+        return os.path.exists(x)
+    elif isinstance(x, list):
+        return all([check_file(i, show_log=show_log) for i in x])
+    else:
+        log.warning('expect str and list, not {}'.format(type(x)))
+        return None
+
+
+def check_path(x, show_log=False, create_dirs=True):
+    """
+    Check if x is path, Create path
+    """
+    if isinstance(x, str):
+        if os.path.isdir(x):
+            tag = True
+        else:
+            if create_dirs is True:
+                try:
+                    os.makedirs(x)
+                    tag = True
+                except:
+                    tag = False
+            else:
+                tag = False
+        # show log
+        flag = 'ok' if tag is True else 'failed'
+        if show_log is True:
+            log.info('{:<6s} : {}'.format(flag, x))
+        return tag
+    elif isinstance(x, list):
+        return all([check_path(i, show_log, create_dirs) for i in x])
+    else:
+        log.warning('expect str and list, not {}'.format(type(x)))
+        return None
+
+
+def fq_name(fq, include_path=False):
+    """
+    parse the name of fastq file:
+    .fq.gz
+    .fastq.gz
+    .fq
+    .fastq
+    (also for fasta, fa)
+    """
+    # if isinstance(x, str):
+    #     fname = file_prefix(x)[0]
+    #     fname = re.sub('[._][rR]?1$', '', fname)
+    #     fname = re.sub('_\d$', '', fname)
+    # elif isinstance(x, list):
+    #     fname = [fq_name(f) for f in x]
+    # elif x is None:
+    #     log.warning('None type detected')
+    #     fname = None
+    # else:
+    #     log.warning('unknown input detected')
+    #     fname = None
+    # return fname
+    ###############
+    # fastq.gz, fastq, fasta.gz, fa.gz
+    p1 = re.compile('(_[12])?[.](fast|f)[aq](.gz)?$', re.IGNORECASE)
+    if isinstance(fq, str):
+        fq = fq if include_path is True else os.path.basename(fq)
+        return re.sub(p1, '', fq)
+    elif isinstance(fq, list):
+        return [fq_name(x) for x in fq]
+    else:
+        log.warning('unknown type found: {}'.format(type(fq)))
+        return fq
+
+
+def fq_name_rmrep(fq):
+    """
+    x, filename, or list
+
+    Remove the *.rep[123], *.REP[123] from tail
+    """
+    # if isinstance(x, str):
+    #     return fq_name(x).rstrip('rep|REP|r|R||_|.|1|2')
+    # elif isinstance(x, list):
+    #     return [fq_name_rmrep(i) for i in x]
+    # else:
+    #     pass
+    ##################
+    p1 = re.compile('[._](rep|r)[0-9]+$', re.IGNORECASE) # _rep1, _r1
+    if isinstance(fq, str):
+        return re.sub(p1, '', fq_name(fq))
+    elif isinstance(fq, list):
+        return [fq_name_rmrep(x) for x in fq]
+    else:
+        log.warning('unknown type found: {}'.format(type(fq)))
+        return fq
+
+
+def file_abspath(file):
+    """
+    Create os.path.abspath() for files, directories
+    """
+    if isinstance(file, str):
+        return os.path.abspath(file)
+    elif isinstance(file, list):
+        return [file_abspath(x) for x in file]
+    else:
+        log.warning('unknown type found: {}'.format(type(file)))
+        return file
+
+
+def merge_names(x):
+    """
+    Get the name of replictes
+    common in left-most
+    """
+    assert isinstance(x, list)
+    name_list = [os.path.basename(i) for i in x]
+    name_list = [re.sub('.rep[0-9].*$', '', i) for i in name_list]
+    return list(set(name_list))[0]
+
+
+## 2. commandline ##
+def run_shell_cmd(cmd):
+    """This command is from 'ENCODE-DCC/atac-seq-pipeline'
+    https://github.com/ENCODE-DCC/atac-seq-pipeline/blob/master/src/encode_common.py
+    """
+    p = subprocess.Popen(['/bin/bash','-o','pipefail'], # to catch error in pipe
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+        preexec_fn=os.setsid) # to make a new process with a new PGID
+    pid = p.pid
+    pgid = os.getpgid(pid)
+    log.info('run_shell_cmd: PID={}, PGID={}, CMD={}'.format(pid, pgid, cmd))
+    stdout, stderr = p.communicate(cmd)
+    rc = p.returncode
+    err_str = 'PID={}, PGID={}, RC={}\nSTDERR={}\nSTDOUT={}'.format(
+        pid,
+        pgid,
+        rc,
+        stderr.strip(),
+        stdout.strip())
+    if rc:
+        # kill all child processes
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except:
+            pass
+        finally:
+            raise Exception(err_str)
+    else:
+        log.info(err_str)
+    return stdout.strip('\n')
+
+
+def gzip_cmd(src, dest, decompress=True, rm=True):
+    """
+    Gzip Compress or Decompress files using gzip module in python
+    rm, True/False, whether remove old file
+
+    # check the src file by extension: .gz
+    """
+    if os.path.exists(dest):
+        log.warning('file exists, skipped - {}'.format(dest))
+    else:
+        if decompress:
+            if is_gz(src):
+                with gzip.open(src, 'rb') as r, open(dest, 'wb') as w:
+                    shutil.copyfileobj(r, w)
+            else:
+                log.warning('not a gzipped file: {}'.format(src))
+                shutil.copy(src, dest)
+        else:
+            if is_gz(src):
+                log.warning('input is gzipped file, no need gzip')
+                shutil.copy(src, dest)
+            else:
+                with open(src, 'rb') as r, gzip.open(dest, 'wb') as w:
+                    shutil.copyfileobj(r, w)
+
+    # output
+    if rm is True:
+        os.remove(src)
+
+    return dest
+
+
+def list_uniquer(seq, sorted=True, idfun=None):
+    """
+    seq: a list with items
+    sorted: whether sort the output(unique)
+
+    get the unique of inlist
+
+    see1: Markus
+    remove duplicates from a list while perserving order
+    https://stackoverflow.com/a/480227/2530783
+
+    def f7(seq):
+        seen = set()
+        seen_add = seen.add
+        return [x for x in seq if not (x in seen or seen_add(x))]
+
+    see2: ctcherry
+    https://stackoverflow.com/a/89202/2530783
+
+    def f5(seq, idfun=None):
+        # order preserving
+        if idfun is None:
+            def idfun(x): return x
+        seen = {}
+        result = []
+        for item in seq:
+            marker = idfun(item)
+            # in old Python versions:
+            # if seen.has_key(marker)
+            # but in new ones:
+            if marker in seen: continue
+            seen[marker] = 1
+            result.append(item)
+        return result
+    """
+    if idfun is None:
+        def idfun(x): return x # for None
+
+    if not isinstance(seq, list):
+        log.error('list required, but get {}'.format(type(seq)))
+        return seq
+    elif sorted is True:
+        return list(set(seq))
+    else:
+        seen = set()
+        return [x for x in seq if x not in seen and not seen.add(x)]
+
+
+def args_checker(d, x, update=False):
+    """Check if dict and x are consitent
+    d is dict
+    x is pickle file
+    """
+    assert isinstance(d, dict)
+    flag = None
+    if os.path.exists(x):
+        # read file to dict
+        with open(x, 'rb') as fh:
+            d_checker = pickle.load(fh)
+        if d == d_checker:
+            flag = True
+        else:
+            if update:
+                with open(x, 'wb') as fo:
+                    pickle.dump(d, fo, protocol=pickle.HIGHEST_PROTOCOL)
+    elif isinstance(x, str):
+        # save dict to new file
+        with open(x, 'wb') as fo:
+            pickle.dump(d, fo, protocol=pickle.HIGHEST_PROTOCOL)
+    else:
+        log.error('illegal x= argument: %s' % x)
+
+    return flag
+
+
+def args_logger(d, x, overwrite=False):
+    """Format dict, save to file
+        key: value
+    """
+    assert isinstance(d, dict)
+    n = ['%30s |    %-40s' % (k, d[k]) for k in sorted(d.keys())]
+    if os.path.exists(x) and overwrite is False:
+        return True
+    else:
+        with open(x, 'wt') as fo:
+            fo.write('\n'.join(n) + '\n')
+        return '\n'.join(n)
+
+
+## 3. utils ##
+def sam_flag_check(query, subject):
+    """
+    Check two numbers, query (for filtering) in subject or not
+    convert to binary mode
+    q: 0000010  (2)
+    s: 1011011  (91)
+    q in s
+    range: 0 - 2048 (SAM flag)
+    """
+    def to_bin(n):
+        return '{0:012b}'.format(n)
+
+    # convert to binary mode
+    q = to_bin(eval(query))
+    s = to_bin(eval(subject))
+
+    # check q, s
+    flag = True
+    for j, k in zip(q[::-1], s[::-1]):
+        if not j == '1':
+            continue
+        if eval(j) - eval(k) > 0:
+            flag = False
+            break
+
+    return flag
+
+
+
+################################################################################
+## functions for pipeline
+
+def in_dict(d, k):
+    """
+    Check the keys in dict or not
+    """
+    assert isinstance(d, dict)
+    if isinstance(k, str):
+        k_list = [k]
+    elif isinstance(k, list):
+        k_list = list(map(str, k))
+    else:
+        log.warning('expect str and list, not {}'.format(type(k)))
+        return False
+
+    return all([i in d for i in k_list])
+
+
+def in_attr(x, a, return_values=True):
+    """
+    Check a (attributes) in object a or not
+    return the values or not
+    """
+    if isinstance(a, str):
+        a_list = [a]
+    elif isinstance(a, list):
+        a_list = list(map(str, a))
+    else:
+        log.warning('expect str and list, not {}'.format(type(a)))
+        return False
+
+    # status
+    status = all([hasattr(x, i) for i in a_list])
+
+    if status and return_values:
+        # values
+        return [getattr(x, i) for i in a_list]
+    else:
+        return status
+
+
+def dict_to_log(d, x, overwrite=False):
+    """
+    Convert dict to log style
+        key | value
+    """
+    assert isinstance(d, dict)
+    logout = ['%30s |    %-40s' % (k, d[k]) for k in sorted(d.keys())]
+    if overwrite is True or not os.path.exists(x):
+        with open(x, 'wt') as w:
+            w.write('\n'.join(logout) + '\n')
+
+    return '\n'.join(logout)
+
+
+def dict_to_pickle(d, x):
+    """
+    Convert dict to pickle
+    """
+    assert isinstance(d, dict)
+    with open(x, 'wb') as w:
+        pickle.dump(d, w, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+def pickle_to_dict(x):
+    """
+    Convert pickle file to dict
+    """
+    with open(x, 'rb') as r:
+        return pickle.load(r)
+
+
+class Dict2Obj(object):
+    """
+    >>> d = {'a': 1, 'b': 2}
+    >>> b = Dict2obj(**d)
+    >>> print(b.a)
+    1
+
+    class AttributeDict(object):
+    A class to convert a nested Dictionary into an object with key-values
+    accessibly using attribute notation (AttributeDict.attribute) instead of
+    key notation (Dict["key"]). This class recursively sets Dicts to objects,
+    allowing you to recurse down nested dicts (like: AttributeDict.attr.attr)
+    from: http://databio.org/posts/python_AttributeDict.html
+    by Nathan Sheffield
+    """
+    def __init__(self, **entries):
+        self.add_entries(**entries)
+
+    def add_entries(self, **entries):
+        for key, value in entries.items():
+            if type(value) is dict:
+                self.__dict__[key] = AttributeDict(**value)
+            else:
+                self.__dict__[key] = value
+
+    def __getitem__(self, key):
+        """
+        Provides dict-style access to attributes
+        """
+        return getattr(self, key)
+
+
+class Dict2Class(object):
+    """
+    Turns a dictionary into a class
+    from: https://www.blog.pythonlibrary.org/2014/02/14/python-101-how-to-change-a-dict-into-a-class/
+    by Mike
+    """
+    #----------------------------------------------------------------------
+    def __init__(self, d):
+        """Constructor"""
+        for k, v in d.items():
+            setattr(self, k, v)
+
+        # for key in d:
+        #     setattr(self, key, d[key])
+
+
+def bed2gtf(infile, outfile):
+    """Convert BED to GTF
+    chrom chromStart chromEnd name score strand
+    """
+    with open(infile) as r, open(outfile, 'wt') as w:
+        for line in r:
+            fields = line.strip().split('\t')
+            start = int(fields[1]) + 1
+            w.write('\t'.join([
+                fields[0],
+                'BED_file',
+                'gene',
+                str(start),
+                fields[2],
+                '.',
+                fields[5],
+                '.',
+                'gene_id "{}"; gene_name "{}"'.format(fields[3], fields[3])
+                ]) + '\n')
+    return outfile
+
+
+### deprecated - BEGIN ###
+def listfiles(path, full_name=True, recursive=False, include_dir=False):
+    """
+    List all the files within the path
+    """
+    out = []
+    for root, dirs, files in os.walk(path):
+        if full_name:
+            dirs = [os.path.join(root, d) for d in dirs]
+            files = [os.path.join(root, f) for f in files]
+        out += files
+
+        if include_dir:
+            out += dirs
+
+        if recursive is False:
+            break
+    return out
+
+
+def listfiles2(pattern, path='.', full_name=True, recursive=False):
+    """
+    List all the files in specific directory
+    fnmatch.fnmatch()
+
+    pattern:
+
+    *       matches everything
+    ?       matches any single character
+    [seq]   matches any character in seq
+    [!seq]  matches any char not in seq
+
+    An initial period in FILENAME is not special.
+    Both FILENAME and PATTERN are first case-normalized
+    if the operating system requires it.
+    If you don't want this, use fnmatchcase(FILENAME, PATTERN).
+
+    example:
+    listfiles('*.fq', './')
+    """
+    fn_list = listfiles(path, full_name, recursive, include_dir=False)
+    fn_list = [f for f in fn_list if fnmatch.fnmatch(f, pattern)]
+    return fn_list
+
+
+def is_path(path, create = True):
+    """
+    Check path, whether a directory or not
+    if not, create it
+    """
+    assert isinstance(path, str)
+    if os.path.exists(path):
+        return True
+    else:
+        if create:
+            try:
+                os.makedirs(path)
+                return True
+            except IOError:
+                log.error('failed to create directories: %s' % path)
+        else:
+            return False
+### deprecated - END ###
+
+
 class Json(object):
 
     def __init__(self, x):
         """
-        x 
+        x
           - dict, save to file
           - json, save to file
           - file, read as dict
@@ -350,7 +753,7 @@ class Json(object):
         if isinstance(x, Json):
             self.dict = x.dict
         elif isinstance(x, dict):
-            # input a dict, 
+            # input a dict,
             # save to file
             self.dict = x
         elif os.path.exists(x):
@@ -363,7 +766,7 @@ class Json(object):
         """
         Create a tmp file to save json object
         """
-        tmp = tempfile.NamedTemporaryFile(prefix='tmp', suffix='.json', 
+        tmp = tempfile.NamedTemporaryFile(prefix='tmp', suffix='.json',
             delete=False)
         return tmp.name
 
@@ -407,8 +810,8 @@ class Genome(object):
     3. bowtie_index(), bowtie index, optional, rRNA=True
     4. bowtie2_index(), bowtie2 index, optional, rRNA=True
     5. star_index(), STAR index, optional, rRNA=True
-    6. gene_bed(), 
-    7. gene_rmsk(), 
+    6. gene_bed(),
+    7. gene_rmsk(),
     8. gene_gtf(), optional, version='ucsc|ensembl|ncbi'
     9. te_gtf(), optional, version='ucsc'
     10. te_consensus(), optional, fruitfly()
@@ -416,7 +819,7 @@ class Genome(object):
 
     directory structure of genome should be like this:
     /path-to-data/{genome}/
-        |- bigZips  # genome fasta, fasize, chromosome 
+        |- bigZips  # genome fasta, fasize, chromosome
         |- annotation_and_repeats  # gtf, bed, rRNA, tRNA, annotation
         |- bowtie_index
         |- bowtie2_index
@@ -428,7 +831,7 @@ class Genome(object):
     default: $HOME/data/genome/{genome}
 
     """
-    def __init__(self, genome, genome_path=None, 
+    def __init__(self, genome, genome_path=None,
         repeat_masked_genome=False, **kwargs):
         assert isinstance(genome, str)
         self.genome = genome
@@ -437,7 +840,7 @@ class Genome(object):
 
         # path
         if genome_path is None:
-            genome_path = os.path.join(str(pathlib.Path.home()), 
+            genome_path = os.path.join(str(pathlib.Path.home()),
                 'data', 'genome')
         self.genome_path = genome_path
 
@@ -452,11 +855,11 @@ class Genome(object):
         {genome}/bigZips/{genome}.fa
         also check ".gz" file
         """
-        fa = os.path.join(self.genome_path, self.genome, 'bigZips', 
+        fa = os.path.join(self.genome_path, self.genome, 'bigZips',
             self.genome + '.fa')
         if not os.path.exists(fa):
             # gencode version
-            fa = os.path.join(self.genome_path, self.genome, 'fasta', 
+            fa = os.path.join(self.genome_path, self.genome, 'fasta',
                 self.genome + '.fa')
 
         fa_gz = fa + '.gz'
@@ -511,7 +914,7 @@ class Genome(object):
             suffix = '.rmsk.bed'
         else:
             suffix = '.refseq.bed'
-        g = os.path.join(self.genome_path, self.genome, 
+        g = os.path.join(self.genome_path, self.genome,
             'annotation_and_repeats', self.genome + suffix)
         if not os.path.exists(g):
             g = None
@@ -525,15 +928,15 @@ class Genome(object):
         version = version.lower() #
 
         gtf = os.path.join(
-            self.genome_path, 
-            self.genome, 
+            self.genome_path,
+            self.genome,
             'annotation_and_repeats',
             self.genome + '.' + version + '.gtf')
 
         if not os.path.exists(gtf):
             gtf = os.path.join(
-            self.genome_path, 
-            self.genome, 
+            self.genome_path,
+            self.genome,
             'gtf',
             self.genome + '.' + version + '.gtf')
 
@@ -548,8 +951,8 @@ class Genome(object):
         or return TE consensus sequence for the genome (dm3)
         """
         # only dm3 supported
-        te_gtf = os.path.join(self.genome_path, self.genome, 
-            self.genome + '_transposon', 
+        te_gtf = os.path.join(self.genome_path, self.genome,
+            self.genome + '_transposon',
             self.genome + '_transposon.gtf')
         if not os.path.exists(te_gtf):
             te_gtf = None
@@ -560,17 +963,17 @@ class Genome(object):
 class Bam(object):
     """
     Manipulate BAM files
-    - sort 
-    - index 
+    - sort
+    - index
     - merge
-    - count 
+    - count
     - to_bed
-    - rmdup  
+    - rmdup
     - ...
 
     Using Pysam, Pybedtools, ...
 
-    code from cgat: 
+    code from cgat:
     """
     def __init__(self, infile, threads=4):
         self.bam = infile
@@ -609,7 +1012,7 @@ class Bam(object):
         """
         Merge multiple BAM files using samtools
         """
-        
+
         # pysam.merge('')
         pass
 
@@ -621,7 +1024,7 @@ class Bam(object):
 
     def to_bed(self, outfile=None):
         """Convert BAM to BED
-        pybetools 
+        pybetools
         """
         if outfile is None:
             outfile = os.path.splitext(self.bam)[0] + '.bed'
@@ -682,8 +1085,8 @@ class Bam(object):
     def isPaired(self, topn=1000):
         """
         Check if infile contains paired end reads
-        
-        go through the topn alignments in file, 
+
+        go through the topn alignments in file,
 
         return: True, any of the alignments are paired
         """
@@ -730,9 +1133,9 @@ class Bam(object):
                 "can't get number of reads from bamfile, msg=%s, data=%s" %
                 (msg, lines))
         return nreads
-      
 
-    def estimateInsertSizeDistribution(self, topn=10000, n=10, 
+
+    def estimateInsertSizeDistribution(self, topn=10000, n=10,
         method="picard", similarity_threshold=1.0, max_chunks=1000):
         """
         Estimate insert size from a subset of alignments in a bam file.
@@ -839,7 +1242,7 @@ class Bam(object):
         else:
             raise ValueError("unknown method '%s'" % method)
 
-  
+
     def estimateTagSize(self, topn=10, multiple="error"):
         """
         Estimate tag/read size from first alignments in file.
@@ -929,7 +1332,7 @@ class AlignIndex(object):
 
         if isinstance(index, str):
             # index given
-            self.index = index.rstrip('/') # 
+            self.index = index.rstrip('/') #
             self.name = self.get_name()
             self.aligner_supported = self.get_aligner() # all
             self.check = index if self.is_index() else None
@@ -937,18 +1340,18 @@ class AlignIndex(object):
             # index not defined, search required
             # log.warning('index=, not defined; .search() required')
             pass
-        
-        # self.kwargs = args        
+
+        # self.kwargs = args
 
 
     def get_aligner(self, index=None):
         """
         Search the available index for aligner:
         bowtie, [*.[1234].ebwt,  *.rev.[12].ebwt]
-        bowtie2, [*.[1234].bt2, *.rev.[12].bt2]  
+        bowtie2, [*.[1234].bt2, *.rev.[12].bt2]
         STAR,
-        bwa, 
-        hisat2, 
+        bwa,
+        hisat2,
         """
         if index is None:
             index = self.index
@@ -1023,7 +1426,7 @@ class AlignIndex(object):
             index = self.index
         return self.aligner in self.get_aligner(index)
 
-        # return self.aligner in self.aligner_supported if 
+        # return self.aligner in self.aligner_supported if
         #    index is None else self.aligner in self.get_aligner(index)
 
 
@@ -1066,7 +1469,7 @@ class AlignIndex(object):
                 |- genome
                 |- rRNA
                 |- MT_trRNA
-            |- transposon  
+            |- transposon
             |- piRNA cluster
 
         """
@@ -1110,296 +1513,9 @@ class AlignIndex(object):
 ################################################################################
 ## functions
 
-def sam_flag_check(query, subject):
-    """
-    Check two numbers, query (for filtering) in subject or not
-    convert to binary mode
-    q: 0000010  (2)
-    s: 1011011  (91)
-    q in s
-    range: 0 - 2048 (SAM flag)
-    """
-    def to_bin(n):
-        return '{0:012b}'.format(n)
-
-    # convert to binary mode
-    q = to_bin(eval(query))
-    s = to_bin(eval(subject))
-
-    # check q, s
-    flag = True
-    for j, k in zip(q[::-1], s[::-1]):
-        if not j == '1':
-            continue
-        if eval(j) - eval(k) > 0:
-            flag = False
-            break
-
-    return flag
-    
 
 ################################################################################
-## functions for pipeline
-def symlink(src, dest, absolute_path=True):
-    """
-    Create symlinks within output dir
-    ../src
-    """
-    if absolute_path:
-        # support: ~, $HOME,
-        srcname = os.path.abspath(os.path.expanduser(os.path.expandvars(src)))
-    else:
-        # only for directories within the same folder
-        srcname = os.path.join('..', os.path.basename(src))
-
-    if not os.path.exists(dest):
-        os.symlink(srcname, dest)
-
-
-def in_dict(d, k):
-    """
-    Check the keys in dict or not
-    """
-    assert isinstance(d, dict)
-    if isinstance(k, str):
-        k_list = [k]
-    elif isinstance(k, list):
-        k_list = list(map(str, k))
-    else:
-        log.warning('expect str and list, not {}'.format(type(k)))
-        return False
-
-    return all([i in d for i in k_list])
-
-
-def in_attr(x, a, return_values=True):
-    """
-    Check a (attributes) in object a or not
-    return the values or not
-    """
-    if isinstance(a, str):
-        a_list = [a]
-    elif isinstance(a, list):
-        a_list = list(map(str, a))
-    else:
-        log.warning('expect str and list, not {}'.format(type(a)))
-        return False
-
-    # status
-    status = all([hasattr(x, i) for i in a_list])
-
-    if status and return_values:
-        # values
-        return [getattr(x, i) for i in a_list]
-    else:
-        return status
-
-
-def check_file(x, show_log=False):
-    """
-    Check if x file, exists
-    """
-    if isinstance(x, str):
-        x_list = [x]
-    elif isinstance(x, list):
-        x_list = x
-    else:
-        log.warning('expect str and list, not {}'.format(type(x)))
-        return False        
-
-    if show_log:
-        for i in x_list:
-            flag = 'ok' if os.path.exists(i) else 'fail'
-            print('{:6s} : {}'.format(flag, i))
-
-    return all(map(os.path.exists, x_list))
-
-
-def check_path(x):
-    """
-    Check if x is path, Create path
-    """
-    if isinstance(x, str):
-        x_list = [x]
-    elif isinstance(x, list):
-        x_list = list(map(str, x))
-    else:
-        log.warning('expect str and list, not {}'.format(type(x)))
-        return False
-
-    return all(map(is_path, x_list))
-
-
-def merge_names(x):
-    """
-    Get the name of replictes
-    common in left-most
-    """
-    assert isinstance(x, list)
-    name_list = [os.path.basename(i) for i in x]
-    name_list = [re.sub('.rep[0-9].*$', '', i) for i in name_list]
-    return list(set(name_list))[0]
-
-
-def dict_to_log(d, x, overwrite=False):
-    """
-    Convert dict to log style
-        key | value
-    """
-    assert isinstance(d, dict)
-    logout = ['%30s |    %-40s' % (k, d[k]) for k in sorted(d.keys())]
-    if overwrite is True or not os.path.exists(x): 
-        with open(x, 'wt') as w:
-            w.write('\n'.join(logout) + '\n')
-
-    return '\n'.join(logout)
-
-
-def dict_to_pickle(d, x):
-    """
-    Convert dict to pickle
-    """
-    assert isinstance(d, dict)
-    with open(x, 'wb') as w:
-        pickle.dump(d, w, protocol=pickle.HIGHEST_PROTOCOL)
-
-
-def pickle_to_dict(x):
-    """
-    Convert pickle file to dict
-    """
-    with open(x, 'rb') as r:
-        return pickle.load(r)
-
-
-def bed2gtf(infile, outfile):
-    """Convert BED to GTF
-    chrom chromStart chromEnd name score strand
-    """
-    with open(infile) as r, open(outfile, 'wt') as w:
-        for line in r:
-            fields = line.strip().split('\t')
-            start = int(fields[1]) + 1
-            w.write('\t'.join([
-                fields[0],
-                'BED_file',
-                'gene',
-                str(start),
-                fields[2],
-                '.',
-                fields[5],
-                '.',
-                'gene_id "{}"; gene_name "{}"'.format(fields[3], fields[3])
-                ]) + '\n')
-    return outfile
-
-
-################################################################################
-## TEMP 
-def list_fq_files(path, pattern='*'):
-    """
-    Parse fastq files within path, using the prefix
-    PE reads
-    SE reads
-
-    *.fastq
-    *.fq
-    *.fastq.gz
-    *.fq.gz
-
-    _1.
-    _2.
-    """
-    # all fastq files: *f[astq]+(.gz)? 
-    fq_list = listfile('*q.gz', path) # *fastq.gz, *fq.gz
-    fq_list.extend(listfile('*q', path)) # *fastq, *fq
-    
-    # filter
-    if pattern == '*':
-        hit_list = fq_list
-    else:
-        p = re.compile(r'(_[12])?.f(ast)?q(.gz)?$')
-        hit_list = [f for f in all_files if p.search(f) and x in f]
-    
-    # chk1
-    if len(hit_list) == 0:
-        log.error('no fastq files found: {}'.format(path))
-
-    # determine SE or PE
-    r0 = r1 = r2 = []
-    for i in hit_list:
-        p1 = re.compile(r'_[rR]?1.f(ast)?q(.gz)?$') # read1
-        p2 = re.compile(r'_[rR]?2.f(ast)?q(.gz)?$') # read2
-        if p1.search(i):
-            r1.append(i)
-        elif p2.search(i):
-            r2.append(i)
-        else:
-            r0.append(i)
-
-    # chk2
-    if len(r2) > 0 and not len(r1) == len(r2):
-        log.error('read1 and read2 not equal: \nread1: {}\nread2: {}'.format(r1, r2))
-
-    # organize [[r1, r2], [r1, r2], ...]
-    out_list = []
-    for i, j in zip(r1, r2):
-        out_list.append([i, j])
-
-    for i in r0:
-        out_list.append([i, None])
-
-    # if len(r1) > 6:
-    #     log.warning('too many records matched : {} \n{}'.format(pattern, r1))
-    
-    return out_list
-
-
-def design_reader(x):
-    """Read the fastq and genome information
-    group, name, genome, outdir, fq1, fq2
-    """
-    try:
-        df = pd.read_csv(x, '\t', header=None, comment='#', skip_blank_lines=True,
-            names=['group', 'name', 'genome', 'outdir', 'fq1', 'fq2'])
-        
-        # unique names
-        names = df['name'].to_list()
-        chk1 = len(names) == len(set(names))
-
-        # unique genome: single, str
-        genomes = df['genome'].to_list()
-        chk2 = len(set(genomes)) == 1
-
-        # outdir: single, str
-        outdirs = df['outdir'].to_list()
-        chk3 = len(set(outdirs)) == 1
-
-        # fq1: str
-        fq1_list = df['fq1'].to_list()
-        chk4 = [os.path.exists(i) for i in fq1_list]
-
-        # fq2: NA or str
-        fq2_list = df['fq2'].to_list()
-
-        # construct args
-        args = {
-            'fq1': fq1_list,
-            'fq2': fq2_list,
-            'genome': genomes[0],
-            'outdir': outdirs[0],
-            'smp_name': names,
-        }
-
-        # for check
-        if not all([chk1, chk2, chk3, chk4]):
-            raise Exception('file format not correct - {}'.format(x))
-
-        return args
-    except:
-        log.warning('file format not correct - {}'.x)
-        return {}
-
+## TEMP
 
 def featureCounts_reader(x, bam_names=False):
     """
@@ -1414,11 +1530,40 @@ def featureCounts_reader(x, bam_names=False):
         return df
 
 
-## design
+## design, create combinations
+def design_combinations(seq, n=2, return_index=True):
+    """
+    seq: the group name for each sample
+
+    example:
+    seq = ['ctl', 'ctl', 'exp', 'exp'] # keep order
+
+    : return_index=True
+    [[0, 1], [2, 3]]
+
+    : return_index=False
+    ['ctl', 'exp']
+    """
+    seq_unique = list_uniquer(seq, sorted=False) # keep order
+
+    if len(seq_unique) >= n:
+        item_pairs = list(combinations(seq_unique, n))
+        # for index
+        index_pairs = []
+        for (a, b) in item_pairs:
+            index_a = [i for i, x in enumerate(seq) if x == a]
+            index_b = [i for i, x in enumerate(seq) if x == b]
+            index_pairs.append([index_a, index_b])
+        return index_pairs if return_index else item_pairs
+    else:
+        return []
+
+
+## design, from txt file
 class DesignReader(object):
     """
     Parsing tab file for arguments
-    return dict 
+    return dict
     optional:
     return: json file, dict
 
@@ -1428,7 +1573,7 @@ class DesignReader(object):
     names=['RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'smp_path']
 
     atacseq:
-    names=['ATACseq', 'group', 'name', 'genome', 'outdir', 'fq1', 'fq2']        
+    names=['ATACseq', 'group', 'name', 'genome', 'outdir', 'fq1', 'fq2']
     """
     def __init__(self, file):
         self.file = file
@@ -1548,7 +1693,7 @@ class DesignReader(object):
                 n_new = n
             names_new.append(n_new)
 
-        chk2 = len(names_new) == len(set(names_new)) 
+        chk2 = len(names_new) == len(set(names_new))
 
         # unique genome: single, str
         genomes = self.df['genome'].to_list()
@@ -1631,7 +1776,7 @@ class DesignReader(object):
         args['smp_name'] = names
         args['genome'] = genomes.pop()
         args['outdir'] = outdirs.pop()
-        args['feature'] = features.pop() 
+        args['feature'] = features.pop()
 
         # for check
         # print([chk0, chk1, chk2, chk3, chk4])
@@ -1649,7 +1794,7 @@ class DesignReader(object):
         return args
 
 
-    # deprecated # 
+    # deprecated #
     def design_atacseq(self):
         """
         atacseq:
@@ -1707,6 +1852,7 @@ class DesignReader(object):
         return json_file
 
 
+## design, to txt file
 class DesignBuilder(object):
     """
     Create design.txt for pipeline
@@ -1715,14 +1861,14 @@ class DesignBuilder(object):
 
     ATACseq:
     fq1, genome, outdir, smp_name, fq2
-    
+
     rnaseq:
     names=['RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'fq1', 'fq2']
     rnaseq:
     names=['RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'smp_path']
 
     atacseq:
-    names=['ATACseq', 'group', 'name', 'genome', 'outdir', 'fq1', 'fq2']      
+    names=['ATACseq', 'group', 'name', 'genome', 'outdir', 'fq1', 'fq2']
     """
     def __init__(self, **kwargs):
         self.args = kwargs
@@ -1742,6 +1888,7 @@ class DesignBuilder(object):
         if len(kwargs) > 0:
             self.hiseq_type, self.hiseq_subtype = self.design_type()
             self.status = self.check() # updated
+            print(self.hiseq_type, self.hiseq_subtype)
 
 
     def demo(self):
@@ -1764,11 +1911,16 @@ class DesignBuilder(object):
             tag_sub = None
         else:
             tag = 'RNAseq'
-            if any([self.smp_path, self.dirs_ctl and self.dirs_exp]):
-                tag_sub = 'deseq'
-            else:
+            if self.smp_path:
+                tag_sub = 'deseq_multiple'
+            elif self.dirs_ctl and self.dirs_exp:
+                tag_sub = 'deseq_single'
+            elif isinstance(self.fq1, str):
+                tag_sub = 'single'
+            elif isinstance(self.fq1, list):
                 tag_sub = 'multiple'
-
+            else:
+                tag_sub = None
 
         return (tag, tag_sub)
 
@@ -1776,23 +1928,24 @@ class DesignBuilder(object):
     def check(self):
         """
         Check the arguments
-        RNAseq, count_txt/fq1, 
+        RNAseq, count_txt/fq1,
         ATACseq, fq1
         smp_name ('NULL'|[list])
         group ('NULL' | [list - by fq1/count])
         """
         ## RNAseq
-        if self.hiseq_type == 'RNAseq': 
+        if self.hiseq_type == 'RNAseq':
             # feature
             chk0 = isinstance(self.feature, str)
 
             ## RNAseq - single, multiple
             if self.hiseq_subtype == 'multiple':
+                n_samples = len(self.fq1)
                 # check fq
                 self.fq1 = self.fq1 if isinstance(self.fq1, list) else [self.fq1]
                 n_samples = len(self.fq1)
                 if self.fq2 is None:
-                    self.fq2 = ['NULL'] * len(self.fq1)
+                    self.fq2 = ['NULL'] * n_samples
                 else:
                     self.fq2 = self.fq2 if isinstance(self.fq2, list) else [self.fq2]
 
@@ -1801,19 +1954,25 @@ class DesignBuilder(object):
                     self.smp_name = [fq_name(i) for i in self.fq1]
 
             ## RNAseq - deseq
-            elif self.hiseq_subtype == 'deseq':
-                if self.smp_path is None:
-                    self.smp_path = self.dirs_ctl + self.dirs_exp
+            elif self.hiseq_subtype == 'deseq_multiple':
+                # if self.smp_path is None:
+                #     self.smp_path = self.dirs_ctl + self.dirs_exp
                 assert len(self.smp_path) == len(set(self.smp_path))
                 n_samples = len(self.smp_path)
 
                 # smp_name
                 if self.smp_name is None:
-                    self.smp_name = []
-                    for i in self.smp_path:
-                        p = RNAseqReader(i)
-                        self.smp_name.append(RNAseqReader(i).args['fqname'])
-                        
+                    self.smp_name = [fq_name(x) for x in self.smp_path]
+
+            elif self.hiseq_subtype == 'deseq_single':
+                self.smp_path = self.dirs_ctl + self.dirs_exp
+                assert len(self.smp_path) == len(set(self.smp_path))
+                n_samples = len(self.smp_path)
+
+                if self.smp_name is None:
+                    self.smp_name = [fq_name(x) for x in self.smp_path]
+            else:
+                pass
 
         ## ATACseq
         elif self.hiseq_type == 'ATACseq':
@@ -1826,7 +1985,7 @@ class DesignBuilder(object):
                 self.fq2 = ['NULL'] * len(self.fq1)
             else:
                 self.fq2 = self.fq2 if isinstance(self.fq2, list) else [self.fq2]
-            
+
             # smp_name
             if self.smp_name is None:
                 self.smp_name = [fq_name(i) for i in self.fq1]
@@ -1843,7 +2002,8 @@ class DesignBuilder(object):
 
         # group
         if self.group is None:
-            self.group = [fq_name(i).rstrip('rep|r|REP|R||_|.|1|2') for i in self.smp_name]
+            # self.group = [fq_name(i).rstrip('rep|r|REP|R||_|.|1|2') for i in self.smp_name]
+            self.group = [fq_name_rmrep(i) for i in self.smp_path]
         chk3 = True # tmp
 
         # groups
@@ -1872,20 +2032,21 @@ class DesignBuilder(object):
         # print('!DDDD', self.smp_name, self.group)
 
         if self.hiseq_type == 'RNAseq':
-            if self.smp_path is None:
+            if self.hiseq_subtype in ['single', 'multiple']:
+            # if self.smp_path is None:
                 design_lines.append('\t'.join([
                     '#RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'fq1', 'fq2']))
                 for i, q in enumerate(self.fq1):
                     design_lines.append('\t'.join([
-                        'RNAseq', 
-                        self.group[i], 
+                        'RNAseq',
+                        self.group[i],
                         self.smp_name[i],
                         self.feature,
                         self.genome,
-                        os.path.abspath(self.outdir),
-                        os.path.abspath(q),
-                        os.path.abspath(self.fq2[i])]))
-            else:
+                        self.outdir,
+                        q,
+                        self.fq2[i]]))
+            elif self.hiseq_subtype in ['deseq_single', 'deseq_multiple']:
                 design_lines.append('\t'.join([
                     '#RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'smp_path']))
                 for i, q in enumerate(self.smp_path):
@@ -1895,8 +2056,8 @@ class DesignBuilder(object):
                         self.smp_name[i],
                         self.feature,
                         self.genome,
-                        os.path.abspath(self.outdir),
-                        os.path.abspath(q)]))
+                        self.outdir,
+                        q]))
 
         elif self.hiseq_type == 'ATACseq':
             design_lines.append('\t'.join([
@@ -1907,9 +2068,9 @@ class DesignBuilder(object):
                     self.group[i],
                     self.smp_name[i],
                     self.genome,
-                    os.path.abspath(self.outdir),
-                    os.path.abspath(q),
-                    os.path.abspath(self.fq2[i])]))
+                    self.outdir,
+                    q,
+                    self.fq2[i]]))
 
         else:
             # check()
@@ -1927,9 +2088,14 @@ class DesignBuilder(object):
             file = '{}.design.txt'.format(tmp_prefix)
 
         design_lines = self.to_txt()
-        
-        with open(file, 'wt') as w:
-            w.write('\n'.join(design_lines) + '\n')
+
+        if os.path.exists(file):
+            log.info('file exists, skipped: {}'.format(file))
+        else:
+            with open(file, 'wt') as w:
+                w.write('\n'.join(design_lines) + '\n')
+
+        return file
 
 
     def to_json(self, json_file=None):
@@ -1941,4 +2107,121 @@ class DesignBuilder(object):
             json.dump(self.__dict__, fo, indent=4, sort_keys=True)
 
         return json_file
+
+
+class RNAseqReader(object):
+    """
+    Return the config, files for RNAseq direcotory
+
+    RNAseqSingle: config/
+    RNAseqMultiple: config/
+    RNAseqDeseq: config/
+    """
+    def __init__(self, path, **kwargs):
+        self.path = path
+        self.feature = kwargs.get('feature', 'gene')
+        self.return_config = kwargs.get('return_args', False)
+        self.rnaseq_type, self.args = self.check_rnaseq_type(return_args=True)
+
+
+    def check_rnaseq_type(self, return_args=False):
+        """
+        Check if the directory is of RNAseq [single|multiple|deseq]
+        single - config:
+            outdir/feature/config/arguments.pickle
+        multiple - config:
+            outdir/config/feature/config/arguments.pickle
+        deseq - config:
+            outdir/feature/config/arguments.pickle
+        """
+        x1 = os.path.join(self.path, self.feature, 'config', 'arguments.pickle')
+        x2 = os.path.join(self.path, 'config', self.feature, 'config', 'arguments.pickle')
+
+        if os.path.exists(x1):
+            args_config = pickle_to_dict(x1)
+            tag = args_config.get('rnaseq_type', None)
+        elif os.path.exists(x2):
+            args_config = pickle_to_dict(x2)
+            tag = args_config.get('rnaseq_type', None)
+        else:
+            log.error("""
+                unknown directory, expect config file:
+                RNAseq single: {}
+                RNAseq multiple: {}
+                RNAseq deseq: {}""".format(x1, x2, x1))
+
+        if return_args:
+            return (tag, args_config)
+        else:
+            return tag
+
+
+    def is_rnaseq_single(self):
+        """
+        Check if the directory is of RNAseq single sample
+        outdir/feature/config/arguments.pickle
+        """
+        return self.rnaseq_type == 'single'
+
+
+    def is_rnaseq_multi(self):
+        """
+        Check if the directory is of RNAseq multiple sample
+        outdir/config/feature/config/arguments.pickle
+        """
+        return self.rnaseq_type == 'multiple'
+
+
+    def is_rnaseq_deseq(self):
+        """
+        Check if the directory if of RNAseq DESeq analysis
+        outdir/feature/config/arguments.pickle
+        """
+        return self.rnaseq_tyep == 'deseq'
+
+
+# def design_reader(x):
+#     """Read the fastq and genome information
+#     group, name, genome, outdir, fq1, fq2
+#     """
+#     try:
+#         df = pd.read_csv(x, '\t', header=None, comment='#', skip_blank_lines=True,
+#             names=['group', 'name', 'genome', 'outdir', 'fq1', 'fq2'])
+
+#         # unique names
+#         names = df['name'].to_list()
+#         chk1 = len(names) == len(set(names))
+
+#         # unique genome: single, str
+#         genomes = df['genome'].to_list()
+#         chk2 = len(set(genomes)) == 1
+
+#         # outdir: single, str
+#         outdirs = df['outdir'].to_list()
+#         chk3 = len(set(outdirs)) == 1
+
+#         # fq1: str
+#         fq1_list = df['fq1'].to_list()
+#         chk4 = [os.path.exists(i) for i in fq1_list]
+
+#         # fq2: NA or str
+#         fq2_list = df['fq2'].to_list()
+
+#         # construct args
+#         args = {
+#             'fq1': fq1_list,
+#             'fq2': fq2_list,
+#             'genome': genomes[0],
+#             'outdir': outdirs[0],
+#             'smp_name': names,
+#         }
+
+#         # for check
+#         if not all([chk1, chk2, chk3, chk4]):
+#             raise Exception('file format not correct - {}'.format(x))
+
+#         return args
+#     except:
+#         log.warning('file format not correct - {}'.x)
+#         return {}
 
