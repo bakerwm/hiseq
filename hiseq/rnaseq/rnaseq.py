@@ -72,6 +72,11 @@ TE
 piRNA cluster
 ...
 
+2020-04-18
+## 1. save arguments in self.
+## 2. save default paths, files, in self.files
+## 3. update all args/
+
 """
 
 import os
@@ -81,6 +86,7 @@ import pysam
 import shutil
 import tempfile
 import pandas as pd
+from copy import copy # copy objects
 from hiseq.utils.helper import *
 from hiseq.qc.trimmer import Trimmer
 from hiseq.align.alignment import Alignment
@@ -108,8 +114,7 @@ class RNAseqReader(object):
     def __init__(self, path, **kwargs):
         self.path = path
         self.feature = kwargs.get('feature', 'gene')
-        # self.return_config = kwargs.get('return_args', False)
-        # self.rnaseq_type, self.args = self.check_rnaseq_type(return_args=True)
+        self.check()
 
 
     def update(self, d, overwrite=True):
@@ -152,10 +157,10 @@ class RNAseqReader(object):
         # update self
         self.update(args) # fresh new
 
-        if return_args:
-            return (tag, args)
-        else:
-            return tag
+        # if return_args:
+        #     return (tag, args)
+        # else:
+        #     return tag
 
 
     def is_rnaseq_single(self):
@@ -205,15 +210,25 @@ class RNAseqConfig(object):
     def __init__(self, **kwargs):
         self.update(kwargs) # update from args
         self.init_rnaseq() # prepare args
-        self.rnaseq_type = self.mission_type()
-        self.init_subgroup()
+        self.mission()
+        # self.rnaseq_type = self.mission_type()
+        # self.init_subgroup()
 
 
-    def update(self, d, overwrite=True):
+    def update(self, d, overwrite=True, remove=False):
         """
+        d: dict
+        overwrite: bool, update exists attributes
+        remove: bool, remove exists attributes
         Update attributes from dict
         overwrite exists attr
         """
+        # fresh start
+        if remove is True:
+            for k in self.__dict__:
+                # self.__delattr__(k)
+                delattr(self, k)
+        # add attributes
         if isinstance(d, dict):
             for k, v in d.items():
                 if not hasattr(self, k) or overwrite:
@@ -253,11 +268,7 @@ class RNAseqConfig(object):
         if not self.pickle is None:
             if os.path.exists(self.pickle) and self.pickle.endswith('.pickle'):
                 args_pickle = pickle_to_dict(self.pickle)
-                ## clear all attributes
-                for k in self.__dict__:
-                    self.__delattr__(k)
-                # assign attrs from pickle 
-                self.update(args_pickle) # update all
+                self.update(args_pickle, remove=True) # fresh start
             else:
                 raise Exception('--pickle, failed: {}'.format(self.pickle))
 
@@ -293,37 +304,32 @@ class RNAseqConfig(object):
                 pass # None
 
         ## outdir
-        self.projectdir = os.path.join(self.outdir, self.feature)
-        self.configdir = os.path.join(self.projectdir, 'config')
-
-        ## config
-        self.auto_design = os.path.join(self.configdir, 'RNAseq_auto_design.txt') # new created
-        self.config_txt = os.path.join(self.configdir, 'arguments.txt')
-        self.config_pickle = os.path.join(self.configdir, 'arguments.pickle')
-        self.config_json = os.path.join(self.configdir, 'arguments.json')
+        self.outdir = file_abspath(self.outdir)
 
 
-    def mission_type(self):
+    def mission(self):
         """
         Determine the purpose the RNAseq analysis
         1. single
         2. pair
         ...
         """
-        # print('!CCCC')
-        # print_df(self.__dict__)
+        create_dirs = getattr(self, 'create_dirs', True)
         if self.build_design is True:
-            flag = 'build_design'
-        # elif not self.pickle is None:
-        #    flag = 'from_pickle'
+            self.rnaseq_type = 'build_design'
+            self.init_build_design(create_dirs)
         elif isinstance(self.smp_path, list):
-            flag = 'deseq_multiple'
+            self.rnaseq_type = 'deseq_multiple'
+            self.init_deseq_multiple(create_dirs)
         elif isinstance(self.dirs_ctl, list) and isinstance(self.dirs_exp, list):
-            flag = 'deseq_single'
+            self.rnaseq_type = 'deseq_single'
+            self.init_deseq_single(create_dirs)
         elif isinstance(self.fq1, list):
-            flag = 'rnaseq_multiple'
+            self.rnaseq_type = 'rnaseq_multiple'
+            self.init_rnaseq_multiple(create_dirs)
         elif isinstance(self.fq1, str):
-            flag = 'rnaseq_single'
+            self.rnaseq_type = 'rnaseq_single'
+            self.init_rnaseq_single(create_dirs)
         else:
             raise Exception("""unknown RNAseq() arguments:
                 RNAseq-single:   fq1, fq2, genome, outdir;
@@ -332,33 +338,22 @@ class RNAseqConfig(object):
                 DESeq-multiple:  smp_path
                 """)
 
-        return flag
 
-
-    def init_subgroup(self):
-        # if self.rnaseq_type == 'from_pickle':
-        #     log.info('read args from pickle')
-        #    args_pickle = pickle_to_dict(self.pickle)
-        #    for k, v in args.items():
-        #        setattr(self, k, v) # update all
-        #elif self.rnaseq_type == 'build_design':
-        # create_dirs = self.args.get('create_dirs', True)
-        create_dirs = getattr(self, 'create_dirs', True)
-
-
-        if self.rnaseq_type == 'build_design':
-            self.init_build_design(create_dirs)
-        elif self.rnaseq_type == 'rnaseq_single':
-            self.init_rnaseq_single(create_dirs)
-        elif self.rnaseq_type == 'rnaseq_multiple':
-            self.init_rnaseq_multiple(create_dirs)
-        elif self.rnaseq_type == 'deseq_single':
-            self.init_deseq_single(create_dirs)
-        elif self.rnaseq_type == 'deseq_multiple':
-            self.init_deseq_multiple(create_dirs)
-        else:
-            log.error('unknown rnaseq type: {}'.format(self.rnaseq_type))
-            pass
+    # def init_subgroup(self):
+    #     create_dirs = getattr(self, 'create_dirs', True)
+    #     if self.rnaseq_type == 'build_design':
+    #         self.init_build_design(create_dirs)
+    #     elif self.rnaseq_type == 'rnaseq_single':
+    #         self.init_rnaseq_single(create_dirs)
+    #     elif self.rnaseq_type == 'rnaseq_multiple':
+    #         self.init_rnaseq_multiple(create_dirs)
+    #     elif self.rnaseq_type == 'deseq_single':
+    #         self.init_deseq_single(create_dirs)
+    #     elif self.rnaseq_type == 'deseq_multiple':
+    #         self.init_deseq_multiple(create_dirs)
+    #     else:
+    #         log.error('unknown rnaseq type: {}'.format(self.rnaseq_type))
+    #         pass
 
 
     def init_build_design(self, create_dirs=True):
@@ -379,6 +374,11 @@ class RNAseqConfig(object):
         atacseq:
         names=['ATACseq', 'group', 'name', 'genome', 'outdir', 'fq1', 'fq2']
         """
+        ## fq files
+        self.fq1 = file_abspath(self.fq1)
+        self.fq2 = file_abspath(self.fq2)
+        self.outdir = file_abspath(self.outdir)
+
         if create_dirs is True:
             check_path([self.outdir, self.configdir])
 
@@ -391,21 +391,18 @@ class RNAseqConfig(object):
         or:
         design
         """
-        # args = self.args.copy() # global
-        # self.fq1 = os.path.abspath(args['fq1'])
-        # self.fq2 = os.path.abspath(args['fq2']) if args['fq2'] else args['fq2']
-        # if self.read1_only: self.fq2 = None  # read1_only
-        # self.genome = args['genome']
-        # self.outdir = os.path.abspath(args['outdir'])
-        # self.feature = args.get('feature', 'gene')
-
         chk1 = isinstance(self.fq1, str) # checked in: mission_type
 
+        ## fq files
+        self.fq1 = file_abspath(self.fq1)
+        self.fq2 = file_abspath(self.fq2)
+        self.outdir = file_abspath(self.outdir)
+        
         ## sample name
         if isinstance(self.smp_name , list):
-            self.smp_name = self.smp_name
-        # if self.smp_name is None:
-        #     self.smp_name = fq_name(self.fq1)
+            self.smp_name = self.smp_name[0]
+        if self.smp_name is None:
+            self.smp_name = fq_name(self.fq1)
         # self.fqname= self.smp_name
 
         ## genome GTF
@@ -414,6 +411,13 @@ class RNAseqConfig(object):
             self.gtf = Genome(genome=self.genome).gene_gtf('ensembl')
 
         ## paths
+        self.projectdir = os.path.join(self.outdir, self.feature)
+        self.configdir = os.path.join(self.projectdir, 'config')
+        self.auto_design = os.path.join(self.configdir, 'RNAseq_auto_design.txt') # new created
+        self.config_txt = os.path.join(self.configdir, 'arguments.txt')
+        self.config_pickle = os.path.join(self.configdir, 'arguments.pickle')
+        self.config_json = os.path.join(self.configdir, 'arguments.json')
+        ## out
         self.rawdir = os.path.join(self.projectdir, 'raw_data')
         self.cleandir = os.path.join(self.projectdir, 'clean_data')
         self.aligndir = os.path.join(self.projectdir, 'align')
@@ -444,6 +448,8 @@ class RNAseqConfig(object):
         self.count_anti = os.path.join(self.countdir, 'count.anti.txt')
         self.strandness_status = os.path.join(self.countdir, 'strandness_status.out')
 
+
+
         ## create directories
         if create_dirs is True:
             check_path([
@@ -465,8 +471,9 @@ class RNAseqConfig(object):
 
         ## fq files
         self.fq1 = file_abspath(self.fq1)
-        self.fq2 = None if self.fq2 is None else file_abspath(self.fq2)
-
+        self.fq2 = file_abspath(self.fq2)
+        self.outdir = file_abspath(self.outdir)
+        
         ## sample name
         chkb0 = isinstance(self.smp_name, list) # list
         chkb1 = len(self.smp_name) == len(self.fq1) # number of samples, names
@@ -481,11 +488,11 @@ class RNAseqConfig(object):
         # paths
         self.project_outdir = os.path.join(self.outdir, 'config', self.feature)
         self.configdir = os.path.join(self.project_outdir, 'config')
-        # project files
+        self.auto_design = os.path.join(self.configdir, 'RNAseq_auto_design.txt') # new created
         self.config_txt = os.path.join(self.configdir, 'arguments.txt')
         self.config_pickle = os.path.join(self.configdir, 'arguments.pickle')
         self.config_json = os.path.join(self.configdir, 'arguments.json')
-
+ 
         # create
         if create_dirs is True:
             check_path([self.configdir])
@@ -504,8 +511,12 @@ class RNAseqConfig(object):
         # is list
         chk1 = isinstance(self.dirs_ctl, list)
         chk2 = isinstance(self.dirs_exp, list)
-        # is RNAseq single
         chk3 = all(RNAseqReader(i).is_rnaseq_single() for i in self.dirs_ctl + self.dirs_exp)
+
+        # absolute path
+        self.dirs_ctl = file_abspath(self.dirs_ctl)
+        self.dirs_exp = file_abspath(self.dirs_exp)
+        self.outdir = file_abspath(self.outdir)
 
         # smp_name
         chkb0 = isinstance(self.smp_name, list)  # is list
@@ -524,14 +535,14 @@ class RNAseqConfig(object):
         chkc3 = len(set(self.group[:len(self.dirs_ctl)])) == 1 # ctl
         chkc4 = len(set(self.group[len(self.dirs_ctl):])) == 1 # exp
         if not all([chkc1, chkc2, chkc3, chkc4]):
-            # auto-generated
-            self.group = fq_name_rmrep(self.smp_name)
+            self.group = fq_name_rmrep(self.smp_name) # auto-generated
 
-        ## paths
         self.prefix_ctl, self.prefix_exp = list_uniquer(self.group, sorted=False)
         self.project_name = '{}.vs.{}'.format(self.prefix_ctl, self.prefix_exp)
+        
+        ## paths
+        self.outdir = file_abspath(self.outdir)
         self.project_outdir = os.path.join(self.outdir, self.project_name, self.feature)
-        # project dir
         self.configdir = os.path.join(self.project_outdir, 'config')
         self.countdir = os.path.join(self.project_outdir, 'count')
         self.deseqdir = os.path.join(self.project_outdir, 'deseq')
@@ -582,8 +593,6 @@ class RNAseqSingle(object):
         align single file to reference genome
         """
         self.update(kwargs) # init self, fresh new
-        # self.args = kwargs
-        # self.args.update(self.__dict__) # for sub-func
         self.status = self.init_rnaseq() # update all variables: *.config, *.args
 
 
@@ -605,10 +614,8 @@ class RNAseqSingle(object):
         outdir/config/*json, *pickle, *txt
         """
         self.config = RNAseqConfig(**self.__dict__) # update, global
-        # self.args.update(self.config.__dict__) # update, global
         self.update(self.config.__dict__, overwrite=False) # update local attributes
-        # assert in_attr(self.config, ['fq1', 'genome', 'outdir'])
-        # assert self.config.rnaseq_type == 'rnaseq_single'
+        
         chka1 = isinstance(self.fq1, str)
         chka2 = isinstance(self.genome, str)
         chka3 = isinstance(self.outdir, str)
@@ -661,8 +668,6 @@ class RNAseqSingle(object):
         clean_fq1, clean_fq2 = self.clean_fq_list
 
         # update args
-        # args = self.args.copy()         
-        # args = self.config.args # all
         args_trim['fq1'] = args_trim['fq'] = fq1
         args_trim['fq2'] = fq2
         args_trim['outdir'] = self.cleandir
@@ -720,9 +725,7 @@ class RNAseqSingle(object):
         # bamdir = os.path.join(self.config.aligndir, '2.*')
         # bamdir = self.align_stat.rstrip('.align.txt')
         bamlist = listfile(self.aligndir, '*.bam', recursive=True)
-        print('!AAAA1', self.bamdir, bamlist)
         bamlist = [b for b in bamlist if not b.endswith('.raw.bam')]
-        print('!AAAA2', self.bamdir, bamlist)
         # [spike-in]? [rRNA, genome]
         return(bamlist[-1]) # last one
 
@@ -833,7 +836,6 @@ class RNAseqMultiple(object):
         genome
         outdir
         """
-        # self.args = kwargs
         self.update(kwargs) # fresh new
         self.config = RNAseqConfig(**self.__dict__) # update, global
         self.update(self.config.__dict__, overwrite=False) # update unknown args
@@ -861,12 +863,9 @@ class RNAseqMultiple(object):
         chk1 = all([hasattr(self, i) for i in ['fq1', 'genome', 'outdir']])
         assert self.rnaseq_type == 'rnaseq_multiple'
 
+
         # check arguments
         chk2 = args_checker(self.__dict__, self.config_pickle)
-        args = self.__dict__
-        jfile = self.config_json
-        print('!AAAA', jfile, args)
-        # Json(args).writer(self.config_json)
         # Json(self.__dict__).writer(self.config_json)
         args_logger(self.__dict__, self.config_txt)
 
@@ -930,8 +929,6 @@ class RNAseqDeseqSingle(object):
         group_exp (None)
         merge replicates
         """
-        # self.args = kwargs
-        # self.status = self.init_rnaseq() # update all variables: *.config, *.args
         self.update(kwargs) # fresh new
         self.status = self.init_rnaseq() # update all variables: *.config, *.args
 
@@ -953,18 +950,15 @@ class RNAseqDeseqSingle(object):
         save config files
         outdir/config/*json, *pickle, *txt
         """
-        self.config = RNAseqConfig(**self.args) # update, global
+        self.config = RNAseqConfig(**self.__dict__) # update, global
         self.update(self.config.__dict__, overwrite=False) # update local attributes
-        # self.args.update(self.config.__dict__) # update, global
         assert self.rnaseq_type == 'deseq_single'
 
         # check arguments
-        chk1 = args_checker(self.args, self.config_pickle)
-        Json(self.__dict__).writer(self.config_json)
+        chk1 = args_checker(self.__dict__, self.config_pickle)
+        # Json(self.__dict__).writer(self.config_json)
         args_logger(self.__dict__, self.config_txt)
         chk2 = True
-        # self.args['overwrite'] = self.args.get('overwrite', False)
-        # chk2 = self.args['overwrite'] is False
 
         # status
         return all([chk1, chk2])
@@ -1054,7 +1048,6 @@ class RNAseqDeseqMultiple(object):
         smp_path: (output of RNAseqSingle)
         group: (optional, parse from basename(smp_path))
         """
-        # self.args = kwargs
         self.update(kwargs) # fresh new
         self.status = self.init_rnaseq() # update all variables: *.config, *.args
 
@@ -1099,6 +1092,7 @@ class RNAseqDeseqMultiple(object):
                 config_i = RNAseqConfig(**args_i) # init
                 args_i.update(config_i.__dict__) # update args
                 RNAseqDeseqSingle(**args_i).run() # run single
+
         else:
             log.warning('DEseq multiple, skipped')
 
@@ -1119,11 +1113,6 @@ class RNAseqBuildDesign(object):
         self.update(self.config.__dict__)
         self.status = self.init_rnaseq() # update all variables: *.config, *.args
 
-        # self.args = kwargs
-        # self.config = RNAseqConfig(**self.args)
-        # self.args.update(self.config.__dict__)
-        # self.status = self.init_rnaseq()
-
 
     def update(self, d, overwrite=True):
         """
@@ -1138,13 +1127,11 @@ class RNAseqBuildDesign(object):
 
     def init_rnaseq(self):
         self.design = self.auto_design
-
         # check arguments
         chk1 = args_checker(self.__dict__, self.config_pickle)
-        Json(self.__dict__).writer(self.config_json)
+        # Json(self.__dict__).writer(self.config_json)
         args_logger(args, self.config_txt)
-        args['overwrite'] = self.args.get('overwrite', False)
-        chk2 = args['overwrite'] is False
+        chk2 = True
         return all([chk1, chk2])
 
 
@@ -1176,13 +1163,6 @@ class RNAseq(object):
         3. deseq: --dirs-ctl, --dirs-exp, --outdir
         ...
         """
-        # self.update(kwargs) # fresh new
-        # # self.args = kwargs
-        # self.config = RNAseqConfig(**self.__dict__) # init
-        # self.args.update(self.config.__dict__) # update global
-        # self.args['pickle'] = None # terminate `pickle`: top-level, after 1st round RNAseqConfig(), !!!
-        # self.group = self.args.get('group', [])
-
         self.update(kwargs) # fresh new
         self.config = RNAseqConfig(**self.__dict__)
         self.update(self.config.__dict__, overwrite=False)
@@ -1219,7 +1199,8 @@ class RNAseq(object):
             # env: rnaseq_multiple
             smp_path = RNAseqMultiple(**args).run()
             # env: deseq_multiple
-            args_i = args.copy()
+            args_i = self.__dict__.copy()
+            args_i['rnaseq_type'] = 'rnaseq_single' # update
             args_i['smp_path'] = smp_path
             self.config = RNAseqConfig(**args_i)
             args_i.update(self.config.__dict__)
@@ -1239,17 +1220,35 @@ class RNAseqLibrary(object):
     infer_experiment.py from RSeQC package.
     """
     def __init__(self, bam, gtf, size=200000, **kwargs):
+        self.update(kwargs) # fresh new
         self.bam = bam
         self.gtf = gtf
         self.size = size
-        self.args = kwargs
         self.config()
+
+
+    def update(self, d, overwrite=True):
+        """
+        Update attributes from dict
+        overwrite exists attr
+        """
+        if isinstance(d, dict):
+            for k, v in d.items():
+                if not hasattr(self, k) or overwrite:
+                    setattr(self, k, v)
 
 
     def config(self):
         """
-        Prepare Bam file (subsset)
+        Prepare Bam file (subset)
         """
+        args_default = {
+            'outdir': self._tmp(),
+            'cleanup': True
+        }
+        self.update(args_default, overwrite=False)
+
+        # input bam
         if isinstance(self.bam, str):
             pass
         elif isinstance(self.bam, list):
@@ -1257,20 +1256,16 @@ class RNAseqLibrary(object):
         else:
             raise Exception('Expect str and list, get {}'.format(type(bam)))
 
-        self.outdir = self.args.get('outdir', None)
+        # outdir
         if self.outdir is None:
             self.outdir = self._tmp()
-
-        self.bam_sub = self.subset_bam(self.outdir, self.size) # subset
-
-        ## subset bam list: 20000 reads
         if not os.path.exists(self.outdir):
             os.makedirs(self.outdir)
 
-        ## clean
-        self.cleanup = self.args.get('cleanup', True)
+        # subset bam
+        self.bam_sub = self.subset_bam(self.outdir, self.size) # subset
 
-        ## input a BED file
+        ## input a BED file, convert to GTF
         if self.gtf.lower().endswith('.bed'):
             self.bed = self.gtf
             self.gtf = os.path.join(self.outdir,
@@ -1418,31 +1413,43 @@ class FeatureCounts(object):
         overwrite: False
         """
         # required args
-        self.args = kwargs
-        self.check_status = self.init_fc() # global config
+        self.update(kwargs) # fresh new
+        # self.args = kwargs
+        self.check_status = self.config() # global config
 
 
-    def init_fc(self):
+    def update(self, d, overwrite=True):
+        """
+        Update attributes from dict
+        overwrite exists attr
+        """
+        if isinstance(d, dict):
+            for k, v in d.items():
+                if not hasattr(self, k) or overwrite:
+                    setattr(self, k, v)
+
+
+    def config(self):
         """
         Initiate the config for RNAseq analysis
         """
-        args = self.args.copy()
+        args_default = {
+            'gtf': None,
+            'bam_list': None,
+            'outdir': str(pathlib.Path.cwd()),
+            'strandness': 0,
+            'threads': 4,
+            'overwrite': False,
+            'outname': 'count.txt'
+        }
+        self.update(args_default, overwrite=False)
 
         # required
-        self.gtf = args.get('gtf', None)
-        self.bam_list = args.get('bam_list', None)
-        self.outdir = args.get('outdir', str(pathlib.Path.cwd()))
-        assert is_path(self.outdir)
+        check_path(self.outdir)
 
         # convert to list
         if isinstance(self.bam_list, str):
             self.bam_list = [self.bam_list]
-
-        # optional
-        self.strandness = args.get('strandness', 0)
-        self.threads = args.get('threads', 4)
-        self.overwrite = args.get('overwrite', False)
-        self.outname = args.get('outname', 'count.txt')
 
         # check required args
         chk1 = isinstance(self.gtf, str) and os.path.exists(self.gtf)
@@ -1451,9 +1458,9 @@ class FeatureCounts(object):
             log.error('fc() failed, check gtf={}, bam_list={}'.format(self.gtf, self.bam_list))
 
         ## absolute path
-        self.gtf = os.path.abspath(self.gtf)
-        self.bam_list = [os.path.abspath(i) for i in self.bam_list]
-        self.outdir = os.path.abspath(self.outdir)
+        self.gtf = file_abspath(self.gtf)
+        self.bam_list = file_abspath(self.bam_list)
+        self.outdir = file_abspath(self.outdir)
 
         ## index bam files
         [Bam(i).index() for i in self.bam_list]
@@ -1481,10 +1488,10 @@ class FeatureCounts(object):
         args_json = os.path.join(self.outdir, 'arguments.json')
         args_pickle = os.path.join(self.outdir, 'arguments.pickle')
         # save to file
-        Json(args).writer(args_json)
+        # Json(args).writer(args_json)
         args_logger(args, args_txt)
         chk3 = args_checker(args, args_pickle)
-        chk4 = args.get('overwrite')
+        chk4 = self.overwrite
 
         # status
         return all([chk3, chk4])
