@@ -15,6 +15,7 @@ import shutil
 import json
 import pickle
 import fnmatch
+import tempfile
 import logging
 import functools
 import subprocess
@@ -737,30 +738,32 @@ def is_path(path, create = True):
 
 
 class Json(object):
+    """
+    Wrapper for *.json file
+    1.json to dict
+    2.dict to json -> file
+    """
+    def __init__(self, input, **kwargs):
+        self.input = input
+        self.mission()
 
-    def __init__(self, x):
-        """
-        x
-          - dict, save to file
-          - json, save to file
-          - file, read as dict
-        Save dict to json file
-        Read from json file as dict
-        ...
-        """
-        self.x = x # input
 
-        if isinstance(x, Json):
-            self.dict = x.dict
-        elif isinstance(x, dict):
-            # input a dict,
-            # save to file
-            self.dict = x
-        elif os.path.exists(x):
-            # a file saving json content
-            self.dict = self.reader()
+    def mission(self):
+        """
+        Check what to do, based on the input args
+        """
+        # json_file to dict
+        if input is None:
+            log.warning('require, dict or str (file), Nonetype detected')
+        elif isinstance(self.input, str) and os.path.exists(self.input):
+            self.json_file_in = self.input
+            # self.reader() # updated
+        elif isinstance(self.input, dict):
+            self.d = self.input
+            # self.writer()
         else:
-            raise Exception('unknown objec: {}'.format(x))
+            log.warning('expect dict or str, get {}'.format(type(self.input).__name__))
+
 
     def _tmp(self):
         """
@@ -771,35 +774,117 @@ class Json(object):
         return tmp.name
 
 
+    def to_dict(self):
+        # self.json_file_in = self.input
+        return self.reader()
+
+
+    def to_json(self, file=None):
+        return self.writer(file)
+
+
     def reader(self):
         """
         Read json file as dict
         """
-        if os.path.getsize(self.x) > 0:
-            with open(self.x) as r:
-                d = json.load(r)
+        if isinstance(self.input, dict):
+            self.d = self.input
         else:
-            d = {}
+            try:
+                with open(self.json_file_in) as r:
+                    if os.path.getsize(self.json_file_in) > 0:
+                        self.d = json.load(r)
+                    else:
+                        self.d = {}
+            except:
+                print('failed reading json file: {}'.format(self.json_file_in))
+                self.d = {}
 
-        return d
+        return self.d
 
 
-    def writer(self, f=None):
+    def writer(self, json_file_out=None):
         """
         Write d (dict) to file x, in json format
         """
         # save to file
-        if f is None:
-            f = self._tmp()
+        if json_file_out is None:
+            json_file_out = self._tmp()
 
-        assert isinstance(f, str)
-        # assert os.path.isfile(f)
+        try:
+            with open(json_file_out, 'wt') as w:
+                json.dump(self.d, w, indent=4, sort_keys=True)
+        except:
+            log.warning('failed saving file: {}'.format(json_file_out))
 
-        if isinstance(self.x, dict):
-            with open(f, 'wt') as w:
-                json.dump(self.x, w, indent=4, sort_keys=True)
+        return json_file_out
 
-        return f
+
+
+# class Json(object):
+
+#     def __init__(self, x):
+#         """
+#         x
+#           - dict, save to file
+#           - json, save to file
+#           - file, read as dict
+#         Save dict to json file
+#         Read from json file as dict
+#         ...
+#         """
+#         self.x = x # input
+
+#         if isinstance(x, Json):
+#             self.dict = x.dict
+#         elif isinstance(x, dict):
+#             # input a dict,
+#             # save to file
+#             self.dict = x
+#         elif os.path.exists(x):
+#             # a file saving json content
+#             self.dict = self.reader()
+#         else:
+#             raise Exception('unknown objec: {}'.format(x))
+
+#     def _tmp(self):
+#         """
+#         Create a tmp file to save json object
+#         """
+#         tmp = tempfile.NamedTemporaryFile(prefix='tmp', suffix='.json',
+#             delete=False)
+#         return tmp.name
+
+
+#     def reader(self):
+#         """
+#         Read json file as dict
+#         """
+#         if os.path.getsize(self.x) > 0:
+#             with open(self.x) as r:
+#                 d = json.load(r)
+#         else:
+#             d = {}
+
+#         return d
+
+
+#     def writer(self, f=None):
+#         """
+#         Write d (dict) to file x, in json format
+#         """
+#         # save to file
+#         if f is None:
+#             f = self._tmp()
+
+#         assert isinstance(f, str)
+#         # assert os.path.isfile(f)
+
+#         if isinstance(self.x, dict):
+#             with open(f, 'wt') as w:
+#                 json.dump(self.x, w, indent=4, sort_keys=True)
+
+#         return f
 
 
 class Genome(object):
@@ -2107,77 +2192,6 @@ class DesignBuilder(object):
             json.dump(self.__dict__, fo, indent=4, sort_keys=True)
 
         return json_file
-
-
-class RNAseqReader(object):
-    """
-    Return the config, files for RNAseq direcotory
-
-    RNAseqSingle: config/
-    RNAseqMultiple: config/
-    RNAseqDeseq: config/
-    """
-    def __init__(self, path, **kwargs):
-        self.path = path
-        self.feature = kwargs.get('feature', 'gene')
-        self.return_config = kwargs.get('return_args', False)
-        self.rnaseq_type, self.args = self.check_rnaseq_type(return_args=True)
-
-
-    def check_rnaseq_type(self, return_args=False):
-        """
-        Check if the directory is of RNAseq [single|multiple|deseq]
-        single - config:
-            outdir/feature/config/arguments.pickle
-        multiple - config:
-            outdir/config/feature/config/arguments.pickle
-        deseq - config:
-            outdir/feature/config/arguments.pickle
-        """
-        x1 = os.path.join(self.path, self.feature, 'config', 'arguments.pickle')
-        x2 = os.path.join(self.path, 'config', self.feature, 'config', 'arguments.pickle')
-
-        if os.path.exists(x1):
-            args_config = pickle_to_dict(x1)
-            tag = args_config.get('rnaseq_type', None)
-        elif os.path.exists(x2):
-            args_config = pickle_to_dict(x2)
-            tag = args_config.get('rnaseq_type', None)
-        else:
-            log.error("""
-                unknown directory, expect config file:
-                RNAseq single: {}
-                RNAseq multiple: {}
-                RNAseq deseq: {}""".format(x1, x2, x1))
-
-        if return_args:
-            return (tag, args_config)
-        else:
-            return tag
-
-
-    def is_rnaseq_single(self):
-        """
-        Check if the directory is of RNAseq single sample
-        outdir/feature/config/arguments.pickle
-        """
-        return self.rnaseq_type == 'single'
-
-
-    def is_rnaseq_multi(self):
-        """
-        Check if the directory is of RNAseq multiple sample
-        outdir/config/feature/config/arguments.pickle
-        """
-        return self.rnaseq_type == 'multiple'
-
-
-    def is_rnaseq_deseq(self):
-        """
-        Check if the directory if of RNAseq DESeq analysis
-        outdir/feature/config/arguments.pickle
-        """
-        return self.rnaseq_tyep == 'deseq'
 
 
 # def design_reader(x):
