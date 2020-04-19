@@ -278,7 +278,7 @@ class RNAseqConfig(object):
         if not self.pickle is None:
             if os.path.exists(self.pickle) and self.pickle.endswith('.pickle'):
                 args_pickle = pickle_to_dict(self.pickle)
-                self.update(args_pickle, remove=True) # fresh start
+                self.update(args_pickle, force=True) # fresh start
             else:
                 raise Exception('--pickle, failed: {}'.format(self.pickle))
 
@@ -287,7 +287,7 @@ class RNAseqConfig(object):
         # 1. group, smp_name, feature, genome, outdir, fq1, fq2
         # 2. group, smp_name, feature, genome, outdir, smp_path
         if not self.design is None:
-            args_design = DesignReader(design).to_dict()
+            args_design = DesignReader(self.design).to_dict()
             self.update(args_design) # update specific args
 
 
@@ -309,10 +309,11 @@ class RNAseqConfig(object):
         ## group
         if self.group is None:
             if self.smp_path:
-                self.group = fq_name_rmrpe(self.smp_path)
+                self.group = fq_name_rmrep(self.smp_path)
             elif self.smp_name:
                 self.group = fq_name_rmrep(self.smp_name)
             else:
+                log.warning('group is None')
                 pass # None
 
         ## outdir
@@ -374,8 +375,21 @@ class RNAseqConfig(object):
         self.fq2 = file_abspath(self.fq2)
         self.outdir = file_abspath(self.outdir)
 
+        project_dir = os.path.join(self.outdir, self.feature)
+        config_dir = os.path.join(project_dir, 'config')
+        self.auto_files = {
+            'project_dir': project_dir,
+            'config_dir': config_dir,
+            'auto_design': os.path.join(config_dir, 'RNAseq_auto_design.txt'),
+            'config_txt': os.path.join(config_dir, 'arguments.txt'),
+            'config_pickle': os.path.join(config_dir, 'arguments.pickle'),
+            'config_json': os.path.join(config_dir, 'arguments.json')
+        }
+        self.update(self.auto_files, force=True) # !!!! key-point
+
+        
         if create_dirs is True:
-            check_path([self.outdir, self.config_dir])
+            check_path([config_dir])
 
 
     def init_rnaseq_single(self, create_dirs=True):
@@ -1021,16 +1035,6 @@ class RNAseqDeseqSingle(object):
         for n, f in zip(self.smp_name, self.count_ctl + self.count_exp):
             f_new = os.path.join(self.countdir, n + '.' + os.path.basename(f))
             shutil.copy(f, f_new)
-        # for n, f in zip(self.smp_name, self.count_ctl):
-        #     # copy new file
-        #     f_new = os.path.join(self.countdir, n + '.count_sens.txt')
-        #     shutil.copy(f, f_new)
-
-        # for n, f in zip(self.prefix_exp, self.count_exp):
-        #     # copy new file
-        #     f_new = os.path.join(self.countdir, n + '.count_sens.txt')
-        #     shutil.copy(f, f_new)
-
 
     ## create design.txt
     def get_design(self):
@@ -1043,10 +1047,6 @@ class RNAseqDeseqSingle(object):
             i = self.smp_name.index(n) # order
             f_new = os.path.join(self.countdir, n + '.' + os.path.basename(f))
             dlines.append('\t'.join([self.group[i], n, self.feature, f_new]))
-        # for i, n in enumerate(self.smp_name):
-        #     f_new = os.path.join(self.countdir, n + '.count_sens.txt')
-        #     dlines.append('\t'.join(
-        #         [self.group[i], n, self.feature, f_new]))
 
         if os.path.exists(self.deseq_design):
             log.info('file exists - {}'.format(self.deseq_design))
@@ -1198,7 +1198,7 @@ class RNAseqBuildDesign(object):
         # check arguments
         chk1 = args_checker(self.__dict__, self.config_pickle); chk1 = True
         # Json(self.__dict__).writer(self.config_json)
-        args_logger(args, self.config_txt)
+        args_logger(self.__dict__, self.config_txt)
         chk2 = True
         return all([chk1, chk2])
 
@@ -1464,7 +1464,6 @@ class RNAseqLibrary(object):
 
         if self.cleanup is True:
             # check ?
-            # os.remove(self.outdir)
             log.warning('Temporary directory in: {}'.format(self.outdir))
             if self.outdir.startswith('/tmp/'):
                 # remove files within /tmp folder # linux
