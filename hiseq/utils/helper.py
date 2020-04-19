@@ -797,7 +797,7 @@ class Json(object):
                     else:
                         self.d = {}
             except:
-                print('failed reading json file: {}'.format(self.json_file_in))
+                log.warning('failed reading json file: {}'.format(self.json_file_in))
                 self.d = {}
 
         return self.d
@@ -1721,7 +1721,6 @@ class DesignReader(object):
     def to_dict(self):
         if self.hiseq_type == 'rnaseq':
             if self.hiseq_subtype == 'multiple':
-                # print('!A')
                 self.df.columns = ['RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'fq1', 'fq2']
                 args = {
                     'fq1': self.df['fq1'].to_list(),
@@ -1729,14 +1728,12 @@ class DesignReader(object):
                 }
                 chk0 = all([os.path.exists(i) for i in args['fq1']]) # check
             elif self.hiseq_subtype == 'deseq':
-                # print('!B')
                 self.df.columns = ['RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'smp_path']
                 args = {
                     'smp_path': self.df['smp_path'].to_list()
                 }
                 chk0 = len(args['smp_path']) == len(set(args['smp_path'])) # check
             else:
-                # print('!C')
                 args = {} # pass
                 chk0 = True # check
             # feature: single
@@ -1864,7 +1861,6 @@ class DesignReader(object):
         args['feature'] = features.pop()
 
         # for check
-        # print([chk0, chk1, chk2, chk3, chk4])
         if not all([chk0, chk1, chk2, chk3, chk4]):
             raise Exception('file format not correct: {}'.format(self.file))
             raise Exception(""" Design file format not correct:
@@ -1956,24 +1952,109 @@ class DesignBuilder(object):
     names=['ATACseq', 'group', 'name', 'genome', 'outdir', 'fq1', 'fq2']
     """
     def __init__(self, **kwargs):
-        self.args = kwargs
-
-        self.fq1 = kwargs.get('fq1', None)
-        self.fq2 = kwargs.get('fq2', None)
-        self.genome = kwargs.get('genome', None)
-        self.outdir = kwargs.get('outdir', None)
-        self.smp_name = kwargs.get('smp_name', None)
-        self.group = kwargs.get('group', None)
-        self.feature = kwargs.get('feature', None)
-        self.dirs_ctl = kwargs.get('dirs_ctl', None)
-        self.dirs_exp = kwargs.get('dirs_exp', None)
-        self.smp_path = kwargs.get('smp_path', None)
-        # self.count_list = kwargs.get('count_list', None)
+        self.update(kwargs)
+        self.init_design()
 
         if len(kwargs) > 0:
-            self.hiseq_type, self.hiseq_subtype = self.design_type()
+            self.hiseq_type, self.hiseq_subtype = self.mission()
             self.status = self.check() # updated
-            print(self.hiseq_type, self.hiseq_subtype)
+
+
+    def update(self, d, force=True, remove=False):
+        """
+        d: dict
+        force: bool, update exists attributes
+        remove: bool, remove exists attributes
+        Update attributes from dict
+        force exists attr
+        """
+        # fresh start
+        if remove is True:
+            for k in self.__dict__:
+                # self.__delattr__(k)
+                delattr(self, k)
+        # add attributes
+        if isinstance(d, dict):
+            for k, v in d.items():
+                if not hasattr(self, k) or force:
+                    setattr(self, k, v)
+
+
+    def init_design(self):
+        """
+        check arguments conflicts, defaults...
+        """
+        args_default = {
+            'read1_only': False,
+            'build_design': False,
+            'pickle': None,
+            'design': None,
+            'genome': 'mm10',
+            'outdir': str(pathlib.Path.cwd()),
+            'feature': 'gene',
+            'fq1': None, 
+            'fq2': None,
+            'dirs_ctl': None,
+            'dirs_exp': None,
+            'smp_path': None,
+            'smp_name': None,
+            'group': None,
+            'gtf': None,
+            'overwrite': False
+            }
+
+        self.update(args_default, force=False) # update missing attrs
+
+        # fix smp_name, group / str(None)
+        if self.smp_name == 'None': self.smp_name = None # str to bool
+        if self.group == 'None': self.group = None # str to bool
+        # 1st level: build design
+
+        # 2nd level: pickle / update all config
+        if not self.pickle is None:
+            if os.path.exists(self.pickle) and self.pickle.endswith('.pickle'):
+                args_pickle = pickle_to_dict(self.pickle)
+                self.update(args_pickle, force=True) # fresh start
+            else:
+                raise Exception('--pickle, failed: {}'.format(self.pickle))
+
+        # 3rd level: design (input)
+        # update args from design.txt
+        # 1. group, smp_name, feature, genome, outdir, fq1, fq2
+        # 2. group, smp_name, feature, genome, outdir, smp_path
+        # if not self.design is None:
+        #     args_design = DesignReader(self.design).to_dict()
+        #     self.update(args_design) # update specific args
+
+
+        # 4th level: read1 only
+        if self.read1_only is True:
+            self.fq2 = None
+
+        # 5th level: default path, files
+
+        ## smp_name [from fq1, smp_path]
+        if self.smp_name is None or self.smp_name == 'None':
+            if isinstance(self.smp_path, list) and len(self.smp_path) > 0:
+                self.smp_name = fq_name(self.smp_path)
+            elif isinstance(self.fq1, str) or isinstance(self.fq1, list):
+                self.smp_name = fq_name(self.fq1)
+            else:
+                log.warning('group is None')
+                pass # None
+
+        ## group
+        if self.group is None or self.group == 'None':
+            if isinstance(self.smp_path, list) and len(self.smp_path) > 0:
+                self.group = fq_name_rmrep(self.smp_path)
+            elif self.smp_name:
+                self.group = fq_name_rmrep(self.smp_name)
+            else:
+                log.warning('group is None')
+                pass # None
+
+        ## outdir
+        self.outdir = file_abspath(self.outdir)
 
 
     def demo(self):
@@ -1986,7 +2067,7 @@ class DesignBuilder(object):
         print('\n'.join(lines))
 
 
-    def design_type(self):
+    def mission(self):
         """
         Check the type of analysis
         RNAseq, or ATACseq, ...
@@ -1996,14 +2077,14 @@ class DesignBuilder(object):
             tag_sub = None
         else:
             tag = 'RNAseq'
-            if self.smp_path:
+            if isinstance(self.smp_path, list):
                 tag_sub = 'deseq_multiple'
-            elif self.dirs_ctl and self.dirs_exp:
+            elif isinstance(self.dirs_ctl, list) and isinstance(self.dirs_exp, list):
                 tag_sub = 'deseq_single'
-            elif isinstance(self.fq1, str):
-                tag_sub = 'single'
             elif isinstance(self.fq1, list):
-                tag_sub = 'multiple'
+                tag_sub = 'rnaseq_multiple'
+            elif isinstance(self.fq1, str):
+                tag_sub = 'rnaseq_single'
             else:
                 tag_sub = None
 
@@ -2022,41 +2103,31 @@ class DesignBuilder(object):
         if self.hiseq_type == 'RNAseq':
             # feature
             chk0 = isinstance(self.feature, str)
+            # rnaseq type
+            if self.hiseq_subtype == 'deseq_multiple':
+                n_samples = len(self.smp_path)
+                assert len(self.smp_path) == len(set(self.smp_path))
 
-            ## RNAseq - single, multiple
-            if self.hiseq_subtype == 'multiple':
+            elif self.hiseq_subtype == 'deseq_single':
+                n_samples = len(self.smp_path)
+                self.smp_path = self.dirs_ctl + self.dirs_exp
+                assert len(self.smp_path) == len(set(self.smp_path))
+
+            elif self.hiseq_subtype == 'rnaseq_multiple':
                 n_samples = len(self.fq1)
-                # check fq
                 self.fq1 = self.fq1 if isinstance(self.fq1, list) else [self.fq1]
-                n_samples = len(self.fq1)
                 if self.fq2 is None:
                     self.fq2 = ['NULL'] * n_samples
                 else:
                     self.fq2 = self.fq2 if isinstance(self.fq2, list) else [self.fq2]
 
-                # smp_name
-                if self.smp_name is None:
-                    self.smp_name = [fq_name(i) for i in self.fq1]
+            elif self.hiseq_subtype == 'rnaseq_single':
+                n_samples = len(self.fq1)
+                if self.fq2 is None:
+                    self.fq2 = 'NULL'
 
-            ## RNAseq - deseq
-            elif self.hiseq_subtype == 'deseq_multiple':
-                # if self.smp_path is None:
-                #     self.smp_path = self.dirs_ctl + self.dirs_exp
-                assert len(self.smp_path) == len(set(self.smp_path))
-                n_samples = len(self.smp_path)
-
-                # smp_name
-                if self.smp_name is None:
-                    self.smp_name = [fq_name(x) for x in self.smp_path]
-
-            elif self.hiseq_subtype == 'deseq_single':
-                self.smp_path = self.dirs_ctl + self.dirs_exp
-                assert len(self.smp_path) == len(set(self.smp_path))
-                n_samples = len(self.smp_path)
-
-                if self.smp_name is None:
-                    self.smp_name = [fq_name(x) for x in self.smp_path]
             else:
+                n_samples = 0
                 pass
 
         ## ATACseq
@@ -2085,10 +2156,6 @@ class DesignBuilder(object):
         # outdir
         chk2 = isinstance(self.outdir, str)
 
-        # group
-        if self.group is None:
-            # self.group = [fq_name(i).rstrip('rep|r|REP|R||_|.|1|2') for i in self.smp_name]
-            self.group = [fq_name_rmrep(i) for i in self.smp_path]
         chk3 = True # tmp
 
         # groups
@@ -2100,7 +2167,12 @@ class DesignBuilder(object):
                                      genome: {}
                                      outdir: {}
                                       blank: {}
-                                      group: {}""".format(chk0, chk1, chk2, chk3, chk4))
+                                      group: {}, {}""".format(
+                                        chk0, 
+                                        self.genome, 
+                                        self.outdir, 
+                                        chk3, 
+                                        n_samples, self.group))
 
 
     def to_txt(self):
@@ -2114,7 +2186,6 @@ class DesignBuilder(object):
         names=['RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'smp_path']
         """
         design_lines = []
-        # print('!DDDD', self.smp_name, self.group)
 
         if self.hiseq_type == 'RNAseq':
             if self.hiseq_subtype in ['single', 'multiple']:
