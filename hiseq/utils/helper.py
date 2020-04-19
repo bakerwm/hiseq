@@ -15,6 +15,7 @@ import shutil
 import json
 import pickle
 import fnmatch
+import tempfile
 import logging
 import functools
 import subprocess
@@ -24,9 +25,9 @@ import pathlib
 import binascii
 import pandas as pd
 from itertools import combinations
-# from .args import args_init, ArgumentsInit
+from .args import args_init, ArgumentsInit
 ### local test ###
-from args import args_init, ArgumentsInit # for local test
+# from args import args_init, ArgumentsInit # for local test
 
 
 logging.basicConfig(
@@ -737,30 +738,32 @@ def is_path(path, create = True):
 
 
 class Json(object):
+    """
+    Wrapper for *.json file
+    1.json to dict
+    2.dict to json -> file
+    """
+    def __init__(self, input, **kwargs):
+        self.input = input
+        self.mission()
 
-    def __init__(self, x):
-        """
-        x
-          - dict, save to file
-          - json, save to file
-          - file, read as dict
-        Save dict to json file
-        Read from json file as dict
-        ...
-        """
-        self.x = x # input
 
-        if isinstance(x, Json):
-            self.dict = x.dict
-        elif isinstance(x, dict):
-            # input a dict,
-            # save to file
-            self.dict = x
-        elif os.path.exists(x):
-            # a file saving json content
-            self.dict = self.reader()
+    def mission(self):
+        """
+        Check what to do, based on the input args
+        """
+        # json_file to dict
+        if input is None:
+            log.warning('require, dict or str (file), Nonetype detected')
+        elif isinstance(self.input, str) and os.path.exists(self.input):
+            self.json_file_in = self.input
+            # self.reader() # updated
+        elif isinstance(self.input, dict):
+            self.d = self.input
+            # self.writer()
         else:
-            raise Exception('unknown objec: {}'.format(x))
+            log.warning('expect dict or str, get {}'.format(type(self.input).__name__))
+
 
     def _tmp(self):
         """
@@ -771,35 +774,117 @@ class Json(object):
         return tmp.name
 
 
+    def to_dict(self):
+        # self.json_file_in = self.input
+        return self.reader()
+
+
+    def to_json(self, file=None):
+        return self.writer(file)
+
+
     def reader(self):
         """
         Read json file as dict
         """
-        if os.path.getsize(self.x) > 0:
-            with open(self.x) as r:
-                d = json.load(r)
+        if isinstance(self.input, dict):
+            self.d = self.input
         else:
-            d = {}
+            try:
+                with open(self.json_file_in) as r:
+                    if os.path.getsize(self.json_file_in) > 0:
+                        self.d = json.load(r)
+                    else:
+                        self.d = {}
+            except:
+                log.warning('failed reading json file: {}'.format(self.json_file_in))
+                self.d = {}
 
-        return d
+        return self.d
 
 
-    def writer(self, f=None):
+    def writer(self, json_file_out=None):
         """
         Write d (dict) to file x, in json format
         """
         # save to file
-        if f is None:
-            f = self._tmp()
+        if json_file_out is None:
+            json_file_out = self._tmp()
 
-        assert isinstance(f, str)
-        # assert os.path.isfile(f)
+        try:
+            with open(json_file_out, 'wt') as w:
+                json.dump(self.d, w, indent=4, sort_keys=True)
+        except:
+            log.warning('failed saving file: {}'.format(json_file_out))
 
-        if isinstance(self.x, dict):
-            with open(f, 'wt') as w:
-                json.dump(self.x, w, indent=4, sort_keys=True)
+        return json_file_out
 
-        return f
+
+
+# class Json(object):
+
+#     def __init__(self, x):
+#         """
+#         x
+#           - dict, save to file
+#           - json, save to file
+#           - file, read as dict
+#         Save dict to json file
+#         Read from json file as dict
+#         ...
+#         """
+#         self.x = x # input
+
+#         if isinstance(x, Json):
+#             self.dict = x.dict
+#         elif isinstance(x, dict):
+#             # input a dict,
+#             # save to file
+#             self.dict = x
+#         elif os.path.exists(x):
+#             # a file saving json content
+#             self.dict = self.reader()
+#         else:
+#             raise Exception('unknown objec: {}'.format(x))
+
+#     def _tmp(self):
+#         """
+#         Create a tmp file to save json object
+#         """
+#         tmp = tempfile.NamedTemporaryFile(prefix='tmp', suffix='.json',
+#             delete=False)
+#         return tmp.name
+
+
+#     def reader(self):
+#         """
+#         Read json file as dict
+#         """
+#         if os.path.getsize(self.x) > 0:
+#             with open(self.x) as r:
+#                 d = json.load(r)
+#         else:
+#             d = {}
+
+#         return d
+
+
+#     def writer(self, f=None):
+#         """
+#         Write d (dict) to file x, in json format
+#         """
+#         # save to file
+#         if f is None:
+#             f = self._tmp()
+
+#         assert isinstance(f, str)
+#         # assert os.path.isfile(f)
+
+#         if isinstance(self.x, dict):
+#             with open(f, 'wt') as w:
+#                 json.dump(self.x, w, indent=4, sort_keys=True)
+
+#         return f
 
 
 class Genome(object):
@@ -1636,7 +1721,6 @@ class DesignReader(object):
     def to_dict(self):
         if self.hiseq_type == 'rnaseq':
             if self.hiseq_subtype == 'multiple':
-                # print('!A')
                 self.df.columns = ['RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'fq1', 'fq2']
                 args = {
                     'fq1': self.df['fq1'].to_list(),
@@ -1644,14 +1728,12 @@ class DesignReader(object):
                 }
                 chk0 = all([os.path.exists(i) for i in args['fq1']]) # check
             elif self.hiseq_subtype == 'deseq':
-                # print('!B')
                 self.df.columns = ['RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'smp_path']
                 args = {
                     'smp_path': self.df['smp_path'].to_list()
                 }
                 chk0 = len(args['smp_path']) == len(set(args['smp_path'])) # check
             else:
-                # print('!C')
                 args = {} # pass
                 chk0 = True # check
             # feature: single
@@ -1779,7 +1861,6 @@ class DesignReader(object):
         args['feature'] = features.pop()
 
         # for check
-        # print([chk0, chk1, chk2, chk3, chk4])
         if not all([chk0, chk1, chk2, chk3, chk4]):
             raise Exception('file format not correct: {}'.format(self.file))
             raise Exception(""" Design file format not correct:
@@ -1871,24 +1952,109 @@ class DesignBuilder(object):
     names=['ATACseq', 'group', 'name', 'genome', 'outdir', 'fq1', 'fq2']
     """
     def __init__(self, **kwargs):
-        self.args = kwargs
-
-        self.fq1 = kwargs.get('fq1', None)
-        self.fq2 = kwargs.get('fq2', None)
-        self.genome = kwargs.get('genome', None)
-        self.outdir = kwargs.get('outdir', None)
-        self.smp_name = kwargs.get('smp_name', None)
-        self.group = kwargs.get('group', None)
-        self.feature = kwargs.get('feature', None)
-        self.dirs_ctl = kwargs.get('dirs_ctl', None)
-        self.dirs_exp = kwargs.get('dirs_exp', None)
-        self.smp_path = kwargs.get('smp_path', None)
-        # self.count_list = kwargs.get('count_list', None)
+        self.update(kwargs)
+        self.init_design()
 
         if len(kwargs) > 0:
-            self.hiseq_type, self.hiseq_subtype = self.design_type()
+            self.hiseq_type, self.hiseq_subtype = self.mission()
             self.status = self.check() # updated
-            print(self.hiseq_type, self.hiseq_subtype)
+
+
+    def update(self, d, force=True, remove=False):
+        """
+        d: dict
+        force: bool, update exists attributes
+        remove: bool, remove exists attributes
+        Update attributes from dict
+        force exists attr
+        """
+        # fresh start
+        if remove is True:
+            for k in self.__dict__:
+                # self.__delattr__(k)
+                delattr(self, k)
+        # add attributes
+        if isinstance(d, dict):
+            for k, v in d.items():
+                if not hasattr(self, k) or force:
+                    setattr(self, k, v)
+
+
+    def init_design(self):
+        """
+        check arguments conflicts, defaults...
+        """
+        args_default = {
+            'read1_only': False,
+            'build_design': False,
+            'pickle': None,
+            'design': None,
+            'genome': 'mm10',
+            'outdir': str(pathlib.Path.cwd()),
+            'feature': 'gene',
+            'fq1': None, 
+            'fq2': None,
+            'dirs_ctl': None,
+            'dirs_exp': None,
+            'smp_path': None,
+            'smp_name': None,
+            'group': None,
+            'gtf': None,
+            'overwrite': False
+            }
+
+        self.update(args_default, force=False) # update missing attrs
+
+        # fix smp_name, group / str(None)
+        if self.smp_name == 'None': self.smp_name = None # str to bool
+        if self.group == 'None': self.group = None # str to bool
+        # 1st level: build design
+
+        # 2nd level: pickle / update all config
+        if not self.pickle is None:
+            if os.path.exists(self.pickle) and self.pickle.endswith('.pickle'):
+                args_pickle = pickle_to_dict(self.pickle)
+                self.update(args_pickle, force=True) # fresh start
+            else:
+                raise Exception('--pickle, failed: {}'.format(self.pickle))
+
+        # 3rd level: design (input)
+        # update args from design.txt
+        # 1. group, smp_name, feature, genome, outdir, fq1, fq2
+        # 2. group, smp_name, feature, genome, outdir, smp_path
+        # if not self.design is None:
+        #     args_design = DesignReader(self.design).to_dict()
+        #     self.update(args_design) # update specific args
+
+
+        # 4th level: read1 only
+        if self.read1_only is True:
+            self.fq2 = None
+
+        # 5th level: default path, files
+
+        ## smp_name [from fq1, smp_path]
+        if self.smp_name is None or self.smp_name == 'None':
+            if isinstance(self.smp_path, list) and len(self.smp_path) > 0:
+                self.smp_name = fq_name(self.smp_path)
+            elif isinstance(self.fq1, str) or isinstance(self.fq1, list):
+                self.smp_name = fq_name(self.fq1)
+            else:
+                log.warning('group is None')
+                pass # None
+
+        ## group
+        if self.group is None or self.group == 'None':
+            if isinstance(self.smp_path, list) and len(self.smp_path) > 0:
+                self.group = fq_name_rmrep(self.smp_path)
+            elif self.smp_name:
+                self.group = fq_name_rmrep(self.smp_name)
+            else:
+                log.warning('group is None')
+                pass # None
+
+        ## outdir
+        self.outdir = file_abspath(self.outdir)
 
 
     def demo(self):
@@ -1901,7 +2067,7 @@ class DesignBuilder(object):
         print('\n'.join(lines))
 
 
-    def design_type(self):
+    def mission(self):
         """
         Check the type of analysis
         RNAseq, or ATACseq, ...
@@ -1911,14 +2077,14 @@ class DesignBuilder(object):
             tag_sub = None
         else:
             tag = 'RNAseq'
-            if self.smp_path:
+            if isinstance(self.smp_path, list):
                 tag_sub = 'deseq_multiple'
-            elif self.dirs_ctl and self.dirs_exp:
+            elif isinstance(self.dirs_ctl, list) and isinstance(self.dirs_exp, list):
                 tag_sub = 'deseq_single'
-            elif isinstance(self.fq1, str):
-                tag_sub = 'single'
             elif isinstance(self.fq1, list):
-                tag_sub = 'multiple'
+                tag_sub = 'rnaseq_multiple'
+            elif isinstance(self.fq1, str):
+                tag_sub = 'rnaseq_single'
             else:
                 tag_sub = None
 
@@ -1937,41 +2103,31 @@ class DesignBuilder(object):
         if self.hiseq_type == 'RNAseq':
             # feature
             chk0 = isinstance(self.feature, str)
+            # rnaseq type
+            if self.hiseq_subtype == 'deseq_multiple':
+                n_samples = len(self.smp_path)
+                assert len(self.smp_path) == len(set(self.smp_path))
 
-            ## RNAseq - single, multiple
-            if self.hiseq_subtype == 'multiple':
+            elif self.hiseq_subtype == 'deseq_single':
+                n_samples = len(self.smp_path)
+                self.smp_path = self.dirs_ctl + self.dirs_exp
+                assert len(self.smp_path) == len(set(self.smp_path))
+
+            elif self.hiseq_subtype == 'rnaseq_multiple':
                 n_samples = len(self.fq1)
-                # check fq
                 self.fq1 = self.fq1 if isinstance(self.fq1, list) else [self.fq1]
-                n_samples = len(self.fq1)
                 if self.fq2 is None:
                     self.fq2 = ['NULL'] * n_samples
                 else:
                     self.fq2 = self.fq2 if isinstance(self.fq2, list) else [self.fq2]
 
-                # smp_name
-                if self.smp_name is None:
-                    self.smp_name = [fq_name(i) for i in self.fq1]
+            elif self.hiseq_subtype == 'rnaseq_single':
+                n_samples = len(self.fq1)
+                if self.fq2 is None:
+                    self.fq2 = 'NULL'
 
-            ## RNAseq - deseq
-            elif self.hiseq_subtype == 'deseq_multiple':
-                # if self.smp_path is None:
-                #     self.smp_path = self.dirs_ctl + self.dirs_exp
-                assert len(self.smp_path) == len(set(self.smp_path))
-                n_samples = len(self.smp_path)
-
-                # smp_name
-                if self.smp_name is None:
-                    self.smp_name = [fq_name(x) for x in self.smp_path]
-
-            elif self.hiseq_subtype == 'deseq_single':
-                self.smp_path = self.dirs_ctl + self.dirs_exp
-                assert len(self.smp_path) == len(set(self.smp_path))
-                n_samples = len(self.smp_path)
-
-                if self.smp_name is None:
-                    self.smp_name = [fq_name(x) for x in self.smp_path]
             else:
+                n_samples = 0
                 pass
 
         ## ATACseq
@@ -2000,10 +2156,6 @@ class DesignBuilder(object):
         # outdir
         chk2 = isinstance(self.outdir, str)
 
-        # group
-        if self.group is None:
-            # self.group = [fq_name(i).rstrip('rep|r|REP|R||_|.|1|2') for i in self.smp_name]
-            self.group = [fq_name_rmrep(i) for i in self.smp_path]
         chk3 = True # tmp
 
         # groups
@@ -2015,7 +2167,12 @@ class DesignBuilder(object):
                                      genome: {}
                                      outdir: {}
                                       blank: {}
-                                      group: {}""".format(chk0, chk1, chk2, chk3, chk4))
+                                      group: {}, {}""".format(
+                                        chk0, 
+                                        self.genome, 
+                                        self.outdir, 
+                                        chk3, 
+                                        n_samples, self.group))
 
 
     def to_txt(self):
@@ -2029,7 +2186,6 @@ class DesignBuilder(object):
         names=['RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'smp_path']
         """
         design_lines = []
-        # print('!DDDD', self.smp_name, self.group)
 
         if self.hiseq_type == 'RNAseq':
             if self.hiseq_subtype in ['single', 'multiple']:
@@ -2107,77 +2263,6 @@ class DesignBuilder(object):
             json.dump(self.__dict__, fo, indent=4, sort_keys=True)
 
         return json_file
-
-
-class RNAseqReader(object):
-    """
-    Return the config, files for RNAseq direcotory
-
-    RNAseqSingle: config/
-    RNAseqMultiple: config/
-    RNAseqDeseq: config/
-    """
-    def __init__(self, path, **kwargs):
-        self.path = path
-        self.feature = kwargs.get('feature', 'gene')
-        self.return_config = kwargs.get('return_args', False)
-        self.rnaseq_type, self.args = self.check_rnaseq_type(return_args=True)
-
-
-    def check_rnaseq_type(self, return_args=False):
-        """
-        Check if the directory is of RNAseq [single|multiple|deseq]
-        single - config:
-            outdir/feature/config/arguments.pickle
-        multiple - config:
-            outdir/config/feature/config/arguments.pickle
-        deseq - config:
-            outdir/feature/config/arguments.pickle
-        """
-        x1 = os.path.join(self.path, self.feature, 'config', 'arguments.pickle')
-        x2 = os.path.join(self.path, 'config', self.feature, 'config', 'arguments.pickle')
-
-        if os.path.exists(x1):
-            args_config = pickle_to_dict(x1)
-            tag = args_config.get('rnaseq_type', None)
-        elif os.path.exists(x2):
-            args_config = pickle_to_dict(x2)
-            tag = args_config.get('rnaseq_type', None)
-        else:
-            log.error("""
-                unknown directory, expect config file:
-                RNAseq single: {}
-                RNAseq multiple: {}
-                RNAseq deseq: {}""".format(x1, x2, x1))
-
-        if return_args:
-            return (tag, args_config)
-        else:
-            return tag
-
-
-    def is_rnaseq_single(self):
-        """
-        Check if the directory is of RNAseq single sample
-        outdir/feature/config/arguments.pickle
-        """
-        return self.rnaseq_type == 'single'
-
-
-    def is_rnaseq_multi(self):
-        """
-        Check if the directory is of RNAseq multiple sample
-        outdir/config/feature/config/arguments.pickle
-        """
-        return self.rnaseq_type == 'multiple'
-
-
-    def is_rnaseq_deseq(self):
-        """
-        Check if the directory if of RNAseq DESeq analysis
-        outdir/feature/config/arguments.pickle
-        """
-        return self.rnaseq_tyep == 'deseq'
 
 
 # def design_reader(x):
