@@ -340,7 +340,7 @@ def add_rnaseq_args():
     parser.add_argument('--group', nargs='+', default=None,
         dest='group', help='the groups for each samples, ctl, exp, \
         equal to the number of samples, default: None')
-    parser.add_argument('-n', '--smp-name', required=False, dest='smp_name',
+    parser.add_argument('-n', '--smp-name', nargs='+', required=False, dest='smp_name',
         help='Name of the experiment, works for only one input fastq file\
         equal to the number of samples, \
         if None, script will auto generate the smp_names from fq1 or smp_path \
@@ -356,6 +356,8 @@ def add_rnaseq_args():
     parser.add_argument('-f', '--feature', default='gene',
         choices=['gene', 'te', 'piRNAcluster', 'all'],
         help='choose the feature for the analysis')
+    parser.add_argument('--gtf', default=None,
+        help='The gtf file for quantification, defaut: genome.gtf (None)')
 
     parser.add_argument('--build-design', dest='build_design',
         action='store_true',
