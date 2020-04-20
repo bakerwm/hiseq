@@ -261,7 +261,7 @@ def check_path(x, show_log=False, create_dirs=True):
         return None
 
 
-def fq_name(fq, include_path=False):
+def fq_name(fq, include_path=False, pe_fix=False):
     """
     parse the name of fastq file:
     .fq.gz
@@ -285,18 +285,24 @@ def fq_name(fq, include_path=False):
     # return fname
     ###############
     # fastq.gz, fastq, fasta.gz, fa.gz
-    p1 = re.compile('(_[12])?[.](fast|f)[aq](.gz)?$', re.IGNORECASE)
+    # p1 = re.compile('(_[12])?[.](fast|f)[aq](.gz)?$', re.IGNORECASE)
+    p1 = re.compile('[.](fast|f)[aq](.gz)?$', re.IGNORECASE)
+    p2 = re.compile('[._][12]$', re.IGNORECASE)
     if isinstance(fq, str):
         fq = fq if include_path is True else os.path.basename(fq)
-        return re.sub(p1, '', fq)
+        fq_tmp = re.sub(p1, '', fq) # r1_1.fq.gz : r1_1
+        if pe_fix is True:
+            fq_tmp = re.sub(p2, '', fq_tmp) # r1_1.fq.gz: r1
+        return fq_tmp
     elif isinstance(fq, list):
-        return [fq_name(x) for x in fq]
+        return [fq_name(x, include_path=include_path, pe_fix=pe_fix) for x in fq]
     else:
         log.warning('unknown type found: {}'.format(type(fq)))
         return fq
 
 
-def fq_name_rmrep(fq):
+
+def fq_name_rmrep(fq, include_path=False, pe_fix=True):
     """
     x, filename, or list
 
@@ -311,9 +317,9 @@ def fq_name_rmrep(fq):
     ##################
     p1 = re.compile('[._](rep|r)[0-9]+$', re.IGNORECASE) # _rep1, _r1
     if isinstance(fq, str):
-        return re.sub(p1, '', fq_name(fq))
+        return re.sub(p1, '', fq_name(fq, include_path, pe_fix))
     elif isinstance(fq, list):
-        return [fq_name_rmrep(x) for x in fq]
+        return [fq_name_rmrep(x, include_path, pe_fix) for x in fq]
     else:
         log.warning('unknown type found: {}'.format(type(fq)))
         return fq
@@ -450,7 +456,7 @@ def list_uniquer(seq, sorted=True, idfun=None):
 
     if not isinstance(seq, list):
         log.error('list required, but get {}'.format(type(seq)))
-        return seq
+        return [] # blank
     elif sorted is True:
         return list(set(seq))
     else:
@@ -1770,7 +1776,7 @@ class DesignReader(object):
                 if 'smp_path' in self.df.columns:
                     n_new = os.path.basename(self.df['smp_path'].to_list()[i])
                 else:
-                    n_new = fq_name(self.df['fq1'].to_list()[i])
+                    n_new = fq_name(self.df['fq1'].to_list()[i], pe_fix=True)
             else:
                 n_new = n
             names_new.append(n_new)
@@ -2036,9 +2042,9 @@ class DesignBuilder(object):
         ## smp_name [from fq1, smp_path]
         if self.smp_name is None or self.smp_name == 'None':
             if isinstance(self.smp_path, list) and len(self.smp_path) > 0:
-                self.smp_name = fq_name(self.smp_path)
+                self.smp_name = fq_name(self.smp_path, pe_fix=True)
             elif isinstance(self.fq1, str) or isinstance(self.fq1, list):
-                self.smp_name = fq_name(self.fq1)
+                self.smp_name = fq_name(self.fq1, pe_fix=True)
             else:
                 log.warning('group is None')
                 pass # None
@@ -2046,9 +2052,9 @@ class DesignBuilder(object):
         ## group
         if self.group is None or self.group == 'None':
             if isinstance(self.smp_path, list) and len(self.smp_path) > 0:
-                self.group = fq_name_rmrep(self.smp_path)
+                self.group = fq_name_rmrep(self.smp_path, pe_fix=True)
             elif self.smp_name:
-                self.group = fq_name_rmrep(self.smp_name)
+                self.group = fq_name_rmrep(self.smp_name, pe_fix=True)
             else:
                 log.warning('group is None')
                 pass # None
@@ -2144,7 +2150,7 @@ class DesignBuilder(object):
 
             # smp_name
             if self.smp_name is None:
-                self.smp_name = [fq_name(i) for i in self.fq1]
+                self.smp_name = [fq_name(i, pe_fix=True) for i in self.fq1]
 
         ## others
         else:

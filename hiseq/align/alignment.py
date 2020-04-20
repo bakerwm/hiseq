@@ -174,7 +174,6 @@ class AlignConfig(object):
         ...
         """
         args = args_init(kwargs, align=True)
-        # print('!BBBB', args)
 
         ## update args: aligner, fq, index, outdir, fq2
         args['outdir_fixed'] = outdir_fixed
@@ -387,9 +386,14 @@ class AlignNFastx(object):
         Top level for Alignment
         for N fastq and N index
         """
-        args = args_init(kwargs, align=True)
+        args = ArgumentsInit(kwargs, align=True).dict.__dict__
+        # args = args_init(kwargs, align=True)
         args['fq1'] = pickFq(args['fq1'], is_str=False)
         args['fq2'] = pickFq(args['fq2'], is_str=False)
+
+        if isinstance(args['fq1'], str):
+            args['fq1'] = args['fq'] = [args['fq1']]
+
         assert isinstance(args['fq1'], list)
         if args['fq2'] is None:
             args['fq2'] = [None] * len(args['fq1'])
@@ -652,8 +656,6 @@ class Bowtie(object):
         ## extra align para
         if not args['extra_para'] is None:
             cmd += ' ' + args['extra_para']
-
-        # print('!aaaa', args)
 
         ## se or pe
         if args['fq2'] is None:

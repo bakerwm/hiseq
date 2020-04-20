@@ -18,21 +18,15 @@ if (length(args) < 1) {
 # count.txt, path_out,
 de_dir <- args[1]
 pvalue <- args[2]
-feature <- "gene"
-
 
 suppressPackageStartupMessages(library(goldclipReport))
 
 ## parse DE_idr for required files
 ## 1. config/arguments.txt: for the path to required files
-config_pickle <- file.path(de_dir, feature, "config", "arguments.pickle")
+config_pickle <- file.path(de_dir, "..", "config", "arguments.pickle")
 if(! file.exists(config_pickle)){
   stop("arguments.pickle, not found in input_dir")
 }
-
-
-
-
 
 ## read config files
 # install.packages('reticulate')
@@ -41,14 +35,17 @@ pd <- import("pandas")
 pd_data <- pd$read_pickle(config_pickle)
 
 ## required
-required_names <- c("count_ctl", "count_exp", "prefix_ctl", "prefix_exp", "deseqdir", "genome")
+required_names <- c("count_ctl", "count_exp", "prefix_ctl",
+                    "prefix_exp", "deseqdir", "genome")
+
+for(f in required_names){
+  tag = ifelse(f %in% names(pd_data), pd_data[f], "failed")
+  print(paste0(f, " : ", pd_data[f]))
+}
 stopifnot(all(required_names %in% names(pd_data)))
 
 ##----------------------------------------------------------------------------##
 # ## custom
-# outdir <- file.path(de_dir, feature, "deseq")
-# countA <- list.files(file.path(de_dir, feature, 'count'), "pe_control.*txt", T, T, T)
-# countB <- list.files(file.path(de_dir, feature, 'count'), "pe_treat.*txt", T, T, T)
 deseqHub3(countA = pd_data$count_ctl,
           countB = pd_data$count_exp,
           organism = pd_data$genome,
