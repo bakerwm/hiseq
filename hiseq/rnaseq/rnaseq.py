@@ -1060,7 +1060,18 @@ class RNAseqDeseqSingle(object):
         ## quality control
         ## PCA/Cor/...
         """
-        pass
+        pkg_dir = os.path.dirname(hiseq.__file__)
+        lendistR = os.path.join(pkg_dir, 'bin', 'run_deseq2.R')
+        cmd = 'Rscript {} {} {}'.format(
+            lendistR,
+            self.outdir,
+            0.1)  # pvalue cutoff
+
+        try:
+            run_shell_cmd(cmd)
+        except:
+            log.warning('DESeq2 failed.')
+
 
 
     def report(self):
