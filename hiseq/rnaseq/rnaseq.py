@@ -269,7 +269,10 @@ class RNAseqConfig(object):
             'smp_name': None,
             'group': None,
             'gtf': None,
-            'overwrite': False
+            'overwrite': False,
+            'align_to_rRNA': True, # default
+            'read1_only': True, # temp,not well for PE reads
+            'aligner': 'STAR', # default
         }
         self.update(args_default, force=False) # update missing attrs
         # 1st level: build design
@@ -300,9 +303,9 @@ class RNAseqConfig(object):
         ## smp_name [from fq1, smp_path]
         if self.smp_name is None:
             if self.smp_path:
-                self.smp_name = fq_name(self.smp_path)
+                self.smp_name = fq_name(self.smp_path, pe_fix=True)
             elif self.fq1:
-                self.smp_name = fq_name(self.fq1)
+                self.smp_name = fq_name(self.fq1, pe_fix=True)
             else:
                 pass # None
 
@@ -411,7 +414,7 @@ class RNAseqConfig(object):
         if isinstance(self.smp_name , list):
             self.smp_name = self.smp_name[0]
         if self.smp_name is None:
-            self.smp_name = fq_name(self.fq1)
+            self.smp_name = fq_name(self.fq1, pe_fix=True)
         # self.fqname= self.smp_name
 
         ## genome GTF
@@ -454,8 +457,8 @@ class RNAseqConfig(object):
         self.raw_fq_list.append(fq2_raw)
 
         ## clean data
-        self.clean_fq_list = [os.path.join(self.cleandir, fq_name(self.fq1) + '.fq.gz')]
-        fq2_clean = None if self.fq2 is None else os.path.join(self.cleandir, fq_name(self.fq2) + '.fq.gz')
+        self.clean_fq_list = [os.path.join(self.cleandir, fq_name(self.fq1, pe_fix=False) + '.fq.gz')]
+        fq2_clean = None if self.fq2 is None else os.path.join(self.cleandir, fq_name(self.fq2, pe_fix=False) + '.fq.gz')
         self.clean_fq_list.append(fq2_clean)
 
         ## files
@@ -499,7 +502,7 @@ class RNAseqConfig(object):
         chkb1 = len(self.smp_name) == len(self.fq1) # number of samples, names
         chkb2 = len(self.smp_name) == len(set(self.smp_name)) # unique names
         if not all([chkb0, chkb1, chkb2]):
-            self.smp_name = fq_name(self.fq1) # auto-genrrated 
+            self.smp_name = fq_name(self.fq1, pe_fix=True) # auto-genrrated 
 
         ## get GTF file
         if self.gtf is None:
@@ -540,7 +543,7 @@ class RNAseqConfig(object):
 
         # smp_name
         chkb0 = isinstance(self.smp_name, list)  # is list
-        if not chkb0: self.smp_name = fq_name(self.dirs_ctl, dirs_exp)
+        if not chkb0: self.smp_name = fq_name(self.dirs_ctl + self.dirs_exp, pe_fix=True)
         chkb1 = len(self.smp_name) == len(self.dirs_ctl + self.dirs_exp) # length
         chkb2 = len(self.smp_name) == len(set(self.smp_name)) # unique
         if not all([chkb1, chkb2]):
@@ -903,9 +906,6 @@ class RNAseqMultiple(object):
         # Json(self.__dict__).writer(self.config_json)
         args_logger(self.__dict__, self.config_txt)
 
-        print_df(self.__dict__)
-        print_df(self.config_pickle)
-
         # status
         if not all([chk1, chk2]):
             raise Exception("""
@@ -1061,11 +1061,17 @@ class RNAseqDeseqSingle(object):
         ## PCA/Cor/...
         """
         pkg_dir = os.path.dirname(hiseq.__file__)
-        lendistR = os.path.join(pkg_dir, 'bin', 'run_deseq2.R')
-        cmd = 'Rscript {} {} {}'.format(
-            lendistR,
+        deseqR = os.path.join(pkg_dir, 'bin', 'run_deseq2.R')
+        cmd = 'Rscript {} {} {} &>{}'.format(
+            deseqR,
             self.outdir,
-            0.1)  # pvalue cutoff
+            0.1,
+            os.path.join(self.deseqdir, 'mylog.deseq2.out'))  # pvalue cutoff
+
+        # save cmd
+        cmd_file = os.path.join(self.deseqdir, 'cmd.sh')
+        with open(cmd_file, 'wt') as w:
+            w.write(cmd + '\n')
 
         try:
             run_shell_cmd(cmd)
@@ -1145,7 +1151,7 @@ class RNAseqDeseqMultiple(object):
         self.group_pairs = design_combinations(self.group, n=2, return_index=True)
 
         ## check
-        chk0 = len(self.smp_path) > 1
+        chk0 = len(self.smp_path) > 0
         chk1 = isinstance(self.smp_path, list)
         chk2 = len(self.group) > 1
 
@@ -1163,17 +1169,18 @@ class RNAseqDeseqMultiple(object):
 
     def run(self):
         ## index for groups
-        for (ia, ib) in self.group_pairs:
-            args_i = self.__dict__.copy()
-            args_i['dirs_ctl'] = [self.smp_path[i] for i in ia]
-            args_i['dirs_exp'] = [self.smp_path[i] for i in ib]
-            args_i['smp_name'] = [self.smp_name[i] for i in ia + ib]
-            args_i['group'] = [self.group[i] for i in ia + ib]
-            args_i['smp_path'] = None # clear
-            # update args
-            config_i = RNAseqConfig(**args_i) # init
-            args_i.update(config_i.__dict__) # update args
-            RNAseqDeseqSingle(**args_i).run() # run single
+        if len(self.group_pairs) > 0:
+            for (ia, ib) in self.group_pairs:
+                args_i = self.__dict__.copy()
+                args_i['dirs_ctl'] = [self.smp_path[i] for i in ia]
+                args_i['dirs_exp'] = [self.smp_path[i] for i in ib]
+                args_i['smp_name'] = [self.smp_name[i] for i in ia + ib]
+                args_i['group'] = [self.group[i] for i in ia + ib]
+                args_i['smp_path'] = None # clear
+                # update args
+                config_i = RNAseqConfig(**args_i) # init
+                args_i.update(config_i.__dict__) # update args
+                RNAseqDeseqSingle(**args_i).run() # run single
 
 
 class RNAseqBuildDesign(object):
