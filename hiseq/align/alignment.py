@@ -387,14 +387,22 @@ class AlignNFastx(object):
         for N fastq and N index
         """
         args = ArgumentsInit(kwargs, align=True).dict.__dict__
+        print('!AAAA1', args['fq'], args['fq1'], args['fq2'])
+
         # args = args_init(kwargs, align=True)
         args['fq1'] = pickFq(args['fq1'], is_str=False)
         args['fq2'] = pickFq(args['fq2'], is_str=False)
+        if isinstance(args['fq1'], str):
+            args['fq'] = args['fq1'] = [args['fq1']]
+        if isinstance(args['fq2'], str):
+            args['fq2'] = [args['fq2']]
 
         if isinstance(args['fq1'], str):
             args['fq1'] = args['fq'] = [args['fq1']]
 
+        print('!AAAA2', args['fq'], args['fq1'], args['fq2'])
         assert isinstance(args['fq1'], list)
+
         if args['fq2'] is None:
             args['fq2'] = [None] * len(args['fq1'])
 

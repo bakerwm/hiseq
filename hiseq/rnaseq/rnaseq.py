@@ -281,10 +281,15 @@ class RNAseqConfig(object):
         if not self.pickle is None:
             if os.path.exists(self.pickle) and self.pickle.endswith('.pickle'):
                 args_pickle = pickle_to_dict(self.pickle)
+                args_pickle.pop('pickle', None) # empty
+                args_pickle.pop('design', None) # empty
+                args_pickle.pop('build_design', None)
+                print_df(args_pickle)
                 self.update(args_pickle, force=True) # fresh start
             else:
                 raise Exception('--pickle, failed: {}'.format(self.pickle))
-
+        
+        print_df(self.__dict__)
         # 3rd level: design (input)
         # update args from design.txt
         # 1. group, smp_name, feature, genome, outdir, fq1, fq2
@@ -441,7 +446,7 @@ class RNAseqConfig(object):
             'bamdir': os.path.join(project_dir, 'bam_files'),
             'bwdir': os.path.join(project_dir, 'bw_files'),
             'countdir': os.path.join(project_dir, 'count'),
-            'reportdir': os.path.join(project_dir, 'report'),
+            'report_dir': os.path.join(project_dir, 'report'),
             'out_prefix': os.path.join(project_dir, self.smp_name),
             'config_txt': os.path.join(config_dir, 'arguments.txt'),
             'config_pickle': os.path.join(config_dir, 'arguments.pickle'),
@@ -483,7 +488,7 @@ class RNAseqConfig(object):
                 self.bamdir,
                 self.bwdir,
                 self.countdir,
-                self.reportdir])
+                self.report_dir])
 
 
     def init_rnaseq_multiple(self, create_dirs=True):
@@ -511,14 +516,16 @@ class RNAseqConfig(object):
         # paths
         self.project_dir = os.path.join(self.outdir, 'config', self.feature)
         self.config_dir = os.path.join(self.project_dir, 'config')
+        self.report_dir = os.path.join(self.project_dir, 'report')
         self.auto_design = os.path.join(self.config_dir, 'RNAseq_auto_design.txt') # new created
         self.config_txt = os.path.join(self.config_dir, 'arguments.txt')
         self.config_pickle = os.path.join(self.config_dir, 'arguments.pickle')
         self.config_json = os.path.join(self.config_dir, 'arguments.json')
+
  
         # create
         if create_dirs is True:
-            check_path([self.config_dir])
+            check_path([self.config_dir, self.report_dir])
 
 
     def init_deseq_single(self, create_dirs=True):
@@ -571,7 +578,7 @@ class RNAseqConfig(object):
         self.deseqdir = os.path.join(self.project_dir, 'deseq')
         self.enrichdir = os.path.join(self.project_dir, 'enrich')
         self.pdfdir = os.path.join(self.project_dir, 'pdf')
-        self.reportdir = os.path.join(self.project_dir, 'report')
+        self.report_dir = os.path.join(self.project_dir, 'report')
         # project files
         self.config_txt = os.path.join(self.config_dir, 'arguments.txt')
         self.config_pickle = os.path.join(self.config_dir, 'arguments.pickle')
@@ -588,7 +595,7 @@ class RNAseqConfig(object):
                 self.countdir,
                 self.deseqdir,
                 self.enrichdir,
-                self.reportdir])
+                self.report_dir])
 
 
     def init_deseq_multiple(self, create_dirs=True):
@@ -820,8 +827,32 @@ class RNAseqSingle(object):
         2. align
         3. quant
         ...
-        """
-        pass
+        """        
+        pkg_dir    = os.path.dirname(hiseq.__file__)
+        qc_reportR = os.path.join(pkg_dir, 'bin', 'rnaseq_report.R')
+        cmd_file = os.path.join(self.report_dir, 'cmd.sh')
+        report_html = os.path.join(
+            self.report_dir, 
+            'rnaseq_report.html')
+
+        cmd = 'Rscript {} {} {}'.format(
+            qc_reportR,
+            self.outdir,
+            self.report_dir)
+
+        # save cmd
+        with open(cmd_file, 'wt') as w:
+            w.write(cmd + '\n')
+
+
+        if check_file(report_html):
+            log.info('report() skipped, file exists: {}'.format(
+                report_html))
+        else:
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.warning('report() failed.')
 
 
     def run(self):
@@ -1062,14 +1093,14 @@ class RNAseqDeseqSingle(object):
         """
         pkg_dir = os.path.dirname(hiseq.__file__)
         deseqR = os.path.join(pkg_dir, 'bin', 'run_deseq2.R')
+        cmd_file = os.path.join(self.deseqdir, 'cmd.sh')
         cmd = 'Rscript {} {} {} &>{}'.format(
             deseqR,
-            self.outdir,
+            self.deseqdir,
             0.1,
             os.path.join(self.deseqdir, 'mylog.deseq2.out'))  # pvalue cutoff
 
         # save cmd
-        cmd_file = os.path.join(self.deseqdir, 'cmd.sh')
         with open(cmd_file, 'wt') as w:
             w.write(cmd + '\n')
 
@@ -1165,6 +1196,41 @@ class RNAseqDeseqMultiple(object):
                     len(self.smp_path), 
                     type(self.smp_path).__name__,
                     len(self.group)))
+
+
+    def report(self):
+        """
+        Create alignment report for RNAseq
+        1. trim
+        2. align
+        3. quant
+        ...
+        """        
+        pkg_dir    = os.path.dirname(hiseq.__file__)
+        qc_reportR = os.path.join(pkg_dir, 'bin', 'rnaseq_report.R')
+        cmd_file = os.path.join(self.report_dir, 'cmd.sh')
+        report_html = os.path.join(
+            self.report_dir, 
+            'rnaseq_report.html')
+
+        cmd = 'Rscript {} {} {}'.format(
+            qc_reportR,
+            self.outdir,
+            self.report_dir)
+
+        # save cmd
+        with open(cmd_file, 'wt') as w:
+            w.write(cmd + '\n')
+
+
+        if check_file(report_html):
+            log.info('report() skipped, file exists: {}'.format(
+                atac_report_html))
+        else:
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.warning('report() failed.')
 
 
     def run(self):

@@ -1694,6 +1694,12 @@ class DesignReader(object):
         atacseq:
         names=['ATACseq', ...]
         """
+        if len(self.df) == 0:
+            # empty design
+            log.warning('--design, no record detected. {}'.format(self.file))
+            return None, None
+
+        # print('!AAAA1', self.df.columns, self.df.index.to_list(), self.df.head())
         name_list = set(self.df.iloc[:, 0].to_list()) # 1-st column
 
         if len(name_list) > 1:
@@ -1756,14 +1762,17 @@ class DesignReader(object):
         else:
             args = {} # pass
             chk0 = chk1 = True # check
-            raise Exception("""
+            log.warning("""
+                Format failed:
+                --design: {},
                 Expect format:
                 rnaseq1:
                 ['RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'fq1', 'fq2']
                 rnaseq2:
                 ['RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'smp_path']
                 atacseq:
-                ['ATACseq', 'group', 'name', 'genome', 'outdir', 'fq1', 'fq2']""")
+                ['ATACseq', 'group', 'name', 'genome', 'outdir', 'fq1', 'fq2']""".format(self.file))
+            return {} # empty dict
 
 
         ## check the df
