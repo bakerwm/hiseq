@@ -334,7 +334,7 @@ def add_rnaseq_args():
         dest='dirs_ctl', help='path to the dirs of control samples')
     parser.add_argument('-t', '--dirs-exp', nargs='+', default=None,
         dest='dirs_exp', help='path to the dirs of experiment samples')
-    parser.add_argument('-l', '--smp-path', nargs='+', default='None',
+    parser.add_argument('-l', '--smp-path', nargs='+', default=None,
         dest='smp_path', help='path to the dirs of samples')
 
     parser.add_argument('--group', nargs='+', default=None,

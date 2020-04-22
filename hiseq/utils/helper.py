@@ -23,11 +23,12 @@ import pysam
 import pybedtools
 import pathlib
 import binascii
+import datetime
 import pandas as pd
 from itertools import combinations
-from .args import args_init, ArgumentsInit
+# from .args import args_init, ArgumentsInit
 ### local test ###
-# from args import args_init, ArgumentsInit # for local test
+from args import args_init, ArgumentsInit # for local test
 
 
 logging.basicConfig(
@@ -329,6 +330,8 @@ def file_abspath(file):
     """
     Create os.path.abspath() for files, directories
     """
+    if file is None:
+        return None
     if isinstance(file, str):
         return os.path.abspath(file)
     elif isinstance(file, list):
@@ -1531,8 +1534,8 @@ class AlignIndex(object):
             index = self.index
         if os.path.isdir(index):
             # STAR
-            # iname = os.path.basename(index)
-            iname = os.path.basename(os.path.dirname(index))
+            iname = os.path.basename(index)
+            # iname = os.path.basename(os.path.dirname(index))
         elif os.path.basename(index) == 'genome':
             # ~/data/genome/dm3/bowtie2_index/genome
             # bowtie, bowtie2, bwa, hisat2
@@ -1699,7 +1702,6 @@ class DesignReader(object):
             log.warning('--design, no record detected. {}'.format(self.file))
             return None, None
 
-        # print('!AAAA1', self.df.columns, self.df.index.to_list(), self.df.head())
         name_list = set(self.df.iloc[:, 0].to_list()) # 1-st column
 
         if len(name_list) > 1:

@@ -387,7 +387,6 @@ class AlignNFastx(object):
         for N fastq and N index
         """
         args = ArgumentsInit(kwargs, align=True).dict.__dict__
-        print('!AAAA1', args['fq'], args['fq1'], args['fq2'])
 
         # args = args_init(kwargs, align=True)
         args['fq1'] = pickFq(args['fq1'], is_str=False)
@@ -400,7 +399,6 @@ class AlignNFastx(object):
         if isinstance(args['fq1'], str):
             args['fq1'] = args['fq'] = [args['fq1']]
 
-        print('!AAAA2', args['fq'], args['fq1'], args['fq2'])
         assert isinstance(args['fq1'], list)
 
         if args['fq2'] is None:
@@ -566,6 +564,10 @@ class AlignOneIndex(object):
         self.args = args
         self.aligner_pick = self.get_aligner() # which aligner class()
         self.config = self.aligner_pick(**args).config # config
+
+        ## for small_genome
+        if any([i in self.config.index_name for i in ['rRNA', 'chrM', 'MT']]):
+            self.small_genome = True
 
 
     def get_aligner(self):
