@@ -371,8 +371,6 @@ def add_rnaseq_args():
         help='whether copy the raw fastq files to output')
 
     # optional arguments - 1
-    parser.add_argument('--threads', default=1, type=int,
-        help='Number of threads to launch, default [1]')
     parser.add_argument('--overwrite', action='store_true',
         help='if spcified, overwrite exists file')
 
@@ -407,6 +405,12 @@ def add_rnaseq_args():
     parser.add_argument('--aligner', default='STAR',
         choices=['STAR', 'bowtie', 'bowtie2', 'bowa'],
         help='Aligner option: [STAR, bowtie, bowtie2, bwa], default: [STAR]')
+
+    parser.add_argument('--threads', default=1, type=int,
+        help='Number of threads to launch, default [1]')
+    parser.add_argument('--parallel-jobs', default=1, type=int, 
+        dest='parallel_jobs',
+        help='Number of jobs run in parallel, default: [1]')
 
     ## extra: para
     parser.add_argument('--extra-para', dest='extra_para', default=None,
