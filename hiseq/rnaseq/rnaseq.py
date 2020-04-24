@@ -286,10 +286,10 @@ class RNAseqConfig(object):
 
         # 2nd level: design (input)
         # fresh start by design (specific args)
-        if not self.design is None:
-            # self.init_design_arg(create_dirs)
-            args_design = DesignReader(self.design).to_dict()
-            self.update(args_design, force=True) # update specific args
+        # if not self.design is None:
+        #     # self.init_design_arg(create_dirs)
+        #     args_design = DesignReader(self.design).to_dict()
+        #     self.update(args_design, force=True) # update specific args
 
         # 4th level: read1 only
         if self.read1_only is True:
@@ -791,6 +791,7 @@ class RNAseqSingle(object):
             log.info('align() skipped, file exists: {}'.format(
                 self.bam_raw))
         else:
+            print('!AAAA1', args_align['ext_index'])
             Alignment(**args_align).run()
 
 
@@ -870,15 +871,15 @@ class RNAseqSingle(object):
             self.report_dir, 
             'rnaseq_report.html')
 
-        cmd = 'Rscript {} {} {}'.format(
+        cmd = 'Rscript {} {} {} {}'.format(
             qc_reportR,
             self.outdir,
-            self.report_dir)
+            self.report_dir,
+            self.feature)
 
         # save cmd
         with open(cmd_file, 'wt') as w:
             w.write(cmd + '\n')
-
 
         if check_file(report_html):
             log.info('report() skipped, file exists: {}'.format(
@@ -996,10 +997,11 @@ class RNAseqMultiple(object):
             self.report_dir, 
             'rnaseq_report.html')
 
-        cmd = 'Rscript {} {} {}'.format(
+        cmd = 'Rscript {} {} {} {}'.format(
             qc_reportR,
             self.outdir,
-            self.report_dir)
+            self.report_dir,
+            self.feature)
 
         # save cmd
         with open(cmd_file, 'wt') as w:
