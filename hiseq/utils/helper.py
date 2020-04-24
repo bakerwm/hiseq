@@ -26,7 +26,7 @@ import binascii
 import datetime
 import pandas as pd
 from itertools import combinations
-from .args import args_init, ArgumentsInit
+# from .args import args_init, ArgumentsInit
 ### local test ###
 # from args import args_init, ArgumentsInit # for local test
 
@@ -332,10 +332,28 @@ def file_abspath(file):
     """
     if file is None:
         return None
-    if isinstance(file, str):
+    elif isinstance(file, str):
         return os.path.abspath(file)
     elif isinstance(file, list):
         return [file_abspath(x) for x in file]
+    else:
+        log.warning('unknown type found: {}'.format(type(file)))
+        return file
+
+
+def file_exists(file, isfile=True):
+    """
+    os.path.exists() for files, os.path.isfile()
+    """
+    if file is None:
+        return None
+    elif isinstance(file, str):
+        chk1 = os.path.exists(file) 
+        chk2 = os.path.isfile(file)
+        chk3 = os.path.isdir(file) # candidate
+        return chk1 and chk2 if isfile else chk1
+    elif isinstance(file, list):
+        return [file_exists(x, isfile) for x in file]
     else:
         log.warning('unknown type found: {}'.format(type(file)))
         return file
@@ -1399,209 +1417,209 @@ class Bam(object):
     ##########################################
 
 
-## for index
-## to-do
-##   - build index (not recommended)
-##
-class AlignIndex(object):
+# ## for index
+# ## to-do
+# ##   - build index (not recommended)
+# ##
+# class AlignIndex(object):
 
-    def __init__(self, aligner='bowtie', index=None, **kwargs):
-        """
-        Required args:
-          - aligner
-          - index (optional)
-          - genome
-          - group : genome, rRNA, transposon, piRNA_cluster, ...
-          - genome_path
-        """
-        ## init
-        # args = args_init(kwargs, align=True) # init
-        # args = ArgumentsInit(kwargs, align=True)
-        self.args = ArgumentsInit(kwargs, trim=True).dict.__dict__
-        self.args.pop('args_input', None)
-        self.args.pop('cmd_input', None)
-        self.args.pop('dict', None)
+#     def __init__(self, aligner='bowtie', index=None, **kwargs):
+#         """
+#         Required args:
+#           - aligner
+#           - index (optional)
+#           - genome
+#           - group : genome, rRNA, transposon, piRNA_cluster, ...
+#           - genome_path
+#         """
+#         ## init
+#         # args = args_init(kwargs, align=True) # init
+#         # args = ArgumentsInit(kwargs, align=True)
+#         self.args = ArgumentsInit(kwargs, trim=True).dict.__dict__
+#         self.args.pop('args_input', None)
+#         self.args.pop('cmd_input', None)
+#         self.args.pop('dict', None)
 
-        self.aligner = aligner
+#         self.aligner = aligner
 
-        if isinstance(index, str):
-            # index given
-            self.index = index.rstrip('/') #
-            self.name = self.get_name()
-            self.aligner_supported = self.get_aligner() # all
-            self.check = index if self.is_index() else None
-        else:
-            # index not defined, search required
-            # log.warning('index=, not defined; .search() required')
-            pass
+#         if isinstance(index, str):
+#             # index given
+#             self.index = index.rstrip('/') #
+#             self.name = self.get_name()
+#             self.aligner_supported = self.get_aligner() # all
+#             self.check = index if self.is_index() else None
+#         else:
+#             # index not defined, search required
+#             # log.warning('index=, not defined; .search() required')
+#             pass
 
-        # self.kwargs = args
-
-
-    def get_aligner(self, index=None):
-        """
-        Search the available index for aligner:
-        bowtie, [*.[1234].ebwt,  *.rev.[12].ebwt]
-        bowtie2, [*.[1234].bt2, *.rev.[12].bt2]
-        STAR,
-        bwa,
-        hisat2,
-        """
-        if index is None:
-            index = self.index
-
-        bowtie_files = [index + i for i in [
-            '.1.ebwt',
-            '.2.ebwt',
-            '.3.ebwt',
-            '.4.ebwt',
-            '.rev.1.ebwt',
-            '.rev.2.ebwt']]
-
-        bowtie2_files = [index + i for i in [
-            '.1.bt2',
-            '.2.bt2',
-            '.3.bt2',
-            '.4.bt2',
-            '.rev.1.bt2',
-            '.rev.2.bt2']]
-
-        hisat2_files = ['{}.{}.ht2'.format(index, i) for i in range(1, 9)]
+#         # self.kwargs = args
 
 
-        bwa_files = [index + i for i in [
-            '.sa',
-            '.amb',
-            '.ann',
-            '.pac',
-            '.bwt']]
+#     def get_aligner(self, index=None):
+#         """
+#         Search the available index for aligner:
+#         bowtie, [*.[1234].ebwt,  *.rev.[12].ebwt]
+#         bowtie2, [*.[1234].bt2, *.rev.[12].bt2]
+#         STAR,
+#         bwa,
+#         hisat2,
+#         """
+#         if index is None:
+#             index = self.index
 
-        STAR_files = [os.path.join(index, i) for i in [
-            'SAindex',
-            'Genome',
-            'SA',
-            'chrLength.txt',
-            'chrNameLength.txt',
-            'chrName.txt',
-            'chrStart.txt',
-            'genomeParameters.txt']]
+#         bowtie_files = [index + i for i in [
+#             '.1.ebwt',
+#             '.2.ebwt',
+#             '.3.ebwt',
+#             '.4.ebwt',
+#             '.rev.1.ebwt',
+#             '.rev.2.ebwt']]
 
-        ## check exists
-        bowtie_chk = [os.path.exists(i) for i in bowtie_files]
-        bowtie2_chk = [os.path.exists(i) for i in bowtie2_files]
-        hisat2_chk = [os.path.exists(i) for i in hisat2_files]
-        bwa_chk = [os.path.exists(i) for i in bwa_files]
-        STAR_chk = [os.path.exists(i) for i in STAR_files]
+#         bowtie2_files = [index + i for i in [
+#             '.1.bt2',
+#             '.2.bt2',
+#             '.3.bt2',
+#             '.4.bt2',
+#             '.rev.1.bt2',
+#             '.rev.2.bt2']]
 
-        ## check file exists
-        aligner = []
-
-        if all(bowtie_chk):
-            aligner.append('bowtie')
-        elif all(bowtie2_chk):
-            aligner.append('bowtie2')
-        elif all(hisat2_chk):
-            aligner.append('hisat2')
-        elif all(bwa_chk):
-            aligner.append('bwa')
-        elif all(STAR_chk):
-            aligner.append('STAR')
-        else:
-            pass
-
-        return aligner
+#         hisat2_files = ['{}.{}.ht2'.format(index, i) for i in range(1, 9)]
 
 
-    def is_index(self, index=None):
-        """
-        Check if index support for aligner
-        """
-        if index is None:
-            index = self.index
-        return self.aligner in self.get_aligner(index)
+#         bwa_files = [index + i for i in [
+#             '.sa',
+#             '.amb',
+#             '.ann',
+#             '.pac',
+#             '.bwt']]
 
-        # return self.aligner in self.aligner_supported if
-        #    index is None else self.aligner in self.get_aligner(index)
+#         STAR_files = [os.path.join(index, i) for i in [
+#             'SAindex',
+#             'Genome',
+#             'SA',
+#             'chrLength.txt',
+#             'chrNameLength.txt',
+#             'chrName.txt',
+#             'chrStart.txt',
+#             'genomeParameters.txt']]
+
+#         ## check exists
+#         bowtie_chk = [os.path.exists(i) for i in bowtie_files]
+#         bowtie2_chk = [os.path.exists(i) for i in bowtie2_files]
+#         hisat2_chk = [os.path.exists(i) for i in hisat2_files]
+#         bwa_chk = [os.path.exists(i) for i in bwa_files]
+#         STAR_chk = [os.path.exists(i) for i in STAR_files]
+
+#         ## check file exists
+#         aligner = []
+
+#         if all(bowtie_chk):
+#             aligner.append('bowtie')
+#         elif all(bowtie2_chk):
+#             aligner.append('bowtie2')
+#         elif all(hisat2_chk):
+#             aligner.append('hisat2')
+#         elif all(bwa_chk):
+#             aligner.append('bwa')
+#         elif all(STAR_chk):
+#             aligner.append('STAR')
+#         else:
+#             pass
+
+#         return aligner
 
 
-    def get_name(self, index=None):
-        """
-        Get the name of index
-        basename: bowtie, bowtie2, hisqt2, bwa
-        folder: STAR
-        """
-        if index is None:
-            index = self.index
-        if os.path.isdir(index):
-            # STAR
-            iname = os.path.basename(index)
-            # iname = os.path.basename(os.path.dirname(index))
-        elif os.path.basename(index) == 'genome':
-            # ~/data/genome/dm3/bowtie2_index/genome
-            # bowtie, bowtie2, bwa, hisat2
-            # iname = os.path.basename(index)
-            iname = os.path.basename(os.path.dirname(os.path.dirname(index)))
-        else:
-            iname = os.path.basename(index)
+#     def is_index(self, index=None):
+#         """
+#         Check if index support for aligner
+#         """
+#         if index is None:
+#             index = self.index
+#         return self.aligner in self.get_aligner(index)
 
-        return iname
+#         # return self.aligner in self.aligner_supported if
+#         #    index is None else self.aligner in self.get_aligner(index)
 
 
-    def search(self, genome=None, group='genome'):
-        """
-        Search the index for aligner: STAR, bowtie, bowtie2, bwa, hisat2
-        para:
+#     def get_name(self, index=None):
+#         """
+#         Get the name of index
+#         basename: bowtie, bowtie2, hisqt2, bwa
+#         folder: STAR
+#         """
+#         if index is None:
+#             index = self.index
+#         if os.path.isdir(index):
+#             # STAR
+#             iname = os.path.basename(index)
+#             # iname = os.path.basename(os.path.dirname(index))
+#         elif os.path.basename(index) == 'genome':
+#             # ~/data/genome/dm3/bowtie2_index/genome
+#             # bowtie, bowtie2, bwa, hisat2
+#             # iname = os.path.basename(index)
+#             iname = os.path.basename(os.path.dirname(os.path.dirname(index)))
+#         else:
+#             iname = os.path.basename(index)
 
-        *genome*    The ucsc name of the genome, dm3, dm6, mm9, mm10, hg19, hg38, ...
-        *group*      Choose from: genome, rRNA, transposon, piRNA_cluster, ...
+#         return iname
 
-        structure of genome_path:
-        default: {HOME}/data/genome/{genome_version}/{aligner}/
 
-        path-to-genome/
-            |- Bowtie_index /
-                |- genome
-                |- rRNA
-                |- MT_trRNA
-            |- transposon
-            |- piRNA cluster
+#     def search(self, genome=None, group='genome'):
+#         """
+#         Search the index for aligner: STAR, bowtie, bowtie2, bwa, hisat2
+#         para:
 
-        """
-        args = self.args.copy()
+#         *genome*    The ucsc name of the genome, dm3, dm6, mm9, mm10, hg19, hg38, ...
+#         *group*      Choose from: genome, rRNA, transposon, piRNA_cluster, ...
 
-        g_path = args.get('genome_path', './')
-        i_prefix = os.path.join(g_path, genome, self.aligner + '_index')
+#         structure of genome_path:
+#         default: {HOME}/data/genome/{genome_version}/{aligner}/
 
-        # all index
-        d = {
-            'genome': [
-                os.path.join(i_prefix, 'genome'),
-                os.path.join(i_prefix, genome)],
-            'genome_rm': [
-                os.path.join(i_prefix, 'genome_rm'),
-                os.path.join(i_prefix, genome + '_rm')],
-            'MT_trRNA': [
-                os.path.join(i_prefix, 'MT_trRNA')],
-            'rRNA': [
-                os.path.join(i_prefix, 'rRNA')],
-            'chrM': [
-                os.path.join(i_prefix, 'chrM')],
-            'structural_RNA': [
-                os.path.join(i_prefix, 'structural_RNA')],
-            'te': [
-                os.path.join(i_prefix, 'transposon')],
-            'piRNA_cluster': [
-                os.path.join(i_prefix, 'piRNA_cluster')],
-            'miRNA': [
-                os.path.join(i_prefix, 'miRNA')],
-            'miRNA_hairpin': [
-                os.path.join(i_prefix, 'miRNA_hairpin')]}
+#         path-to-genome/
+#             |- Bowtie_index /
+#                 |- genome
+#                 |- rRNA
+#                 |- MT_trRNA
+#             |- transposon
+#             |- piRNA cluster
 
-        # hit
-        i_list = d.get(group, ['temp_temp'])
-        i_list = [i for i in i_list if self.is_index(i)]
+#         """
+#         args = self.args.copy()
 
-        return i_list[0] if len(i_list) > 0 else None
+#         g_path = args.get('genome_path', './')
+#         i_prefix = os.path.join(g_path, genome, self.aligner + '_index')
+
+#         # all index
+#         d = {
+#             'genome': [
+#                 os.path.join(i_prefix, 'genome'),
+#                 os.path.join(i_prefix, genome)],
+#             'genome_rm': [
+#                 os.path.join(i_prefix, 'genome_rm'),
+#                 os.path.join(i_prefix, genome + '_rm')],
+#             'MT_trRNA': [
+#                 os.path.join(i_prefix, 'MT_trRNA')],
+#             'rRNA': [
+#                 os.path.join(i_prefix, 'rRNA')],
+#             'chrM': [
+#                 os.path.join(i_prefix, 'chrM')],
+#             'structural_RNA': [
+#                 os.path.join(i_prefix, 'structural_RNA')],
+#             'te': [
+#                 os.path.join(i_prefix, 'transposon')],
+#             'piRNA_cluster': [
+#                 os.path.join(i_prefix, 'piRNA_cluster')],
+#             'miRNA': [
+#                 os.path.join(i_prefix, 'miRNA')],
+#             'miRNA_hairpin': [
+#                 os.path.join(i_prefix, 'miRNA_hairpin')]}
+
+#         # hit
+#         i_list = d.get(group, ['temp_temp'])
+#         i_list = [i for i in i_list if self.is_index(i)]
+
+#         return i_list[0] if len(i_list) > 0 else None
 
 
 ################################################################################
