@@ -274,6 +274,7 @@ class RNAseqConfig(object):
             'align_to_rRNA': True, # default
             # 'read1_only': True, # temp,not well for PE reads
             'aligner': 'STAR', # default
+            'STAR_genomeLoad': 'LoadAndRemove',
         }
         self.update(args_default, force=False) # update missing attrs
         # 1st level: pickle / update all config
