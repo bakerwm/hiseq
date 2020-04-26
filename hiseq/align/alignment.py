@@ -599,7 +599,7 @@ class AlignConfig(object):
         ckk2 = isinstance(self.index_name, list) and len(self.index_name) >= 1 # multiple
         chk3 = isinstance(self.index_list, list) and len(self.index_list) >= 1 # multiple
         chk4 = len(self.fq1) == len(self.smp_name) # multiple
-        chk4 = len(self.index_name) == len(self.index_list) # multiple
+        chk5 = len(self.index_name) == len(self.index_list) # multiple
 
         #############################################################
         ## save file_path / default
