@@ -253,10 +253,6 @@ class RNAseqConfig(object):
         ## PE mode get low pct unique mapped reads, but SE mode not.
         ## so force to SE mode
         args_default = {
-            'parallel_jobs': 1,
-            'threads': 1,
-            'read1_only': False,
-            'build_design': False,
             # 'pickle': None,
             'design': None,
             'genome': 'mm10',
@@ -270,11 +266,14 @@ class RNAseqConfig(object):
             'smp_name': None,
             'group': None,
             'gtf': None,
-            'overwrite': False,
             'align_to_rRNA': True, # default
-            # 'read1_only': True, # temp,not well for PE reads
             'aligner': 'STAR', # default
-            'STAR_genomeLoad': 'LoadAndRemove',
+            'genomeLoad': 'LoadAndRemove',
+            'read1_only': False,
+            'parallel_jobs': 1,
+            'threads': 1,
+            'build_design': False,
+            'overwrite': False,
         }
         self.update(args_default, force=False) # update missing attrs
         # 1st level: pickle / update all config
