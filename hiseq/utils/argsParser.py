@@ -116,10 +116,10 @@ def add_align_args():
     """
     parser = argparse.ArgumentParser(
         description='Align short reads to reference sequence')
-    parser.add_argument('-i', '--fq1', nargs='+', required=True,
+    parser.add_argument('-1', '--fq1', nargs='+', required=True,
         help='path to HiSeq reads in FASTQ format, support multipe \
         files, separated by white spaces.')
-    parser.add_argument('--fq2', nargs='+', default=None,
+    parser.add_argument('-2', '--fq2', nargs='+', default=None,
         help='path to HiSeq read2 of pair-end reads, optional, support \
         multiple files separated by white spaces.')
     parser.add_argument('-o', '--outdir', default=None,
@@ -128,21 +128,29 @@ def add_align_args():
     parser.add_argument('-g', '--genome', required=True, default='dm6',
         choices=[None, 'dm6', 'dm3', 'hg38', 'hg19', 'mm10', 'mm9'],
         help='Reference genome : dm6, dm3, hg38, hg19, mm10, mm9, default: dm6')
-    parser.add_argument('--aligner', default='bowtie',
-        choices=['bowtie', 'bowtie2', 'STAR'],
-        help='Choose which aligner to use. default: bowtie')
-
-    ## extra: index
     parser.add_argument('-k', '--spikein', default=None,
         choices=[None, 'dm6', 'dm3', 'hg38', 'hg19', 'mm10', 'mm9'],
         help='Spike-in genome : dm6, dm3, hg38, hg19, mm10, mm9, default: None')
-    parser.add_argument('-x', '--extra-index', nargs='+', dest="extra_index",
-        help='Provide alignment index(es) for alignment, support multiple\
-        indexes. if specified, ignore -g, -k')
+    parser.add_argument('--aligner', default='bowtie',
+        choices=['bowtie', 'bowtie2', 'STAR', 'hisat2', 'bwa', 'kalisto', 'salmon'],
+        help='Choose which aligner to use. default: bowtie')
+
+    ## extra: index
+    parser.add_argument('--index-list', nargs='+', dest='index_list', default=None,
+        help='ignore genome/spikein, add index directly, default: []')
+    parser.add_argument('--index-name', nargs='+', dest='index_name', default=None,
+        help='names for the input index list')
+    parser.add_argument('-x', '--extra-index', nargs='+', dest="extra_index", default=None,
+        help='Extra index for alignment, default: []')
     parser.add_argument('-n', '--smp_name', required=False,
         help='Name of the experiment')
+    parser.add_argument('--index-list-equal', action='store_true',
+        help='Align reads to each index list in parallel, if specified')
 
     ## extra: para
+    parser.add_argument('--unique-only', action='store_true',
+        dest='unique_only',
+        help='if specified, keep unique mapped reads only')
     parser.add_argument('--extra-para', dest='extra_para', default=None,
         help='Extra parameters for aligner, eg: -X 2000 for bowtie2. default: [None]')
     parser.add_argument('--n-map', dest='n_map', type=int, default=0,
@@ -155,25 +163,29 @@ def add_align_args():
     parser.add_argument('--path_data',
         help='The directory of genome files, default: \
         [$HOME/data/genome/]')
-    parser.add_argument('--unique-only', action='store_true',
-        dest='unique_only',
-        help='if specified, keep unique mapped reads only')
 
     ## extra rRNA
     parser.add_argument('--align-to-chrM', dest='align_to_chrM',
         action='store_true',
-        help='if specified, align to Mitochondrial DNA before genome')
+        help='if specified, align to Mitochondrial DNA before genome, for supported genomes')
     parser.add_argument('--align-to-rRNA', dest='align_to_rRNA',
         action='store_true',
-        help='if specified, align to rRNA before genome')
+        help='if specified, align to rRNA before genome, for supported genomes')
     parser.add_argument('--align-to-MT-trRNA', dest='align_to_MT_trRNA',
         action='store_true',
-        help='if specified, align to Mito, tRNA and rRNA before genome')
+        help='if specified, align to Mito, tRNA and rRNA before genome, for supported genomes')
+    parser.add_argument('--genomeLoad', dest='genomeLoad',
+        default='LoadAndRemove',
+        choices=['NoSharedMemory', 'LoadAndKeep', 'LoadAndRemove', 'LoadAndExit', 'Remove', 'NoSharedMemory'],
+        help='--genomeLoad for STAR, default: [LoadAndRemove]'),
 
     parser.add_argument('--overwrite', action='store_true',
         help='if spcified, overwrite exists file')
-    parser.add_argument('--threads', default=8, type=int,
-        help='Number of threads to launch, default: 8.')
+    parser.add_argument('--threads', default=1, type=int,
+        help='Number of threads for each job, default: [1]')
+    parser.add_argument('--parallel-jobs', default=1, type=int, 
+        dest='parallel_jobs',
+        help='Number of jobs run in parallel, only for multiple fastq files, default: [1]')
     return parser
 
 
@@ -403,11 +415,11 @@ def add_rnaseq_args():
         help='Provide alignment index(es) for alignment, support multiple\
         indexes. if specified, ignore -g, -k')
     parser.add_argument('--aligner', default='STAR',
-        choices=['STAR', 'bowtie', 'bowtie2', 'bowa'],
+        choices=['STAR', 'bowtie', 'bowtie2', 'bwa', 'hisat2', 'kallisto', 'salmon'],
         help='Aligner option: [STAR, bowtie, bowtie2, bwa], default: [STAR]')
 
     parser.add_argument('--threads', default=1, type=int,
-        help='Number of threads to launch, default [1]')
+        help='Number of threads for each job, default [1]')
     parser.add_argument('--parallel-jobs', default=1, type=int, 
         dest='parallel_jobs',
         help='Number of jobs run in parallel, default: [1]')
