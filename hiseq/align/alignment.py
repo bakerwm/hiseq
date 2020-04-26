@@ -95,7 +95,7 @@ import shutil
 import logging
 import json
 import pandas as pd
-
+from multiprocessing import Pool
 from hiseq.utils.seq import Fastx
 from hiseq.utils.helper import * # all help functions
 
@@ -117,7 +117,6 @@ class Alignment(object):
         self.update(kwargs)
         local_config = AlignConfig(**self.__dict__)
         self.update(local_config.__dict__, force=True) # update
-
         self.pickle = None # remove
 
 
@@ -158,6 +157,46 @@ class Alignment(object):
         else:
             pass # no except
 
+
+
+############################################################
+## Alignment                                              ##
+## top-level for alignment
+## 
+## input:
+##   - pickle: str or None
+##   - fq1: list (required)
+##   - fq2: list or None
+##   - aligner: str (required)
+##   - genome: str or None
+##   - spikein: str or None
+##   - align-to-rRNA: bool
+##   - align-to-chrM: bool
+##   - smp_name: list or None (auto)
+##   - index_list: list or None
+##   - index_name: list or None (auto)
+##
+##   - index_list_equal: bool
+##
+##   - n_map
+##   - unique_only
+##   - extra_para
+##   - parallel_jobs
+##   - threads
+##
+## output:
+##   - bam: str
+##   - unmap1: str
+##   - unmap2: str or None 
+##
+##
+## priority:
+##   - 1. pickle
+##   - 2. genome, spikein, align-to-chrM, ...
+##   - x. extra_index
+##
+##
+## return bam, unmap1, unmap2
 
 class AlignConfig(object):
     """
@@ -231,6 +270,7 @@ class AlignConfig(object):
             'parallel_jobs': 1,
             'overwrite': False,
             'pickle': None,
+            'genomeLoad': 'NoSharedMemory',
             }
         self.update(args_default, force=False) # update missing attrs
         
@@ -463,7 +503,7 @@ class AlignConfig(object):
                 index1 = AlignIndex(aligner=self.aligner).search(genome=self.genome, group='genome')
                 if index1 is None:
                     raise Exception('index {} for {}, not detected, skipped'.format(
-                            tag, self.spikein))
+                            tag, self.genome))
                 else:
                     index_list.append(index1)
 
@@ -548,7 +588,7 @@ class AlignConfig(object):
         return align_type
 
 
-    def init_fq_n_index_n(self, create_dires=True):
+    def init_fq_n_index_n(self, create_dirs=True):
         """
         align_type: [2, 2] #fq, index
         for: multiple fq
@@ -566,7 +606,7 @@ class AlignConfig(object):
         ## update these attributes, everytime
         ## auto-generated
         # project_dir = os.path.join(self.outdir, self.smp_name)
-        project_dir: self.outdir
+        project_dir = self.outdir
         config_dir = os.path.join(project_dir, 'config')
         auto_files = {
             'project_dir': project_dir,
@@ -587,7 +627,7 @@ class AlignConfig(object):
 
 
     ## deprecated, not used
-    def init_fq_n_index_1(self, create_dires=True):
+    def init_fq_n_index_1(self, create_dirs=True):
         """
         ! question: skipped, replaced by [2, 2] ! to-do
         align_type: [2, 1] #fq, index
@@ -1037,11 +1077,29 @@ class AlignFq1Index1(object):
         return (self.align_bam, self.unmap1, self.unmap2)
         
 
-## aligner ##
+############################################################
+## aligner                                                ##
 ## base-level: aligner
 ## align, report in json
 ## 
-## input: [fq1], [fq2], [index_list], ...
+## input:
+##   - fq1: str (required)
+##   - fq2: str or None
+##   - smp_name: str or None (auto)
+##   - index_list: str (required)
+##   - index_name: str or None (auto)
+##
+##   - n_map
+##   - unique_only
+##   - extra_para
+##   - parallel_jobs
+##   - threads
+##
+## output:
+##   - bam: str
+##   - unmap1: str
+##   - unmap2: str or None 
+##
 ## return bam, unmap1, unmap2
 class AlignConfig2(object):
     """
@@ -1052,8 +1110,6 @@ class AlignConfig2(object):
     def __init__(self, **kwargs):
         self.update(kwargs, force=True)
         self.init_args()
-        # self.init_files()
-        # self.align_type = self.mission()
 
 
     def update(self, d, force=True, remove=False):
@@ -1104,7 +1160,8 @@ class AlignConfig2(object):
             'overwrite': False,
             'pickle': None,
             'n_map': 1,
-            'unique_only': False
+            'unique_only': False,
+            'genomeLoad': 'NoSharedMemory',
             }
         self.update(args_default, force=False) # update missing attrs
         
@@ -1489,9 +1546,23 @@ class Bowtie(object):
 
         # save dict to plaintext file
         with open(self.align_stat, 'wt') as w:
-            w.write('#') # header line
-            w.write('\t'.join(list(map(str, dd.keys()))) + '\n')
-            w.write('\t'.join(list(map(str, dd.values()))) + '\n')
+            ## version-1
+            # for k, v in sorted(dd.items()):
+            #     w.write('\t'.join([self.config.fqname, self.config.index_name, k, str(v)]) + '\n')
+
+            # ## version-2
+            # w.write('#') # header line
+            # w.write('\t'.join(list(map(str, dd.keys()))) + '\n')
+            # w.write('\t'.join(list(map(str, dd.values()))) + '\n')
+
+            ## version-3
+            groups = ['total', 'map', 'unique', 'multiple', 'unmap', 'fqname', 'index_name']
+            h = '\t'.join(groups)
+            v = '\t'.join([str(dd.get(i, 0)) for i in groups])
+            w.write('#' + h + '\n')
+            w.write(v + '\n')
+
+
 
         ## save to json
         if to_json:
@@ -1731,11 +1802,22 @@ class Bowtie2(object):
 
         # save dict to plaintext file
         with open(self.align_stat, 'wt') as w:
+            ## version-1
             # for k, v in sorted(dd.items()):
             #     w.write('\t'.join([self.config.fqname, self.config.index_name, k, str(v)]) + '\n')
-            w.write('#') # header line
-            w.write('\t'.join(list(map(str, dd.keys()))) + '\n')
-            w.write('\t'.join(list(map(str, dd.values()))) + '\n')
+
+            # ## version-2
+            # w.write('#') # header line
+            # w.write('\t'.join(list(map(str, dd.keys()))) + '\n')
+            # w.write('\t'.join(list(map(str, dd.values()))) + '\n')
+
+            ## version-3
+            groups = ['total', 'map', 'unique', 'multiple', 'unmap', 'fqname', 'index_name']
+            h = '\t'.join(groups)
+            v = '\t'.join([str(dd.get(i, 0)) for i in groups])
+            w.write('#' + h + '\n')
+            w.write(v + '\n')
+
 
         ## save to json
         if to_json:
@@ -1830,6 +1912,17 @@ class STAR(object):
                     chrSize += int(line.strip())
         self.small_genome = True if chrSize < 1000000 else False # 1M genome
 
+        ## genomeLoad
+        gl = ['NoSharedMemory', 'LoadAndKeep', 'LoadAndRemove', 'LoadAndExit', 'Remove', 'NoSharedMemory']
+        if not self.genomeLoad in gl:
+            log_msg0 = '\n'.join([
+                'unknown --genomeLoad: {}'.format(self.genomeLoad),
+                'expected: {}'.format(' '.join(gl)),
+                'auto switch to: NoSharedMemory'
+                ])
+            log.warning(log_msg0)
+            self.genomeLoad = 'NoSharedMemory'
+
 
     def get_cmd(self):
         """
@@ -1897,7 +1990,7 @@ class STAR(object):
         ##    
         c = ' '.join([
             aligner_exe,
-            '--genomeLoad LoadAndRemove', # default: NoSharedMemory
+            '--genomeLoad {}'.format(self.genomeLoad), # default: NoSharedMemory
             '--runMode alignReads',
             '--genomeDir', self.index_list,
             '--readFilesIn', self.fq1, self.fq2,
@@ -1994,6 +2087,7 @@ class STAR(object):
                                 % of chimeric reads |       0.00%
 
         unique, multiple, unmap, map, total
+        total unique multiple map unmap fqname index
         """
         dd = {}
         with open(self.align_log, 'rt') as r:
@@ -2026,12 +2120,24 @@ class STAR(object):
         self.log_dict = dd
 
         # save dict to plaintext file
+        # fixed order
+        # total unique multiple map unmap fqname index
         with open(self.align_stat, 'wt') as w:
+            ## version-1
             # for k, v in sorted(dd.items()):
             #     w.write('\t'.join([self.config.fqname, self.config.index_name, k, str(v)]) + '\n')
-            w.write('#') # header line
-            w.write('\t'.join(list(map(str, dd.keys()))) + '\n')
-            w.write('\t'.join(list(map(str, dd.values()))) + '\n')
+            
+            # ## version-2
+            # w.write('#') # header line
+            # w.write('\t'.join(list(map(str, dd.keys()))) + '\n')
+            # w.write('\t'.join(list(map(str, dd.values()))) + '\n')
+            
+            ## version-3
+            groups = ['total', 'map', 'unique', 'multiple', 'unmap', 'fqname', 'index_name']
+            h = '\t'.join(groups)
+            v = '\t'.join([str(dd.get(i, 0)) for i in groups])
+            w.write('#' + h + '\n')
+            w.write(v + '\n')
 
         ## save to json
         if to_json:
@@ -2350,14 +2456,24 @@ class AlignIndex(object):
         structure of genome_path:
         default: {HOME}/data/genome/{genome_version}/{aligner}/
 
+
+        ## bowtie/bowtie2/hisat2/...
         path-to-genome/
             |- Bowtie_index /
                 |- genome
                 |- rRNA
                 |- MT_trRNA
-            |- transposon
-            |- piRNA cluster
+                |- transposon
+                |- piRNA_cluster
 
+        ## STAR
+        path-to-genome/
+            |- Bowtie_index /
+                |- genome/
+                |- rRNA/
+                |- MT_trRNA/
+                |- transposon/
+                |- piRNA_cluster/
         """
         self.update(kwargs, force=True) # input args
 
@@ -2385,15 +2501,15 @@ class AlignIndex(object):
                       'structural_RNA', 'transposon', 'te', 'piRNA_cluster', 
                       'miRNA', 'miRNA_hairpin']
         if not self.group in group_list:
-            log.error('AlignIndex(aligner).search(group=) is requred, candidate: {}'.format(group_list))
+            log.error('AlignIndex().search(group={}) unknown, expect {}'.format(self.group, group_list))
             return None
 
-        ## build index
+        ## create index path
         p0 = os.path.join(self.genome_path, self.genome, self.aligner + '_index') # [case sensitive] STAR bowtie
         # p1 = [os.path.join(p0, i) for i in self.group_list]
         p1 = os.path.join(p0, self.group)
 
-        if self.is_index(p1) and self.get_aligner(p1) == self.aligner:
+        if self.is_index(index=p1) and self.get_aligner(index=p1) == self.aligner.lower():
             return p1
         else:
             log.warning('index not exists: {}'.format(p1))
