@@ -23,9 +23,10 @@ import pysam
 import pybedtools
 import pathlib
 import binascii
+import datetime
 import pandas as pd
 from itertools import combinations
-from .args import args_init, ArgumentsInit
+# from .args import args_init, ArgumentsInit
 ### local test ###
 # from args import args_init, ArgumentsInit # for local test
 
@@ -329,10 +330,30 @@ def file_abspath(file):
     """
     Create os.path.abspath() for files, directories
     """
-    if isinstance(file, str):
+    if file is None:
+        return None
+    elif isinstance(file, str):
         return os.path.abspath(file)
     elif isinstance(file, list):
         return [file_abspath(x) for x in file]
+    else:
+        log.warning('unknown type found: {}'.format(type(file)))
+        return file
+
+
+def file_exists(file, isfile=True):
+    """
+    os.path.exists() for files, os.path.isfile()
+    """
+    if file is None:
+        return None
+    elif isinstance(file, str):
+        chk1 = os.path.exists(file) 
+        chk2 = os.path.isfile(file)
+        chk3 = os.path.isdir(file) # candidate
+        return chk1 and chk2 if isfile else chk1
+    elif isinstance(file, list):
+        return [file_exists(x, isfile) for x in file]
     else:
         log.warning('unknown type found: {}'.format(type(file)))
         return file
@@ -1396,209 +1417,209 @@ class Bam(object):
     ##########################################
 
 
-## for index
-## to-do
-##   - build index (not recommended)
-##
-class AlignIndex(object):
+# ## for index
+# ## to-do
+# ##   - build index (not recommended)
+# ##
+# class AlignIndex(object):
 
-    def __init__(self, aligner='bowtie', index=None, **kwargs):
-        """
-        Required args:
-          - aligner
-          - index (optional)
-          - genome
-          - group : genome, rRNA, transposon, piRNA_cluster, ...
-          - genome_path
-        """
-        ## init
-        # args = args_init(kwargs, align=True) # init
-        # args = ArgumentsInit(kwargs, align=True)
-        self.args = ArgumentsInit(kwargs, trim=True).dict.__dict__
-        self.args.pop('args_input', None)
-        self.args.pop('cmd_input', None)
-        self.args.pop('dict', None)
+#     def __init__(self, aligner='bowtie', index=None, **kwargs):
+#         """
+#         Required args:
+#           - aligner
+#           - index (optional)
+#           - genome
+#           - group : genome, rRNA, transposon, piRNA_cluster, ...
+#           - genome_path
+#         """
+#         ## init
+#         # args = args_init(kwargs, align=True) # init
+#         # args = ArgumentsInit(kwargs, align=True)
+#         self.args = ArgumentsInit(kwargs, trim=True).dict.__dict__
+#         self.args.pop('args_input', None)
+#         self.args.pop('cmd_input', None)
+#         self.args.pop('dict', None)
 
-        self.aligner = aligner
+#         self.aligner = aligner
 
-        if isinstance(index, str):
-            # index given
-            self.index = index.rstrip('/') #
-            self.name = self.get_name()
-            self.aligner_supported = self.get_aligner() # all
-            self.check = index if self.is_index() else None
-        else:
-            # index not defined, search required
-            # log.warning('index=, not defined; .search() required')
-            pass
+#         if isinstance(index, str):
+#             # index given
+#             self.index = index.rstrip('/') #
+#             self.name = self.get_name()
+#             self.aligner_supported = self.get_aligner() # all
+#             self.check = index if self.is_index() else None
+#         else:
+#             # index not defined, search required
+#             # log.warning('index=, not defined; .search() required')
+#             pass
 
-        # self.kwargs = args
-
-
-    def get_aligner(self, index=None):
-        """
-        Search the available index for aligner:
-        bowtie, [*.[1234].ebwt,  *.rev.[12].ebwt]
-        bowtie2, [*.[1234].bt2, *.rev.[12].bt2]
-        STAR,
-        bwa,
-        hisat2,
-        """
-        if index is None:
-            index = self.index
-
-        bowtie_files = [index + i for i in [
-            '.1.ebwt',
-            '.2.ebwt',
-            '.3.ebwt',
-            '.4.ebwt',
-            '.rev.1.ebwt',
-            '.rev.2.ebwt']]
-
-        bowtie2_files = [index + i for i in [
-            '.1.bt2',
-            '.2.bt2',
-            '.3.bt2',
-            '.4.bt2',
-            '.rev.1.bt2',
-            '.rev.2.bt2']]
-
-        hisat2_files = ['{}.{}.ht2'.format(index, i) for i in range(1, 9)]
+#         # self.kwargs = args
 
 
-        bwa_files = [index + i for i in [
-            '.sa',
-            '.amb',
-            '.ann',
-            '.pac',
-            '.bwt']]
+#     def get_aligner(self, index=None):
+#         """
+#         Search the available index for aligner:
+#         bowtie, [*.[1234].ebwt,  *.rev.[12].ebwt]
+#         bowtie2, [*.[1234].bt2, *.rev.[12].bt2]
+#         STAR,
+#         bwa,
+#         hisat2,
+#         """
+#         if index is None:
+#             index = self.index
 
-        STAR_files = [os.path.join(index, i) for i in [
-            'SAindex',
-            'Genome',
-            'SA',
-            'chrLength.txt',
-            'chrNameLength.txt',
-            'chrName.txt',
-            'chrStart.txt',
-            'genomeParameters.txt']]
+#         bowtie_files = [index + i for i in [
+#             '.1.ebwt',
+#             '.2.ebwt',
+#             '.3.ebwt',
+#             '.4.ebwt',
+#             '.rev.1.ebwt',
+#             '.rev.2.ebwt']]
 
-        ## check exists
-        bowtie_chk = [os.path.exists(i) for i in bowtie_files]
-        bowtie2_chk = [os.path.exists(i) for i in bowtie2_files]
-        hisat2_chk = [os.path.exists(i) for i in hisat2_files]
-        bwa_chk = [os.path.exists(i) for i in bwa_files]
-        STAR_chk = [os.path.exists(i) for i in STAR_files]
+#         bowtie2_files = [index + i for i in [
+#             '.1.bt2',
+#             '.2.bt2',
+#             '.3.bt2',
+#             '.4.bt2',
+#             '.rev.1.bt2',
+#             '.rev.2.bt2']]
 
-        ## check file exists
-        aligner = []
-
-        if all(bowtie_chk):
-            aligner.append('bowtie')
-        elif all(bowtie2_chk):
-            aligner.append('bowtie2')
-        elif all(hisat2_chk):
-            aligner.append('hisat2')
-        elif all(bwa_chk):
-            aligner.append('bwa')
-        elif all(STAR_chk):
-            aligner.append('STAR')
-        else:
-            pass
-
-        return aligner
+#         hisat2_files = ['{}.{}.ht2'.format(index, i) for i in range(1, 9)]
 
 
-    def is_index(self, index=None):
-        """
-        Check if index support for aligner
-        """
-        if index is None:
-            index = self.index
-        return self.aligner in self.get_aligner(index)
+#         bwa_files = [index + i for i in [
+#             '.sa',
+#             '.amb',
+#             '.ann',
+#             '.pac',
+#             '.bwt']]
 
-        # return self.aligner in self.aligner_supported if
-        #    index is None else self.aligner in self.get_aligner(index)
+#         STAR_files = [os.path.join(index, i) for i in [
+#             'SAindex',
+#             'Genome',
+#             'SA',
+#             'chrLength.txt',
+#             'chrNameLength.txt',
+#             'chrName.txt',
+#             'chrStart.txt',
+#             'genomeParameters.txt']]
+
+#         ## check exists
+#         bowtie_chk = [os.path.exists(i) for i in bowtie_files]
+#         bowtie2_chk = [os.path.exists(i) for i in bowtie2_files]
+#         hisat2_chk = [os.path.exists(i) for i in hisat2_files]
+#         bwa_chk = [os.path.exists(i) for i in bwa_files]
+#         STAR_chk = [os.path.exists(i) for i in STAR_files]
+
+#         ## check file exists
+#         aligner = []
+
+#         if all(bowtie_chk):
+#             aligner.append('bowtie')
+#         elif all(bowtie2_chk):
+#             aligner.append('bowtie2')
+#         elif all(hisat2_chk):
+#             aligner.append('hisat2')
+#         elif all(bwa_chk):
+#             aligner.append('bwa')
+#         elif all(STAR_chk):
+#             aligner.append('STAR')
+#         else:
+#             pass
+
+#         return aligner
 
 
-    def get_name(self, index=None):
-        """
-        Get the name of index
-        basename: bowtie, bowtie2, hisqt2, bwa
-        folder: STAR
-        """
-        if index is None:
-            index = self.index
-        if os.path.isdir(index):
-            # STAR
-            # iname = os.path.basename(index)
-            iname = os.path.basename(os.path.dirname(index))
-        elif os.path.basename(index) == 'genome':
-            # ~/data/genome/dm3/bowtie2_index/genome
-            # bowtie, bowtie2, bwa, hisat2
-            # iname = os.path.basename(index)
-            iname = os.path.basename(os.path.dirname(os.path.dirname(index)))
-        else:
-            iname = os.path.basename(index)
+#     def is_index(self, index=None):
+#         """
+#         Check if index support for aligner
+#         """
+#         if index is None:
+#             index = self.index
+#         return self.aligner in self.get_aligner(index)
 
-        return iname
+#         # return self.aligner in self.aligner_supported if
+#         #    index is None else self.aligner in self.get_aligner(index)
 
 
-    def search(self, genome=None, group='genome'):
-        """
-        Search the index for aligner: STAR, bowtie, bowtie2, bwa, hisat2
-        para:
+#     def get_name(self, index=None):
+#         """
+#         Get the name of index
+#         basename: bowtie, bowtie2, hisqt2, bwa
+#         folder: STAR
+#         """
+#         if index is None:
+#             index = self.index
+#         if os.path.isdir(index):
+#             # STAR
+#             iname = os.path.basename(index)
+#             # iname = os.path.basename(os.path.dirname(index))
+#         elif os.path.basename(index) == 'genome':
+#             # ~/data/genome/dm3/bowtie2_index/genome
+#             # bowtie, bowtie2, bwa, hisat2
+#             # iname = os.path.basename(index)
+#             iname = os.path.basename(os.path.dirname(os.path.dirname(index)))
+#         else:
+#             iname = os.path.basename(index)
 
-        *genome*    The ucsc name of the genome, dm3, dm6, mm9, mm10, hg19, hg38, ...
-        *group*      Choose from: genome, rRNA, transposon, piRNA_cluster, ...
+#         return iname
 
-        structure of genome_path:
-        default: {HOME}/data/genome/{genome_version}/{aligner}/
 
-        path-to-genome/
-            |- Bowtie_index /
-                |- genome
-                |- rRNA
-                |- MT_trRNA
-            |- transposon
-            |- piRNA cluster
+#     def search(self, genome=None, group='genome'):
+#         """
+#         Search the index for aligner: STAR, bowtie, bowtie2, bwa, hisat2
+#         para:
 
-        """
-        args = self.args.copy()
+#         *genome*    The ucsc name of the genome, dm3, dm6, mm9, mm10, hg19, hg38, ...
+#         *group*      Choose from: genome, rRNA, transposon, piRNA_cluster, ...
 
-        g_path = args.get('genome_path', './')
-        i_prefix = os.path.join(g_path, genome, self.aligner + '_index')
+#         structure of genome_path:
+#         default: {HOME}/data/genome/{genome_version}/{aligner}/
 
-        # all index
-        d = {
-            'genome': [
-                os.path.join(i_prefix, 'genome'),
-                os.path.join(i_prefix, genome)],
-            'genome_rm': [
-                os.path.join(i_prefix, 'genome_rm'),
-                os.path.join(i_prefix, genome + '_rm')],
-            'MT_trRNA': [
-                os.path.join(i_prefix, 'MT_trRNA')],
-            'rRNA': [
-                os.path.join(i_prefix, 'rRNA')],
-            'chrM': [
-                os.path.join(i_prefix, 'chrM')],
-            'structural_RNA': [
-                os.path.join(i_prefix, 'structural_RNA')],
-            'te': [
-                os.path.join(i_prefix, 'transposon')],
-            'piRNA_cluster': [
-                os.path.join(i_prefix, 'piRNA_cluster')],
-            'miRNA': [
-                os.path.join(i_prefix, 'miRNA')],
-            'miRNA_hairpin': [
-                os.path.join(i_prefix, 'miRNA_hairpin')]}
+#         path-to-genome/
+#             |- Bowtie_index /
+#                 |- genome
+#                 |- rRNA
+#                 |- MT_trRNA
+#             |- transposon
+#             |- piRNA cluster
 
-        # hit
-        i_list = d.get(group, ['temp_temp'])
-        i_list = [i for i in i_list if self.is_index(i)]
+#         """
+#         args = self.args.copy()
 
-        return i_list[0] if len(i_list) > 0 else None
+#         g_path = args.get('genome_path', './')
+#         i_prefix = os.path.join(g_path, genome, self.aligner + '_index')
+
+#         # all index
+#         d = {
+#             'genome': [
+#                 os.path.join(i_prefix, 'genome'),
+#                 os.path.join(i_prefix, genome)],
+#             'genome_rm': [
+#                 os.path.join(i_prefix, 'genome_rm'),
+#                 os.path.join(i_prefix, genome + '_rm')],
+#             'MT_trRNA': [
+#                 os.path.join(i_prefix, 'MT_trRNA')],
+#             'rRNA': [
+#                 os.path.join(i_prefix, 'rRNA')],
+#             'chrM': [
+#                 os.path.join(i_prefix, 'chrM')],
+#             'structural_RNA': [
+#                 os.path.join(i_prefix, 'structural_RNA')],
+#             'te': [
+#                 os.path.join(i_prefix, 'transposon')],
+#             'piRNA_cluster': [
+#                 os.path.join(i_prefix, 'piRNA_cluster')],
+#             'miRNA': [
+#                 os.path.join(i_prefix, 'miRNA')],
+#             'miRNA_hairpin': [
+#                 os.path.join(i_prefix, 'miRNA_hairpin')]}
+
+#         # hit
+#         i_list = d.get(group, ['temp_temp'])
+#         i_list = [i for i in i_list if self.is_index(i)]
+
+#         return i_list[0] if len(i_list) > 0 else None
 
 
 ################################################################################
@@ -1648,680 +1669,3 @@ def design_combinations(seq, n=2, return_index=True):
         return index_pairs if return_index else item_pairs
     else:
         return []
-
-
-## design, from txt file
-class DesignReader(object):
-    """
-    Parsing tab file for arguments
-    return dict
-    optional:
-    return: json file, dict
-
-    rnaseq:
-    names=['RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'fq1', 'fq2']
-    rnaseq:
-    names=['RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'smp_path']
-
-    atacseq:
-    names=['ATACseq', 'group', 'name', 'genome', 'outdir', 'fq1', 'fq2']
-    """
-    def __init__(self, file):
-        self.file = file
-        self.df = self.read_design(file)
-        self.hiseq_type, self.hiseq_subtype = self.design_type()
-        self.args = self.to_dict()
-
-
-    def read_design(self, x):
-        try:
-            df = pd.read_csv(x, '\t', header=None, comment='#')
-            df = df.fillna('NULL')
-        except:
-            df = pd.DataFrame()
-
-        return df
-
-
-    def design_type(self):
-        """
-        check the 1st column: RNAseq | ATACseq
-        check the 7th column: isdir(), True | False
-        check ncolumns == 8: True | False
-
-        rnaseq:
-        names=['RNAseq', ...]
-        atacseq:
-        names=['ATACseq', ...]
-        """
-        if len(self.df) == 0:
-            # empty design
-            log.warning('--design, no record detected. {}'.format(self.file))
-            return None, None
-
-        # print('!AAAA1', self.df.columns, self.df.index.to_list(), self.df.head())
-        name_list = set(self.df.iloc[:, 0].to_list()) # 1-st column
-
-        if len(name_list) > 1:
-            raise Exception('Multiple seq-type found in 1-st column: {}'.format(name_list))
-
-        hiseq = list(name_list).pop().lower() # rnaseq | atacseq
-
-        # the 7th column: file
-        chk1x = [os.path.isfile(i) for i in self.df.iloc[:, 6].to_list()]
-        chk1 = all(chk1x)
-
-        # log
-        chk1_log = []
-        for b, f in zip(chk1x, self.df.iloc[:, 6].to_list()):
-            chk1_log.append('{:<6} : {:<s}'.format(str(b), f))
-
-        if hiseq == 'atacseq' and not chk1:
-            raise Exception('Design not correct: {}\n{}'.format(self.file, '\n'.join(chk1_log)))
-
-        # ncolumns
-        chk2 = len(self.df.columns) == 8
-
-        if chk2: # RNAseq
-            hiseq_sub = 'multiple'
-        else:
-            hiseq_sub = 'deseq' if hiseq == 'rnaseq' and chk1 else None
-
-        return (hiseq, hiseq_sub)
-
-
-    def to_dict(self):
-        if self.hiseq_type == 'rnaseq':
-            if self.hiseq_subtype == 'multiple':
-                self.df.columns = ['RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'fq1', 'fq2']
-                args = {
-                    'fq1': self.df['fq1'].to_list(),
-                    'fq2': self.df['fq2'].to_list()
-                }
-                chk0 = all([os.path.exists(i) for i in args['fq1']]) # check
-            elif self.hiseq_subtype == 'deseq':
-                self.df.columns = ['RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'smp_path']
-                args = {
-                    'smp_path': self.df['smp_path'].to_list()
-                }
-                chk0 = len(args['smp_path']) == len(set(args['smp_path'])) # check
-            else:
-                args = {} # pass
-                chk0 = True # check
-            # feature: single
-            features = self.df['feature'].to_list()
-            chk1 = len(set(features)) == 1 # check
-        elif self.hiseq_type == 'atacseq':
-            self.df.columns = ['ATACseq', 'group', 'name', 'genome', 'outdir', 'fq1', 'fq2']
-            args = {
-                    'fq1': self.df['fq1'].to_list(),
-                    'fq2': self.df['fq2'].to_list()
-                }
-            chk0 = all([os.path.exists(i) for i in args['fq1']]) # check
-            chk1 = True # check
-        else:
-            args = {} # pass
-            chk0 = chk1 = True # check
-            log.warning("""
-                Format failed:
-                --design: {},
-                Expect format:
-                rnaseq1:
-                ['RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'fq1', 'fq2']
-                rnaseq2:
-                ['RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'smp_path']
-                atacseq:
-                ['ATACseq', 'group', 'name', 'genome', 'outdir', 'fq1', 'fq2']""".format(self.file))
-            return {} # empty dict
-
-
-        ## check the df
-        # unique names
-        names = self.df['name'].to_list()
-        # update name
-        names_new = []
-        for i, n in enumerate(names):
-            if n.lower() in ['null', 'na', 'nan', '']:
-                if 'smp_path' in self.df.columns:
-                    n_new = os.path.basename(self.df['smp_path'].to_list()[i])
-                else:
-                    n_new = fq_name(self.df['fq1'].to_list()[i], pe_fix=True)
-            else:
-                n_new = n
-            names_new.append(n_new)
-
-        chk2 = len(names_new) == len(set(names_new))
-
-        # unique genome: single, str
-        genomes = self.df['genome'].to_list()
-        chk3 = len(set(genomes)) == 1
-
-        # outdir: single, str
-        outdirs = self.df['outdir'].to_list()
-        chk4 = len(set(outdirs)) == 1
-
-        # update args
-        args['smp_name'] = names_new
-        args['genome'] = genomes.pop()
-        args['outdir'] = outdirs.pop()
-
-        # for check
-        if not all([chk0, chk1, chk2, chk3, chk4]):
-            raise Exception(""" Design file format not correct:
-                fq1 exists, smp_path exists: {}
-                             feature unique: {}
-                               names unique: {}
-                              genome unique: {}
-                              outdir unique: {}""".format(chk0, chk1, chk2, chk3, chk4))
-        return args
-
-
-    # deprecated #
-    def design_rnaseq(self):
-        """
-        Add headers to RNAseq design
-        names=['RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'fq1', 'fq2']
-        names=['RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'smp_path']
-        """
-        ncols = len(self.df.columns)
-        if ncols == 8:
-            self.df.columns = ['RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'fq1', 'fq2']
-            # fq1: str
-            fq1_list = self.df['fq1'].to_list()
-            fq2_list = self.df['fq2'].to_list()
-            chk0 = [os.path.exists(i) for i in fq1_list]
-
-            # construct args
-            args = {
-                'fq1': fq1_list,
-                'fq2': fq2_list
-            }
-
-        elif ncols == 7:
-            self.df.columns = ['RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'count_txt']
-            # count_txt path
-            smp_path = self.df['smp_path'].to_list()
-            chk0 = len(smp_path) == len(set(smp_path))
-
-            # construct args
-            args = {
-                'smp_path': smp_path
-            }
-
-        else:
-            raise Exception('unknown design for RNAseq: {}'.format(self.file))
-
-        ## check the df
-        # unique names
-        names = self.df['name'].to_list()
-        chk1 = len(names) == len(set(names))
-        chk1 = True # !!!! skip
-
-        # unique genome: single, str
-        genomes = self.df['genome'].to_list()
-        chk2 = len(set(genomes)) == 1
-
-        # outdir: single, str
-        outdirs = self.df['outdir'].to_list()
-        chk3 = len(set(outdirs)) == 1
-
-        # feature: single
-        features = self.df['feature'].to_list()
-        chk4 = len(set(features)) == 1
-
-        # update args
-        args['smp_name'] = names
-        args['genome'] = genomes.pop()
-        args['outdir'] = outdirs.pop()
-        args['feature'] = features.pop()
-
-        # for check
-        if not all([chk0, chk1, chk2, chk3, chk4]):
-            raise Exception('file format not correct: {}'.format(self.file))
-            raise Exception(""" Design file format not correct:
-                fq1 or smp_list: {}
-                          names: {}
-                         genome: {}
-                         outdir: {}
-                        feature: {}""".format(chk0, chk1, chk2, chk3, chk4))
-
-
-
-        return args
-
-
-    # deprecated #
-    def design_atacseq(self):
-        """
-        atacseq:
-        names=['ATACseq', 'group', 'name', 'genome', 'outdir', 'fq1', 'fq2']
-        """
-        ncols = len(self.df.columns)
-        if ncols == 7:
-            self.df.columns = ['ATACseq', 'group', 'name', 'genome', 'outdir', 'fq1', 'fq2']
-            # fq1: str
-            fq1_list = self.df['fq1'].to_list()
-            fq2_list = self.df['fq2'].to_list()
-            chk0 = [os.path.exists(i) for i in fq1_list]
-
-            # construct args
-            args = {
-                'fq1': fq1_list,
-                'fq2': fq2_list,
-            }
-        else:
-            raise Exception('unknown design for ATACseq: {}'.format(self.file))
-
-        ## check the df
-        # unique names
-        names = self.df['name'].to_list()
-        chk1 = len(names) == len(set(names))
-
-        # unique genome: single, str
-        genomes = self.df['genome'].to_list()
-        chk2 = len(set(genomes)) == 1
-
-        # outdir: single, str
-        outdirs = self.df['outdir'].to_list()
-        chk3 = len(set(outdirs)) == 1
-
-        # update args
-        args['smp_name'] = names
-        args['genome'] = genomes.pop()
-        args['outdir'] = outdirs.pop()
-
-        # for check
-        if not all([chk0, chk1, chk2, chk3]):
-            raise Exception('file format not correct: {}'.format(self.file))
-
-        return args
-
-
-    def to_json(self, json_file=None):
-        if json_file is None:
-            tmp_prefix = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
-            json_file = '{}.design.json'.format(tmp_prefix)
-
-        with open(json_file, 'wt') as fo:
-            json.dump(self.d, fo, indent=4, sort_keys=True)
-
-        return json_file
-
-
-## design, to txt file
-class DesignBuilder(object):
-    """
-    Create design.txt for pipeline
-    RNAseq:
-    fq1, genome, outdir, smp_name, feature, group, count_txt, fq2
-
-    ATACseq:
-    fq1, genome, outdir, smp_name, fq2
-
-    rnaseq:
-    names=['RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'fq1', 'fq2']
-    rnaseq:
-    names=['RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'smp_path']
-
-    atacseq:
-    names=['ATACseq', 'group', 'name', 'genome', 'outdir', 'fq1', 'fq2']
-    """
-    def __init__(self, **kwargs):
-        self.update(kwargs)
-        self.init_design()
-
-        if len(kwargs) > 0:
-            self.hiseq_type, self.hiseq_subtype = self.mission()
-            self.status = self.check() # updated
-
-
-    def update(self, d, force=True, remove=False):
-        """
-        d: dict
-        force: bool, update exists attributes
-        remove: bool, remove exists attributes
-        Update attributes from dict
-        force exists attr
-        """
-        # fresh start
-        if remove is True:
-            for k in self.__dict__:
-                # self.__delattr__(k)
-                delattr(self, k)
-        # add attributes
-        if isinstance(d, dict):
-            for k, v in d.items():
-                if not hasattr(self, k) or force:
-                    setattr(self, k, v)
-
-
-    def init_design(self):
-        """
-        check arguments conflicts, defaults...
-        """
-        args_default = {
-            'read1_only': False,
-            'build_design': False,
-            'pickle': None,
-            'design': None,
-            'genome': 'mm10',
-            'outdir': str(pathlib.Path.cwd()),
-            'feature': 'gene',
-            'fq1': None, 
-            'fq2': None,
-            'dirs_ctl': None,
-            'dirs_exp': None,
-            'smp_path': None,
-            'smp_name': None,
-            'group': None,
-            'gtf': None,
-            'overwrite': False
-            }
-
-        self.update(args_default, force=False) # update missing attrs
-
-        # fix smp_name, group / str(None)
-        if self.smp_name == 'None': self.smp_name = None # str to bool
-        if self.group == 'None': self.group = None # str to bool
-        # 1st level: build design
-
-        # 2nd level: pickle / update all config
-        if not self.pickle is None:
-            if os.path.exists(self.pickle) and self.pickle.endswith('.pickle'):
-                args_pickle = pickle_to_dict(self.pickle)
-                self.update(args_pickle, force=True) # fresh start
-            else:
-                raise Exception('--pickle, failed: {}'.format(self.pickle))
-
-        # 3rd level: design (input)
-        # update args from design.txt
-        # 1. group, smp_name, feature, genome, outdir, fq1, fq2
-        # 2. group, smp_name, feature, genome, outdir, smp_path
-        # if not self.design is None:
-        #     args_design = DesignReader(self.design).to_dict()
-        #     self.update(args_design) # update specific args
-
-
-        # 4th level: read1 only
-        if self.read1_only is True:
-            self.fq2 = None
-
-        # 5th level: default path, files
-
-        ## smp_name [from fq1, smp_path]
-        if self.smp_name is None or self.smp_name == 'None':
-            if isinstance(self.smp_path, list) and len(self.smp_path) > 0:
-                self.smp_name = fq_name(self.smp_path, pe_fix=True)
-            elif isinstance(self.fq1, str) or isinstance(self.fq1, list):
-                self.smp_name = fq_name(self.fq1, pe_fix=True)
-            else:
-                log.warning('group is None')
-                pass # None
-
-        ## group
-        if self.group is None or self.group == 'None':
-            if isinstance(self.smp_path, list) and len(self.smp_path) > 0:
-                self.group = fq_name_rmrep(self.smp_path, pe_fix=True)
-            elif self.smp_name:
-                self.group = fq_name_rmrep(self.smp_name, pe_fix=True)
-            else:
-                log.warning('group is None')
-                pass # None
-
-        ## outdir
-        self.outdir = file_abspath(self.outdir)
-
-
-    def demo(self):
-        """
-        Create demo file for example
-        """
-        lines = ['\t'.join(['#RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'fq1', 'fq2'])]
-        lines.append('\t'.join(['#RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'smp_path']))
-        lines.append('\t'.join(['#ATACseq', 'group', 'name', 'genome', 'outdir', 'fq1', 'fq2']))
-        print('\n'.join(lines))
-
-
-    def mission(self):
-        """
-        Check the type of analysis
-        RNAseq, or ATACseq, ...
-        """
-        if self.feature is None:
-            tag = 'ATACseq'
-            tag_sub = None
-        else:
-            tag = 'RNAseq'
-            if isinstance(self.smp_path, list):
-                tag_sub = 'deseq_multiple'
-            elif isinstance(self.dirs_ctl, list) and isinstance(self.dirs_exp, list):
-                tag_sub = 'deseq_single'
-            elif isinstance(self.fq1, list):
-                tag_sub = 'rnaseq_multiple'
-            elif isinstance(self.fq1, str):
-                tag_sub = 'rnaseq_single'
-            else:
-                tag_sub = None
-
-        return (tag, tag_sub)
-
-
-    def check(self):
-        """
-        Check the arguments
-        RNAseq, count_txt/fq1,
-        ATACseq, fq1
-        smp_name ('NULL'|[list])
-        group ('NULL' | [list - by fq1/count])
-        """
-        ## RNAseq
-        if self.hiseq_type == 'RNAseq':
-            # feature
-            chk0 = isinstance(self.feature, str)
-            # rnaseq type
-            if self.hiseq_subtype == 'deseq_multiple':
-                n_samples = len(self.smp_path)
-                assert len(self.smp_path) == len(set(self.smp_path))
-
-            elif self.hiseq_subtype == 'deseq_single':
-                n_samples = len(self.smp_path)
-                self.smp_path = self.dirs_ctl + self.dirs_exp
-                assert len(self.smp_path) == len(set(self.smp_path))
-
-            elif self.hiseq_subtype == 'rnaseq_multiple':
-                n_samples = len(self.fq1)
-                self.fq1 = self.fq1 if isinstance(self.fq1, list) else [self.fq1]
-                if self.fq2 is None:
-                    self.fq2 = ['NULL'] * n_samples
-                else:
-                    self.fq2 = self.fq2 if isinstance(self.fq2, list) else [self.fq2]
-
-            elif self.hiseq_subtype == 'rnaseq_single':
-                n_samples = len(self.fq1)
-                if self.fq2 is None:
-                    self.fq2 = 'NULL'
-
-            else:
-                n_samples = 0
-                pass
-
-        ## ATACseq
-        elif self.hiseq_type == 'ATACseq':
-            chk0 = True  # tmp
-
-            # check fq
-            self.fq1 = self.fq1 if isinstance(self.fq1, list) else [self.fq1]
-            n_samples = len(self.fq1)
-            if self.fq2 is None:
-                self.fq2 = ['NULL'] * len(self.fq1)
-            else:
-                self.fq2 = self.fq2 if isinstance(self.fq2, list) else [self.fq2]
-
-            # smp_name
-            if self.smp_name is None:
-                self.smp_name = [fq_name(i, pe_fix=True) for i in self.fq1]
-
-        ## others
-        else:
-            raise Exception('unkonwn input arguments')
-
-        # genomes
-        chk1 = isinstance(self.genome, str)
-
-        # outdir
-        chk2 = isinstance(self.outdir, str)
-
-        chk3 = True # tmp
-
-        # groups
-        chk4 = isinstance(self.group, list) and len(self.group) == n_samples
-
-        if not all([chk0, chk1, chk2, chk3, chk4]):
-            raise Exception(""" Design file format not correct:
-                                    feature: {}
-                                     genome: {}
-                                     outdir: {}
-                                      blank: {}
-                                      group: {}, {}""".format(
-                                        chk0, 
-                                        self.genome, 
-                                        self.outdir, 
-                                        chk3, 
-                                        n_samples, self.group))
-
-
-    def to_txt(self):
-        """
-        Convert to text file
-        atacseq:
-        names=['ATACseq', 'group', 'name', 'genome', 'outdir', 'fq1', 'fq2']
-
-        Add headers to RNAseq design
-        names=['RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'fq1', 'fq2']
-        names=['RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'smp_path']
-        """
-        design_lines = []
-
-        if self.hiseq_type == 'RNAseq':
-            if self.hiseq_subtype in ['single', 'multiple']:
-            # if self.smp_path is None:
-                design_lines.append('\t'.join([
-                    '#RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'fq1', 'fq2']))
-                for i, q in enumerate(self.fq1):
-                    design_lines.append('\t'.join([
-                        'RNAseq',
-                        self.group[i],
-                        self.smp_name[i],
-                        self.feature,
-                        self.genome,
-                        self.outdir,
-                        q,
-                        self.fq2[i]]))
-            elif self.hiseq_subtype in ['deseq_single', 'deseq_multiple']:
-                design_lines.append('\t'.join([
-                    '#RNAseq', 'group', 'name', 'feature', 'genome', 'outdir', 'smp_path']))
-                for i, q in enumerate(self.smp_path):
-                    design_lines.append('\t'.join([
-                        'RNAseq',
-                        self.group[i],
-                        self.smp_name[i],
-                        self.feature,
-                        self.genome,
-                        self.outdir,
-                        q]))
-
-        elif self.hiseq_type == 'ATACseq':
-            design_lines.append('\t'.join([
-                '#ATACseq', 'group', 'name', 'genome', 'outdir', 'fq1', 'fq2']))
-            for i, q in enumerate(self.fq1):
-                design_lines.append('\t'.join([
-                    'ATACseq',
-                    self.group[i],
-                    self.smp_name[i],
-                    self.genome,
-                    self.outdir,
-                    q,
-                    self.fq2[i]]))
-
-        else:
-            # check()
-            pass
-
-        return design_lines
-
-
-    def to_file(self, file=None):
-        """
-        Organize the arguments to text file
-        """
-        if file is None:
-            tmp_prefix = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
-            file = '{}.design.txt'.format(tmp_prefix)
-
-        design_lines = self.to_txt()
-
-        if os.path.exists(file):
-            log.info('file exists, skipped: {}'.format(file))
-        else:
-            with open(file, 'wt') as w:
-                w.write('\n'.join(design_lines) + '\n')
-
-        return file
-
-
-    def to_json(self, json_file=None):
-        if json_file is None:
-            tmp_prefix = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
-            json_file = '{}.design.json'.format(tmp_prefix)
-
-        with open(json_file, 'wt') as fo:
-            json.dump(self.__dict__, fo, indent=4, sort_keys=True)
-
-        return json_file
-
-
-# def design_reader(x):
-#     """Read the fastq and genome information
-#     group, name, genome, outdir, fq1, fq2
-#     """
-#     try:
-#         df = pd.read_csv(x, '\t', header=None, comment='#', skip_blank_lines=True,
-#             names=['group', 'name', 'genome', 'outdir', 'fq1', 'fq2'])
-
-#         # unique names
-#         names = df['name'].to_list()
-#         chk1 = len(names) == len(set(names))
-
-#         # unique genome: single, str
-#         genomes = df['genome'].to_list()
-#         chk2 = len(set(genomes)) == 1
-
-#         # outdir: single, str
-#         outdirs = df['outdir'].to_list()
-#         chk3 = len(set(outdirs)) == 1
-
-#         # fq1: str
-#         fq1_list = df['fq1'].to_list()
-#         chk4 = [os.path.exists(i) for i in fq1_list]
-
-#         # fq2: NA or str
-#         fq2_list = df['fq2'].to_list()
-
-#         # construct args
-#         args = {
-#             'fq1': fq1_list,
-#             'fq2': fq2_list,
-#             'genome': genomes[0],
-#             'outdir': outdirs[0],
-#             'smp_name': names,
-#         }
-
-#         # for check
-#         if not all([chk1, chk2, chk3, chk4]):
-#             raise Exception('file format not correct - {}'.format(x))
-
-#         return args
-#     except:
-#         log.warning('file format not correct - {}'.x)
-#         return {}
-

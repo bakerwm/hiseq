@@ -9,6 +9,8 @@
 
 import os
 import sys
+import shutil
+import pathlib
 import pysam
 import pybedtools
 from collections import OrderedDict
@@ -209,4 +211,113 @@ def peak_idr(peak_list, outdir):
 
     return txt
 
+
+def bam_cor(bam_list, outdir=None, window=500):
+    """
+    Compute correlation (pearson) between replicates
+    window = 500bp
+    
+    eg:
+    multiBamSummary bins --binSize 500 --smartLabels -o *bam.npz \
+        --outRawCounts *counts.tab -b bam
+    """
+    multiBamSummary = shutil.which('multiBamSummary')
+
+    if outdir is None:
+        outdir = str(pathlib.Path.cwd())
+
+    # default files
+    check_path(outdir)
+    cor_npz = os.path.join(outdir, 'multibam.npz')
+    cor_counts = os.path.join(outdir, 'multibam.counts.tab')
+
+    # run
+    cmd = ' '.join([
+        multiBamSummary,
+        'bins --binSize {}'.format(window),
+        '--smartLabels -o {}'.format(cor_npz),
+        '--outRawCounts {}'.format(cor_counts),
+        '--bamfiles {}'.format(' '.join(bam_list))])
+
+    # save cmd
+    cmd_txt = os.path.join(outdir, "cmd.sh")
+    with open(cmd_txt, 'wt') as w:
+        w.write(cmd + '\n')
+
+    if os.path.exists(cor_counts):
+        log.info('bam_cor() skipped, file.exsits: {}'.format(
+            cor_counts))
+    else:
+        try:
+            # make a index
+            [Bam(i).index() for i in bam_list]
+            run_shell_cmd(cmd)
+        except:
+            log.warning('bam_cor() failed.')
+
+    return cor_npz
+
+
+def cor_plot(npz):
+    npz_dir = os.path.dirname(npz)
+    cor_pdf = os.path.join(npz_dir, 'heatmap.pdf')
+    cor_tab = os.path.join(npz_dir, 'heatmap.cor.tab')
+    pca_pdf = os.path.join(npz_dir, 'PCA.pdf')
+
+    # correlation
+    cmd1 = ' '.join([
+        'plotCorrelation -in {}'.format(npz),
+        '--corMethod pearson --skipZeros',
+        '--whatToPlot heatmap --plotNumbers',
+        '-o {} --outFileCorMatrix {}'.format(cor_pdf, cor_tab)
+        ])
+
+    # save cmd
+    cmd1_txt = os.path.join(npz_dir, 'cmd_cor.sh')
+    with open(cmd1_txt, 'wt') as w:
+        w.write(cmd1 + '\n')
+
+    # run
+    if os.path.exists(cor_pdf):
+        log.info('file exists, skipped: {}'.format(cor_pdf))
+    else:
+        try:
+            run_shell_cmd(cmd1)
+        except:
+            log.warning('plotCorrealtion failed')
+
+    # PCA
+    cmd2 = ' '.join([
+        'plotPCA -in {}'.format(npz),
+        '-o {} -T "BAM PCA" '.format(pca_pdf)
+        ])
+
+    # save cmd
+    cmd2_txt = os.path.join(npz_dir, 'cmd_pca.sh')
+    with open(cmd2_txt, 'wt') as w:
+        w.write(cmd2 + '\n')
+
+    # run
+    if os.path.exists(pca_pdf):
+        log.info('file exists, skipped: {}'.format(pca_pdf))
+    else:
+        try:
+            run_shell_cmd(cmd2)
+        except:
+            log.warning('plotCorrealtion failed')
+
+
+def main():
+    if len(sys.argv) < 3:
+        sys.exit('Usage: rep_cor.py <outdir> <bam1> <bam2> ...')
+
+    outdir = sys.argv[1]
+    bam_list = sys.argv[2:]
+
+    npz = bam_cor(bam_list, outdir)
+    cor_plot(npz)
+
+
+if __name__ == '__main__':
+    main()
 

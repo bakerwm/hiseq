@@ -45,7 +45,7 @@ class Fastx(object):
         return fx_type(self.input) == 'fasta'
 
 
-    def file_type(self, fn, top_n=10000):
+    def file_type(self, fn, top_n=1000):
         """
         Check the file type by top 10000 rows:
         identify @ for fastq, > for fasta, * unknown

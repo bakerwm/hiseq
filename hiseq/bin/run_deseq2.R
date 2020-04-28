@@ -11,7 +11,7 @@ if (length(args) < 1) {
   print("")
   print("Options:")
   print("    deseq_dir*   the output of featureCounts of Control samples, like: a.vs.b")
-  print("       p_value   the pvalue cutoff, default: 0.1")
+  print("      p_value    the pvalue cutoff, default: 0.1")
   stop("arguments failed")
 }
 
@@ -20,10 +20,12 @@ de_dir <- args[1]
 pvalue <- args[2]
 
 suppressPackageStartupMessages(library(goldclipReport))
+library(dplyr)
 
 ## parse DE_idr for required files
 ## 1. config/arguments.txt: for the path to required files
 config_pickle <- file.path(de_dir, "..", "config", "arguments.pickle")
+
 if(! file.exists(config_pickle)){
   stop("arguments.pickle, not found in input_dir")
 }
@@ -45,24 +47,33 @@ for(f in required_names){
 stopifnot(all(required_names %in% names(pd_data)))
 
 ##----------------------------------------------------------------------------##
-# ## custom
-deseqHub3(countA = pd_data$count_ctl,
-          countB = pd_data$count_exp,
-          organism = pd_data$genome,
-          nameA  = pd_data$prefix_ctl,
-          nameB  = pd_data$prefix_exp,
-          outdir = pd_data$deseqdir,
-          pvalue_cutoff = 0.1,
-          readable=TRUE)
+## custom: a.vs.b
+outdir1 <- file.path(pd_data$deseqdir, "control.vs.treatment")
+hiseqr::deseqHub2(count_ctl = pd_data$count_ctl,
+                  count_exp = pd_data$count_exp,
+                  outdir    = outdir1)
 
-
-#-----------------------------------------------------------------------------##
-## Generate publish quality figures
-cnt_fix <- file.path(pd_data$deseqdir, "transcripts_deseq2.fix.xls")
-stopifnot(file.exists(cnt_fix))
+## publish quality figures
+cnt_fix1 <- file.path(outdir1, "transcripts_deseq2.fix.xls")
+stopifnot(file.exists(cnt_fix1))
 print("generate publishable plots")
-print(paste0("found DESeq2 ouptut: ", cnt_fix))
-tmp <- DESeq2_publish_plot(cnt_fix, pd_data$deseqdir, save2pdf = TRUE)
+print(paste0("found DESeq2 ouptut: ", cnt_fix1))
+tmp <- DESeq2_publish_plot(cnt_fix1, outdir1, save2pdf = TRUE)
+
+
+##----------------------------------------------------------------------------##
+## custom: b.vs.a
+outdir2 <- file.path(pd_data$deseqdir, "treatment.vs.control")
+hiseqr::deseqHub2(count_ctl = pd_data$count_exp,
+                  count_exp = pd_data$count_ctl,
+                  outdir    = outdir2)
+
+## publish quality figures
+cnt_fix2 <- file.path(outdir2, "transcripts_deseq2.fix.xls")
+stopifnot(file.exists(cnt_fix2))
+print("generate publishable plots")
+print(paste0("found DESeq2 ouptut: ", cnt_fix2))
+tmp <- DESeq2_publish_plot(cnt_fix2, outdir2, save2pdf = TRUE)
 
 
 ## END
