@@ -1952,7 +1952,7 @@ class RNAseqConfig(object):
             self.init_rnaseq_single(create_dirs)
         elif self.rnaseq_type == 'merge':
             self.init_rnaseq_merge(create_dirs)
-        elif self.ranseq_type == 'deseq':
+        elif self.rnaseq_type == 'deseq':
             self.init_rnaseq_deseq(create_dirs)
         else:
             log.error('unknown')
