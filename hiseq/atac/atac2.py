@@ -590,10 +590,6 @@ class AtacSingle(object):
         args['library_type'] = 'Nextera'
         
         if trimmed is True:
-<<<<<<< HEAD
-            # print('!xxxx')
-=======
->>>>>>> rnaseq
             # create symlink from rawdir
             # if raw is not gzipped, do it
             if is_gz(fq1) and is_gz(fq2):
@@ -604,10 +600,6 @@ class AtacSingle(object):
                 gzip_cmd(fq1, clean_fq1, decompress=False, rm=False)
                 gzip_cmd(fq2, clean_fq2, decompress=False, rm=False)
         else:
-<<<<<<< HEAD
-            # print('!yyyy')
-=======
->>>>>>> rnaseq
             if check_file(self.config.clean_fq_list):
                 log.info('trim() skipped, file exists: {}'.format(
                     self.config.clean_fq_list))

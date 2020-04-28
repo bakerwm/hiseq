@@ -72,7 +72,6 @@ import pandas as pd
 from hiseq.utils.helper import *
 from hiseq.qc.trimmer import Trimmer
 from hiseq.align.alignment import Alignment
-=======
 """
 Working mode:
 
@@ -2281,28 +2280,6 @@ class RNAseqSingle(object):
 
     def fc_count(self):
         pass
-
-
-
-class RNAseqMerge(object):
-    def __init__(self, **kwargs):
-        pass
-
-
-
-class RNAseqDeseq(object):
-    def __init__(self, **kwargs):
-        pass
-
-
-
-class RNAseq(object):
-    def __init__(self, **kwargs):
-        pass
-
-=======
-
-        return self.wrap_log()
 
 
 class RNAseqReader(object):
