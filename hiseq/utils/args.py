@@ -345,6 +345,22 @@ class ArgumentsInit(object):
         self.binsize = args.get('binsize', 10)
 
 
+    def args_fc(self):
+        """
+        Arguments for featureCounts
+        """
+        args = self.args_input.copy()
+
+        # required
+        self.outdir = args.get('outdir', str(pathlib.Path.cwd()))
+
+        # optional
+        self.strandness = args.get('strandness', 0)
+        self.threads = args.get('threads', 4)
+        self.overwrite = args.get('overwrite', False)
+        self.outname = args.get('outname', 'count.txt')
+
+
     def check_cmd(self):
         """
         Which command to use
@@ -365,6 +381,9 @@ class ArgumentsInit(object):
 
         if cmd.get('bam2bw', False):
             self.args_bam2bw()
+
+        if cmd.get('fc', False):
+            self.args_fc()
 
 
     def config(self):

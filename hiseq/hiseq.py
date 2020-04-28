@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""This is the main script for regular usage, 
+"""This is the main script for regular usage,
 call sub-commands
 
 ...
@@ -9,7 +9,7 @@ call sub-commands
 
 __author__ = 'Ming Wang'
 __email__ = 'wangm08@hotmail.com'
-__date__ = '2019-10-01'  
+__date__ = '2019-10-01'
 __version__ = '0.0.1'
 
 # import hiseq
@@ -20,6 +20,7 @@ from .utils.argsParser import *
 from .qc.trimmer import Trimmer
 from .align.alignment import Alignment
 from .atac.atac2 import Atac
+from .rnaseq.rnaseq import RNAseq
 
 class Hiseq(object):
     """The 1st-level of command, choose which sub-command to use
@@ -38,10 +39,10 @@ class Hiseq(object):
         atac      ATACseq pipeline
 
         qc        Basic quality control for fastq files, trim adapters, low-quality bases, ...
-        align     Align fastq/a files to reference genome  
-        quant     Count genes/features 
+        align     Align fastq/a files to reference genome
+        quant     Count genes/features
         peak      Call peaks using MACS2
-        motif     Check motifs from a BED/fasta file    
+        motif     Check motifs from a BED/fasta file
         report    Create a report to the above commands
     """
         )
@@ -59,7 +60,7 @@ class Hiseq(object):
 
 
     def qc(self):
-        """Quality control, 
+        """Quality control,
         cutadapt  : Trimming adapters from reads
         trim_ends : Python scripts to trim ends of reads, usually, the barcode sequences
         fastqc    : Create fastqc report the raw and clean files
@@ -67,7 +68,7 @@ class Hiseq(object):
         parser = add_qc_args()
         args = parser.parse_args(sys.argv[2:])
         args = vars(args) # convert to dict
-        
+
         # custom args
         fq1_list = args.get('fq1', None) # list
         outdir = args.get('outdir', None)
@@ -173,10 +174,44 @@ class Hiseq(object):
         Atac(**args).run()
 
 
+    def rnaseq(self):
+        """
+        RNA-seq pipeline
+        """
+        parser = add_rnaseq_args()
+        args = parser.parse_args(sys.argv[2:])
+        # help
+        if len(sys.argv) < 3:
+            parser.parse_args(['-h'])
+        # main
+        args = vars(args) # convert to dict
+        # check design or --fq1,--fq2,--genome,--outdir or smp_path/dirs_ctl/dirs_exp
+        design = args.get('design', None)
+
+        fq1 = args.get('fq1', None)
+        fq2 = args.get('fq2', None)
+        genome = args.get('genome', None)
+        outdir = args.get('outdir', None)
+
+        smp_path = args.get('smp_path', None)
+        dirs_ctl = args.get('dirs_ctl', None)
+        dirs_exp = args.get('dirs_exp', None)
+
+        chk1 = design is None
+        chk2 = smp_path is None
+        chk3 = dirs_ctl is None and dirs_exp is None
+        chk4 = all([i is None for i in [fq1, fq2, genome, outdir]])
+        # if config is None and not all(chk2):
+        if all([chk1, chk2, chk3, chk4]):
+            sys.exit('required: --design, or --fq1, --fq2, --genome, --outdir or --smp-path, --dirs-ctl, --dirs-exp')
+
+        RNAseq(**args).run()
+
+
 def main():
     Hiseq()
 
-        
+
 if __name__ == '__main__':
     main()
 
