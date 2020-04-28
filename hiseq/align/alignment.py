@@ -317,7 +317,7 @@ class AlignConfig(object):
         ####################################################
         ## 2. for fastq2 files                              #
         if self.fq2 is None:
-            self.fq2 = [None] * len(self.fq1)
+            self.fq2 = None
         elif isinstance(self.fq2, list):
             self.fq2 = file_abspath(self.fq2)
         elif isinstance(self.fq2, str):
@@ -343,14 +343,14 @@ class AlignConfig(object):
 
         ## file exists
         chk0 = isinstance(self.fq1, list)
-        chk1 = isinstance(self.fq2, list)
+        chk1 = isinstance(self.fq2, list) or self.fq2 is None
         chk2 = isinstance(self.smp_name, list)
-        chk3 = len(self.fq1) == len(self.fq2)
+        chk3 = True # len(self.fq1) == len(self.fq2)
         chk4 = len(self.fq1) == len(self.smp_name)
-        chk5 = all(file_exists(self.fq1, isfile=True))
-        chk6 = all(file_exists(self.fq2, isfile=True)) or all([i is None for i in self.fq2])
+        chk5 = True # all(file_exists(self.fq1))
+        chk6 = True # all(file_exists(self.fq2, isfile=True)) or self.fq2 is None
         if not all([chk0, chk1, chk2, chk3, chk4, chk5, chk6]):
-            raise Exception('failed, fq1, fq2: \nfq1: {}, \nfq2: {}'.format(self.fq1, self.fq2))
+            raise Exception('failed, fq1, fq2: \nfq1: {}, \nfq2: {}, {}'.format(self.fq1, self.fq2, [chk0, chk1, chk2, chk3, chk4, chk5, chk6]))
 
 
     def init_index(self):
@@ -532,30 +532,37 @@ class AlignConfig(object):
         is_paired: bool
         is_multi_index: bool ?
         """
-        chk0 = len(self.fq1) == len(self.fq2)
+        # chk0 = len(self.fq1) == len(self.fq2)
 
-        if not chk0:
-            raise Exception('fq1 and fq2 not match in numbers: \nfq1: {} \nfq2: {}'.format(
-                len(self.fq1),
-                len(self.fq2)))
+        # if not chk0:
+        #     raise Exception('fq1 and fq2 not match in numbers: \nfq1: {} \nfq2: {}'.format(
+        #         len(self.fq1),
+        #         len(self.fq2)))
 
-        is_paired = []
-        check_log = 'fastq files status:\n'
-        chk0 = False # status, errors
-        for fq1, fq2 in zip(self.fq1, self.fq2):
-            check_log += 'fq1: {}\tfq2: {}\n'.format(fq_name(fq1), fq_name(fq2))
-            if fq2 is None:
-                is_paired.append(False)
-            elif os.path.exists(fq2):
-                if fq_name(fq1, pe_fix=True) == fq_name(fq2, pe_fix=True):
-                    is_paired.append(True) # check file name
-                else:
-                    chk0 = True
+        if self.fq2 is None:
+            is_paired = False
+        else:
+            is_paired = True
+
+        return is_paired
+
+        # is_paired = []
+        # check_log = 'fastq files status:\n'
+        # chk0 = False # status, errors
+        # for fq1, fq2 in zip(self.fq1, self.fq2):
+        #     check_log += 'fq1: {}\tfq2: {}\n'.format(fq_name(fq1), fq_name(fq2))
+        #     if fq2 is None:
+        #         is_paired.append(False)
+        #     elif os.path.exists(fq2):
+        #         if fq_name(fq1, pe_fix=True) == fq_name(fq2, pe_fix=True):
+        #             is_paired.append(True) # check file name
+        #         else:
+        #             chk0 = True
         
-        if chk0:
-            raise Exception(check_log)
+        # if chk0:
+        #     raise Exception(check_log)
 
-        return all(is_paired)
+        # return all(is_paired)
 
 
     def mission(self):
@@ -1243,13 +1250,19 @@ class AlignConfig2(object):
 
         ## file exists
         chk0 = isinstance(self.fq1, str)
-        chk1 = isinstance(self.fq2, str)
+        chk1 = isinstance(self.fq2, str) or self.fq2 is None
         chk2 = isinstance(self.smp_name, str)
         chk3 = file_exists(self.fq1, isfile=True)
         chk4 = file_exists(self.fq2, isfile=True) or self.fq2 is None
+        log_msg0 = '\n'.format([
+            'Failed on arguments:'
+            '{:>30s}: {}'.format('fq1, str or list', self.fq1),
+            '{:>30s}: {}'.format('fq2, str, list, None', self.fq2),
+            '{:>30s}: {}'.format('smp_name, str or list', self.smp_name)])
         if not all([chk0, chk1, chk2, chk3, chk4]):
-            raise Exception('failed, fq1, fq2: \nfq1: {}, \nfq2: {}'.format(
-                self.fq1, self.fq2))
+            # raise Exception('failed, fq1, fq2: \nfq1: {}, \nfq2: {}'.format(
+            #     self.fq1, self.fq2))
+            raise Exception(log_msg0)
 
 
     def init_index(self):
