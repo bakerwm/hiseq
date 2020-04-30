@@ -22,7 +22,7 @@ def add_qc_args():
     """
     parser = argparse.ArgumentParser(
         description='hiseq qc, trim adapters and qc')
-    parser.add_argument('-i', '--fq1', nargs='+', required=True,
+    parser.add_argument('-1', '--fq1', nargs='+', required=True,
         help='reads in FASTQ files, support (*.gz), 1-4 files.')
     parser.add_argument('-o', '--outdir', default=None,
         help='The directory to save results.')
@@ -103,7 +103,7 @@ def add_qc_args():
               default: [0], 0=the full length')
 
     ## PE arguments
-    parser.add_argument('--fq2', nargs='+', default=None,
+    parser.add_argument('-2', '--fq2', nargs='+', default=None,
         help='The read2 of pair-end reads')
     parser.add_argument('-A', '--AD3', default='AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT',
         help='The 3 adapter of read2, default: AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT')
