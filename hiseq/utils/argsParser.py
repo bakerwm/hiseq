@@ -11,9 +11,33 @@ Parse arguments from command line
 """
 
 import argparse
-       
+
 
 def add_qc_args():
+    """
+    utils:
+      - fastqc
+    """
+    parser = argparse.ArgumentParser(
+        description='hiseq qc, fastqc')
+    parser.add_argument('-i', '--fq', nargs='+', required=True,
+        help='reads in FASTQ files, or directory contains fastq files')
+    parser.add_argument('-o', '--outdir', default=None,
+        help='The directory to save results.')
+    parser.add_argument('--fastqc', default='fastqc',
+        help='The path to the fastqc command, default: [fastqc]')
+
+    parser.add_argument('--overwrite', action='store_true',
+        help='if spcified, overwrite exists file')
+    parser.add_argument('--threads', default=1, type=int,
+        help='Number of threads for each job, default: [1]')
+    parser.add_argument('--parallel-jobs', default=1, type=int, 
+        dest='parallel_jobs',
+        help='Number of jobs run in parallel, only for multiple fastq files, default: [1]')
+    return parser
+
+
+def add_trim_args():
     """
     - remove 3' adapter(s) (default: TruSeq RNA-Seq)
     - trim low-quality bases on both 5 and 3 end

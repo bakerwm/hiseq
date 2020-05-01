@@ -17,14 +17,15 @@ import os
 import sys
 import argparse
 from .utils.argsParser import *
-from .qc.trimmer import Trimmer
+from .qc.fastqc import Fastqc
+from .trim.trimmer import Trimmer
 from .align.alignment import Alignment
 from .atac.atac2 import Atac
 from .rnaseq.rnaseq import RNAseq
 
 class Hiseq(object):
     """The 1st-level of command, choose which sub-command to use
-    qc, align, quant, peak, motif, report, ... (to be continued)
+    qc, trim, align, quant, peak, motif, report, ... (to be continued)
 
     """
     def __init__(self):
@@ -37,8 +38,10 @@ class Hiseq(object):
     The most commonly used sub-commands are:
 
         atac      ATACseq pipeline
+        rnaseq    RNAseq pipeline
 
-        qc        Basic quality control for fastq files, trim adapters, low-quality bases, ...
+        qc        quality control, fastqc
+        trim      trim adapters, low-quality bases, ...
         align     Align fastq/a files to reference genome
         quant     Count genes/features
         peak      Call peaks using MACS2
@@ -60,12 +63,24 @@ class Hiseq(object):
 
 
     def qc(self):
+        """
+        Quality control
+        fastqc    : Create fastqc report the raw and clean files
+        """
+        parser = add_qc_args()
+        args = parser.parse_args(sys.argv[2:])
+        args = vars(args) # convert to dict
+
+        Fastqc(**args).run()
+
+
+    def trim(self):
         """Quality control,
         cutadapt  : Trimming adapters from reads
         trim_ends : Python scripts to trim ends of reads, usually, the barcode sequences
         fastqc    : Create fastqc report the raw and clean files
         """
-        parser = add_qc_args()
+        parser = add_trim_args()
         args = parser.parse_args(sys.argv[2:])
         args = vars(args) # convert to dict
 

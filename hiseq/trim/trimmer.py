@@ -19,7 +19,7 @@ import re
 import shutil
 import logging
 
-from hiseq.utils.args import args_init, ArgumentsInit
+from hiseq.utils.args import args_init, ArgumentsInit, Adapter
 from hiseq.utils.seq import Fastx
 from hiseq.utils.helper import * # all help functions
 
@@ -555,4 +555,5 @@ class Cutadapt(object):
             fq_out = self.run_pe()
 
         return fq_out
+
 

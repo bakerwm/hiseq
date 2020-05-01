@@ -38,11 +38,11 @@ class Fastx(object):
 
 
     def is_fastq(self):
-        return fx_type(self.input) == 'fastq'
+        return self.fx_type(self.input) == 'fastq'
 
 
     def is_fasta(self):
-        return fx_type(self.input) == 'fasta'
+        return self.fx_type(self.input) == 'fasta'
 
 
     def file_type(self, fn, top_n=1000):
