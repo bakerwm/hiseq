@@ -127,8 +127,8 @@ def list_fq_files(path, pattern='*'):
     _2.
     """
     # all fastq files: *f[astq]+(.gz)?
-    fq_list = listfile('*q.gz', path) # *fastq.gz, *fq.gz
-    fq_list.extend(listfile('*q', path)) # *fastq, *fq
+    fq_list = listfile(path, '*q.gz') # *fastq.gz, *fq.gz
+    fq_list.extend(listfile(path, '*q')) # *fastq, *fq
 
     # filter
     if pattern == '*':

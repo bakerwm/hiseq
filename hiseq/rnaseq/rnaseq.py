@@ -89,7 +89,7 @@ import pandas as pd
 from multiprocessing import Pool
 import copy # copy objects
 from hiseq.utils.helper import *
-from hiseq.qc.trimmer import Trimmer
+from hiseq.trim.trimmer import Trimmer
 from hiseq.align.alignment import Alignment
 
 
@@ -910,7 +910,7 @@ class RNAseqSingle(object):
     def trim(self, trimmed=False):
         """
         Trim reads:
-        hiseq.qc.trimmer.Trimmer(fq1, outdir, fq2, cut_after_trim='9,-6').run()
+        hiseq.trim.trimmer.Trimmer(fq1, outdir, fq2, cut_after_trim='9,-6').run()
 
         if trimmed:
             do
