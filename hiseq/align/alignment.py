@@ -825,7 +825,7 @@ class AlignFqNIndexN(object):
 
         ## organize args for single run:
         fq1 = [fq1]
-        fq2 = [obj_i.fq2[i]]
+        fq2 = None if obj_i.fq2 is None else [obj_i.fq2[i]]
         smp_name = [obj_i.smp_name[i]]
         outdir = obj_i.outdir # os.path.join(obj_i.outdir, obj_i.smp_name[i])
         args_i = {
@@ -2011,6 +2011,7 @@ class STAR(object):
             '--readFilesIn', self.fq1, self.fq2,
             '--readFilesCommand', c_reader,
             '--outFileNamePrefix', self.align_prefix,
+            '--runThreadN', self.threads,
             '--limitBAMsortRAM 10000000000',
             '--outSAMtype BAM SortedByCoordinate',
             '--outFilterMismatchNoverLmax 0.07',
