@@ -25,10 +25,33 @@ import pathlib
 import binascii
 import datetime
 import pandas as pd
+import Levenshtein
 from itertools import combinations
 # from .args import args_init, ArgumentsInit
 ### local test ###
 # from args import args_init, ArgumentsInit # for local test
+
+
+def index_checker(seq_list, mm=0):
+    """
+    Check if the index compatiable, with specific mimatch
+    could be differenct in length
+    only consider mutations
+    """
+    item_pairs = list(combinations(seq_list, 2))
+
+    tag = 0
+    for (a, b) in item_pairs:
+        a = a[:len(b)]
+        b = b[:len(a)] # the same length
+        m = Levenshtein.distance(a, b)
+        if m > mm:
+            print(m, a, b)
+            tag += 1
+
+    return tag == 0
+
+
 
 
 logging.basicConfig(
