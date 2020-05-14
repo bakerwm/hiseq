@@ -643,7 +643,7 @@ class AtacSingle(object):
         bamlist = [i for i in bamlist if not os.path.basename(i).endswith('.raw.bam')] # remove raw.bam
         # [chrM, genome]
         print('!AAAA1', bamlist)
-        return(bamlist[1]) # genome
+        return(bamlist[-1]) # the last one
 
 
     def bam_rmdup(self, rmdup=True):

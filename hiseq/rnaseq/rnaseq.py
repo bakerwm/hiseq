@@ -546,6 +546,7 @@ class RNAseqConfig(object):
         ## files
         self.trim_stat = os.path.join(self.clean_dir, self.smp_name + '.qc.stat')
         self.bam_raw = os.path.join(self.align_dir, self.smp_name, '2.*', self.smp_name + '.bam')
+        self.bam_out = os.path.join(self.bam_dir, self.smp_name, + '.bam')
         self.align_stat = os.path.join(self.align_dir, self.smp_name + '.align.txt')
         self.bw_fwd = os.path.join(self.bw_dir, self.smp_name + '.fwd.bigWig')
         self.bw_rev = os.path.join(self.bw_dir, self.smp_name + '.rev.bigWig')
@@ -981,6 +982,15 @@ class RNAseqSingle(object):
         return(bamlist[-1]) # last one
 
 
+    def save_bam(self):
+        """
+        Save genome mapped bam file to bam_file/
+        from: self.bam_raw, align/smp_name/2.dm6/smp_name.bam
+        to: self.bam_out, bam_files/smp_name.bam
+        """
+        symlink(self.bam_raw, self.bam_out)
+
+
     def fc_count(self):
         """
         Run FeatureCounts for the bam file
@@ -1082,7 +1092,8 @@ class RNAseqSingle(object):
 
         # 3. align
         self.align()
-
+        self.save_bam() 
+        
         # 4. quant
         self.fc_count()
 
