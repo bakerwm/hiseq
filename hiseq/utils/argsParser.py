@@ -267,6 +267,29 @@ def add_motif_args():
     return parser
 
 
+def add_go_args():
+    """
+    Run GO analysis
+    """
+    parser = argparse.ArgumentParser(description='hiseq go -i gene.xls -g dm6 -o output')
+    parser.add_argument('-a', '--all', 
+        help='for all siginificantly changed genes, require "sig" in header, ignore: -i')
+    parser.add_argument('-i', '--input', 
+        help='directory of deseq_dir (a.vs.b), or path to file, contain genes')
+    parser.add_argument('-o', '--outdir', 
+        help='directory to save the GO results, only works if -i is gene_list') 
+    parser.add_argument('-g', '--genome',
+        help='genome name, scientific_name prefer, eg: Drosophila melanogaster, also support: dm3/hg19/mm10')
+    parser.add_argument('-f', '--foldChange', 
+        help='path to file, contains log2FoldChange, Gene')
+    parser.add_argument('-t', '--feature', default='gene',
+        help='feature of the analysis, only works if -i is deseq_dir')
+    parser.add_argument('-c', '--ctl-vs-exp', default='1',
+        choices=['1', '2'],
+        help='1=exp/ctl, 2=ctl/exp; default:1')
+    return parser
+    
+
 def add_atac_args():
     """
     Arguments for ATAC-seq pipeline
