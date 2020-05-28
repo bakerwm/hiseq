@@ -22,6 +22,7 @@ from .trim.trimmer import Trimmer
 from .align.alignment import Alignment
 from .atac.atac2 import Atac
 from .rnaseq.rnaseq import RNAseq
+from .go.go import Go
 
 class Hiseq(object):
     """The 1st-level of command, choose which sub-command to use
@@ -47,6 +48,7 @@ class Hiseq(object):
         peak      Call peaks using MACS2
         motif     Check motifs from a BED/fasta file
         report    Create a report to the above commands
+        go        Run GO analysis on geneset
     """
         )
         parser.add_argument('command', help='Subcommand to run')
@@ -156,6 +158,21 @@ class Hiseq(object):
         parser = add_motif_args()
         args = parser.parse_args(sys.argv[2:])
         print('hiseq motif')
+
+
+    def go(self):
+        """
+        Run GO analysis on geneset
+        """
+        parser = add_go_args()
+        args = parser.parse_args(sys.argv[2:])
+        args = vars(args) # convert to dict
+        # print('Running hiseq align, aligner={}, fq1={}, out={}'.format(
+        #     args.aligner, args.fq1, args.out))
+        if args['all'] is None and args['input'] is None:
+            parser.parse_args(['-h'])
+            sys.exit('arguments failed, either --all or --input required')
+        Go(**args).run()
 
 
     def atac(self):

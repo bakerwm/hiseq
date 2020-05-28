@@ -24,7 +24,7 @@ suppressPackageStartupMessages(library(ggplot2))
 suppressPackageStartupMessages(library(hiseqr))
 
 names <- paste0("rep", seq_len(length(peak_list)))
-p     <- hiseqr::bedVenn(blist = as.list(peak_list), names = names) 
+p     <- hiseqr::bed_venn(blist = as.list(peak_list), names = names) 
 
 pdf(pdfout)
 print(p)

@@ -235,6 +235,7 @@ def bam_cor(bam_list, outdir=None, window=500):
     cmd = ' '.join([
         multiBamSummary,
         'bins --binSize {}'.format(window),
+        '-p {}'.format(8),
         '--smartLabels -o {}'.format(cor_npz),
         '--outRawCounts {}'.format(cor_counts),
         '--bamfiles {}'.format(' '.join(bam_list))])

@@ -229,6 +229,8 @@ def symlink(src, dest, absolute_path=True):
     """
     if src is None or dest is None:
         log.warning('symlink skipped: {}, to: {}'.format(src, dest))
+    elif file_exists(dest):
+        log.warning('symlink skipped, target exists...'.format(dest))
     else:
         if absolute_path:
             # support: ~, $HOME,

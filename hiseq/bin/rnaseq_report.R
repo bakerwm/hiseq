@@ -16,7 +16,8 @@ if (length(args) < 2){
 
 indir   <- args[1]
 outdir  <- args[2]
+feature <- args[3]
 
-hiseqr::rnaseq_report(indir, outdir)
+hiseqr::rnaseq_report(indir, outdir, feature)
 
 ## EOF

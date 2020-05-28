@@ -27,8 +27,8 @@ pdfout  <- args[2]
 suppressPackageStartupMessages(library(hiseqr))
 
 
-df <- hiseqr::fragReader(lendist)
-p  <- hiseqr::fragPlot(df)
+df <- hiseqr::read_frag(lendist)
+p  <- hiseqr::frag_plot(df)
 
 pdf(pdfout)
 print(p)

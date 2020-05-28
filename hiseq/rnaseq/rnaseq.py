@@ -496,10 +496,12 @@ class RNAseqConfig(object):
         chk5 = isinstance(self.smp_name, str)
         log_msg1 = '\n'.join([
             'arguments failed',
-            '{:>30s}: {}'.format('fq1, str', self.fq1),
-            '{:>30s}: {}'.format('fq2, str or None', self.fq2),
-            '{:>30s}: {}'.format('genome, str', self.genome),
-            '{:>30s}: {}'.format('smp_name, str', self.smp_name),
+            '{:>30s}: {} {}'.format('fq1, str', chk0, self.fq1),
+            '{:>30s}: {} {}'.format('fq1, exists', chk2, self.fq1),
+            '{:>30s}: {} {}'.format('fq2, str or None', chk1, self.fq2),
+            '{:>30s}: {} {}'.format('fq1, exists or None', chk3, self.fq2),
+            '{:>30s}: {} {}'.format('genome, str', chk4, self.genome),
+            '{:>30s}: {} {}'.format('smp_name, str', chk5, self.smp_name),
             ])
         if not all([chk0, chk1, chk2, chk3, chk4, chk5]):
             #raise Exception('fq1, fq2, genome, failed')
@@ -546,7 +548,7 @@ class RNAseqConfig(object):
         ## files
         self.trim_stat = os.path.join(self.clean_dir, self.smp_name + '.qc.stat')
         self.bam_raw = os.path.join(self.align_dir, self.smp_name, '2.*', self.smp_name + '.bam')
-        self.bam_out = os.path.join(self.bam_dir, self.smp_name, + '.bam')
+        self.bam_out = os.path.join(self.bam_dir, self.smp_name + '.bam')
         self.align_stat = os.path.join(self.align_dir, self.smp_name + '.align.txt')
         self.bw_fwd = os.path.join(self.bw_dir, self.smp_name + '.fwd.bigWig')
         self.bw_rev = os.path.join(self.bw_dir, self.smp_name + '.rev.bigWig')
@@ -585,10 +587,12 @@ class RNAseqConfig(object):
         chk5 = isinstance(self.smp_name, list) and len(self.smp_name) > 0
         log_msg0 = '\n'.join([
             'failed for RNAseq multiple',
-            '{:>30s} : {}'.format('fq1, list > 0', self.fq1),
-            '{:>30s} : {}'.format('fq2, None or list > 0', self.fq2),
-            '{:>30s} : {}'.format('genome, str', self.genome),
-            '{:>30s} : {}'.format('smp_name, list > 0', self.smp_name),
+            '{:>30s} : {} {}'.format('fq1, list > 0', chk0, self.fq1),
+            '{:>30s} : {} {}'.format('fq1 exists', chk2, self.fq1),
+            '{:>30s} : {} {}'.format('fq2, None or list > 0', chk1, self.fq2),
+            '{:>30s} : {} {}'.format('fq2 None or list', chk3, self.fq2),
+            '{:>30s} : {} {}'.format('genome, str', chk4, self.genome),
+            '{:>30s} : {} {}'.format('smp_name, list > 0', chk5, self.smp_name),
             ])
         if not all([chk0, chk1, chk2, chk3, chk4, chk5]):
             raise Exception(log_msg0)
@@ -988,7 +992,8 @@ class RNAseqSingle(object):
         from: self.bam_raw, align/smp_name/2.dm6/smp_name.bam
         to: self.bam_out, bam_files/smp_name.bam
         """
-        symlink(self.bam_raw, self.bam_out)
+        if not os.path.exists(self.bam_out):
+            symlink(self.bam_raw, self.bam_out)
 
 
     def fc_count(self):
@@ -1092,8 +1097,8 @@ class RNAseqSingle(object):
 
         # 3. align
         self.align()
-        self.save_bam() 
-        
+        # self.save_bam() 
+
         # 4. quant
         self.fc_count()
 
@@ -1379,8 +1384,9 @@ class RNAseqDeseqSingle(object):
         cmd_file = os.path.join(self.deseqdir, 'cmd.sh')
         cmd = 'Rscript {} {} {} &>{}'.format(
             deseqR,
-            self.deseqdir,
-            0.1,
+            # os.path.dirname(self.project_dir),
+            os.path.join(self.outdir, self.project_name),
+            self.feature,
             os.path.join(self.deseqdir, 'mylog.deseq2.out'))  # pvalue cutoff
 
         # save cmd

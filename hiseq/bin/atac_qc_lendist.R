@@ -24,7 +24,7 @@ suppressPackageStartupMessages(library(ggplot2))
 
 df <- hiseqr::fragReader(lendist)
 df$id <- basename(dirname(dirname(lendist)))
-p  <- hiseqr::fragPlot(df)
+p  <- hiseqr::frag_plot(df)
 
 pdf(pdfout)
 print(p)
