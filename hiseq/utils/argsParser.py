@@ -71,7 +71,7 @@ def add_trim_args():
     parser.add_argument('-m', '--len_min', default=15, metavar='len_min',
         type=int, help='Minimum length of reads after trimming, defualt [15]')
     parser.add_argument('-a', '--adapter3', metavar='adapter', type=str,
-    	default='AGATCGGAAGAGCACACGTCTGAACTCCAGTCAC',
+        default='AGATCGGAAGAGCACACGTCTGAACTCCAGTCAC',
         help='3-Adapter, default: [AGATCGGAAGAGCACACGTCTGAACTCCAGTCAC].')
     parser.add_argument('-g', '--adapter5', default='',
         help='5-Adapter, default: None')
@@ -289,6 +289,22 @@ def add_go_args():
         help='1=exp/ctl, 2=ctl/exp; default:1')
     return parser
     
+
+def add_rnaseq_cmp_args():
+    """
+    Run RNAseq compare
+    """
+    parser = argparse.ArgumentParser(description='hiseq rnaseq_cmp -a dirA -b dirB -f gene -o outdir')
+    parser.add_argument('-a', '--dirA', required=True,
+        help='deseq_dir (a.vs.b) for groupA')
+    parser.add_argument('-b', '--dirB', required=True,
+        help='deseq_dir (a.vs.b) for groupB')
+    parser.add_argument('-f', '--feature', default='gene',
+        help='feqture of the RNAseq, gene|te|..., ')
+    parser.add_argument('-o', '--outdir', default=None,
+        help='directory to save the results')
+    return parser
+
 
 def add_atac_args():
     """

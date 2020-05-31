@@ -23,6 +23,7 @@ from .align.alignment import Alignment
 from .atac.atac2 import Atac
 from .rnaseq.rnaseq import RNAseq
 from .go.go import Go
+from .rnaseq.rnaseq_cmp import RnaseqCmp
 
 class Hiseq(object):
     """The 1st-level of command, choose which sub-command to use
@@ -49,6 +50,7 @@ class Hiseq(object):
         motif     Check motifs from a BED/fasta file
         report    Create a report to the above commands
         go        Run GO analysis on geneset
+        rnaseq_cmp   Run RNAseq compare
     """
         )
         parser.add_argument('command', help='Subcommand to run')
@@ -173,6 +175,16 @@ class Hiseq(object):
             parser.parse_args(['-h'])
             sys.exit('arguments failed, either --all or --input required')
         Go(**args).run()
+
+
+    def rnaseq_cmp(self):
+        """
+        Run RNAseq cmp
+        """
+        parser = add_rnaseq_cmp_args()
+        args = parser.parse_args(sys.argv[2:])
+        args = vars(args) # convert to dict
+        RnaseqCmp(**args).run()
 
 
     def atac(self):
