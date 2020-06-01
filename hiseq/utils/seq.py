@@ -148,7 +148,7 @@ class Fastx(object):
 
     def sample(self, out, n=1000, p=0.01):
         """
-        Extract subset of fastx file
+        Extract subset of fastx file using seqkit
         fx_reader()
         """
         assert isinstance(n, int)
