@@ -22,6 +22,7 @@ from .trim.trimmer import Trimmer
 from .align.alignment import Alignment
 from .atac.atac2 import Atac
 from .rnaseq.rnaseq import RNAseq
+from .rnaseq.rnaseq_pipe import RNAseqPipe
 from .go.go import Go
 from .rnaseq.rnaseq_cmp import RnaseqCmp
 
@@ -39,8 +40,9 @@ class Hiseq(object):
 
     The most commonly used sub-commands are:
 
-        atac      ATACseq pipeline
-        rnaseq    RNAseq pipeline
+        atac       ATACseq pipeline
+        rnaseq     RNAseq pipeline
+        rnaseq2    RNAseq pipeline, simplify version
 
         qc        quality control, fastqc
         trim      trim adapters, low-quality bases, ...
@@ -250,6 +252,16 @@ class Hiseq(object):
             sys.exit('required: --design, or --fq1, --fq2, --genome, --outdir or --smp-path, --dirs-ctl, --dirs-exp')
 
         RNAseq(**args).run()
+
+    def rnaseq2(self):
+        """
+        RNA-seq pipeline, simplify version
+        """
+        parser = add_rnaseq_args2()
+        args = parser.parse_args(sys.argv[2:])
+        args = vars(args) # convert to dict
+
+        RNAseqPipe(**args).run()
 
 
 def main():

@@ -438,7 +438,7 @@ def add_rnaseq_args():
         help='Reference genome : dm3, dm6, hg19, hg39, mm9, mm10, default: hg19')
 
     parser.add_argument('-f', '--feature', default='gene',
-        choices=['gene', 'te', 'piRNAcluster', 'all'],
+        choices=['gene', 'te', 'piRNA_cluster', 'all'],
         help='choose the feature for the analysis')
     parser.add_argument('--gtf', default=None,
         help='The gtf file for quantification, defaut: genome.gtf (None)')
@@ -504,15 +504,30 @@ def add_rnaseq_args():
     ## extra: call-peak
     parser.add_argument('--genome-size', dest='genome_size', default=0,
         type=int, help='The genome size for the genome. default: [0]; use --genome')
-
+    parser.add_argument('--unique-only', action='store_true', dest='unique_only',
+        help='if specified, keep unique mapped reads only')
     parser.add_argument('--pickle', default=None,
         help='read arguments from *.pickle file, always in */config/arguments.txt\
         format, ignore all other arguments. default: None')
-
-
     return parser
 
-
+def add_rnaseq_args2():
+    """
+    Arguments for RNAseq pipeline: packed
+    """
+    parser = argparse.ArgumentParser(
+        description='RNA-seq pipeline')
+    parser.add_argument('-d', '--design', required=True,
+        help='design for RNAseq, json format, ignore fq1, fq2')
+    parser.add_argument('-o', '--outdir', required=True,
+        help='The directory to save results, default, \
+        current working directory.')
+    parser.add_argument('-g', '--genome', required=True,
+        choices=['dm3', 'dm6', 'hg19', 'hg38', 'mm9', 'mm10'],
+        help='Reference genome : dm3, dm6, hg19, hg39, mm9, mm10, default: hg19')
+    parser.add_argument('--threads', default=1, type=int,
+        help='Number of threads for each job, default [1]')
+    return parser
 
 
 

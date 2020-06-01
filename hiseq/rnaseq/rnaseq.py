@@ -244,6 +244,7 @@ class RNAseqConfig(object):
             'parallel_jobs': 1,
             'threads': 1,
             'overwrite': False,
+            'unique_only': True,
         }
         self.update(args_default, force=False) # update missing attrs
         # 1st level: pickle / update all config
@@ -1123,11 +1124,7 @@ class RNAseqDeseqMultiple(object):
 
     def init_args(self):
         """
-        fq_ctl
-        fq_exp
-        fq_ctl_read2
-        fq_exp_read2
-        ...
+        --design
         """
         local_config = RNAseqConfig(**self.__dict__) # update, global
         self.update(local_config.__dict__, force=True) # update local attributes
@@ -1136,10 +1133,6 @@ class RNAseqDeseqMultiple(object):
         # read data from design.json
         self.design_args = Json(self.design).reader()
 
-        # # check arguments
-        # chk1 = args_checker(self.__dict__, self.config_pickle)
-        # chk2 = args_logger(self.__dict__, self.config_txt)
-
 
     def run_pair_single(self, k):
         """
@@ -1147,47 +1140,40 @@ class RNAseqDeseqMultiple(object):
         input: pair, [index_ctl, index_exp]
         """
         ## run locale
-        self_obj = copy.copy(self)
-        delattr(self_obj, 'design_args')
-        delattr(self_obj, 'rnaseq_type')
+        args_local = self.__dict__
+        args_local.pop('rnaseq_type', None)
+        fx = args_local.pop('design_args', None) # multiple 
+        f1 = fx.pop(k, None) # single
 
-        ## run single files
-        d = self.design_args[k]
-        ## control
-        args_c = self_obj.__dict__.copy()
-        d1 = {'fq1': d.get('ctl', None),
-              'fq2': d.get('ctl_read2', None),
-              'design': None}
-        args_c.update(d1)
+        ## ctl
+        args_c = args_local.copy()
+        args_c['fq1'] = f1.get('ctl', None)
+        args_c['fq2'] = f1.get('ctl_read2', None)
+        args_c['design'] = None
         dirs_ctl = RNAseqMultiple(**args_c).run()
 
-        ## treatment
-        args_e = self.__dict__.copy()
-        d2 = {'fq1': d.get('exp', None),
-              'fq2': d.get('exp_read2', None),
-              'design': None}
-        args_e.update(d2)
+        ## exp
+        args_e = args_local.copy()
+        args_e['fq1'] = f1.get('exp', None)
+        args_e['fq2'] = f1.get('exp_read2', None)
+        args_e['design'] = None
         dirs_exp = RNAseqMultiple(**args_e).run()
 
-        ## update args
-        ## deseqdir, name
-        args_n = self.__dict__.copy()
-        args_i = {
+        ## RUN DESeq single
+        args_n = args_local.copy()
+        args_x = {
             'dirs_ctl': dirs_ctl,
             'dirs_exp': dirs_exp,
             'smp_name': None,
             'group': None,
             'smp_path': None,
-            }
-        args_n.update(args_i) # update data
-        ## remove
-        # ctl, exp, ctl_read2, exp_read2, 
-        args_n.pop('ctl', None)
-        args_n.pop('exp', None)
-        args_n.pop('ctl_read2', None)
-        args_n.pop('exp_read2', None)
-        args_n.pop('design', None)
-        args_n.pop('build_design', None)
+            'ctl': None,
+            'exp': None,
+            'ctl_read2': None,
+            'exp_read2': None,
+            'design': None,
+            'build_design': None}
+        args_n.update(args_x)
         RNAseqDeseqSingle(**args_n).run()
 
 
@@ -1196,10 +1182,10 @@ class RNAseqDeseqMultiple(object):
         for group >= 2, paires >= 1
         """
         if len(self.design_args) > 0:
-            # with Pool(processes=self.parallel_jobs) as pool:
-            #     pool.map(self.run_pair_single, list(self.design_args.keys()))
-            for k in self.design_args:
-                self.run_pair_single(k)
+            with Pool(processes=self.parallel_jobs) as pool:
+                pool.map(self.run_pair_single, list(self.design_args.keys()))
+            # for k in self.design_args:
+            #     self.run_pair_single(k)
         else:
             log.warning('groups >2 expected, {} found'.format(self.group))
 
@@ -1811,33 +1797,3 @@ class RNAseqReader(object):
         return self.rnaseq_type == 'deseq_multiple'
 
 
-
-
-
-# fq = [
-# '/data/yulab/wangming/work/devel_pipeline/hiseq/rnaseq/data/pe_control_rep1_1.fq.gz',
-# '/data/yulab/wangming/work/devel_pipeline/hiseq/rnaseq/data/pe_control_rep1_2.fq.gz',
-# '/data/yulab/wangming/work/devel_pipeline/hiseq/rnaseq/data/pe_control_rep2_1.fq.gz',
-# '/data/yulab/wangming/work/devel_pipeline/hiseq/rnaseq/data/pe_control_rep2_2.fq.gz',
-# '/data/yulab/wangming/work/devel_pipeline/hiseq/rnaseq/data/pe_treatment_rep1_1.fq.gz',
-# '/data/yulab/wangming/work/devel_pipeline/hiseq/rnaseq/data/pe_treatment_rep1_2.fq.gz',
-# '/data/yulab/wangming/work/devel_pipeline/hiseq/rnaseq/data/pe_treatment_rep2_1.fq.gz',
-# '/data/yulab/wangming/work/devel_pipeline/hiseq/rnaseq/data/pe_treatment_rep2_2.fq.gz'
-# ]
-        
-# args = {
-#     'build_design': False,
-#     'ctl': [fq[0], fq[2]],
-#     'exp': [fq[4], fq[6]],
-#     'ctl_read2': [fq[1], fq[3]],
-#     'exp_read2': [fq[5], fq[7]],
-#     'append': True,
-#     'design': 'abc.json',
-#     'outdir': 'aaaaaa',
-#     'trimmed': True,
-#     'parallel_jobs': 4,
-#     'threads': 4
-# }
-
-# RNAseq(**args).run()
-# RNAseqFqDesign(**args)
