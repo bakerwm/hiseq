@@ -24,12 +24,6 @@ library(dplyr)
 library(ggplot2)
 library(ggrepel)
 
-##----------------------------------------------------------------------------##
-## custom: a.vs.b
-hiseqr::rnaseq_pipe(deseq_dir, feature) # , ctl_vs_exp = TRUE)
-#
-# ##----------------------------------------------------------------------------##
-# ## custom: b.vs.a
-# hiseqr::rnaseq_pipe(deseq_dir, feature, ctl_vs_exp = FALSE)
+hiseqr::rnaseq_pipe(deseq_dir, feature) # ctl_vs_exp = TRUE)
 
 ## END

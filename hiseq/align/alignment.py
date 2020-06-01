@@ -100,14 +100,6 @@ from hiseq.utils.seq import Fastx
 from hiseq.utils.helper import * # all help functions
 
 
-def print_df(d):
-    if isinstance(d, dict):
-        for k, v in sorted(d.items(), key=lambda item: item[0]):  # 0:key, 1:value
-            print('{:>15} : {}'.format(k, v))
-    else:
-        print(d)
-
-
 @Logger('INFO')
 class Alignment(object):
     """
@@ -156,7 +148,6 @@ class Alignment(object):
             AlignFq1Index1(**args).run()
         else:
             pass # no except
-
 
 
 ############################################################
@@ -244,7 +235,6 @@ class AlignConfig(object):
         optional:
           - aligner
 
-
         prepare index
           - align-to-rRNA
           - align-to-chrM
@@ -273,7 +263,7 @@ class AlignConfig(object):
             'genomeLoad': 'NoSharedMemory',
             }
         self.update(args_default, force=False) # update missing attrs
-        
+
         # 1st level: pickle / update all config
         # fresh start by pickle
         if not self.pickle is None:
@@ -356,49 +346,46 @@ class AlignConfig(object):
     def init_index(self):
         """
         Make sure, index_list = list
+        order:
+        index_list
+        genome/
+        spikein
+        extra_index
         """
-        self.index_list = self.get_index_list()
-
-        ## check: is list
-        if isinstance(self.index_list, list):
-            pass
-        else:
-            raise Exception('index_list, list expected, {} found'.format(type(self.index_list).__name__))
-        
-        ## index correct
-        chk0 = [AlignIndex(aligner=self.aligner, index=i).is_index() for i in self.index_list]
-        log_msg0 = ''
-        for a, b in zip(chk0, self.index_list):
-            log_msg0 += '{}: {}\n'.format(a, b)
-        if not all(chk0):
-            raise Exception(log_msg0)
+        # self.index_list = self.get_index_list()
+        index_list_local = self.get_index_list()
+        index_name_local = self.index_name
 
         ## index_name
-        index_name_auto = [AlignIndex(index=i).index_name() for i in self.index_list]
-        if self.index_name is None:
-            self.index_name = index_name_auto
-        elif isinstance(self.index_name, list):
-            if not len(self.index_name) == len(self.index_list):
+        index_name_auto = [AlignIndex(index=i).index_name() for i in index_list_local]
+        if index_name_local is None:
+            index_name_local = index_name_auto
+        elif isinstance(index_name_local, list):
+            if not len(index_name_local) == len(self.index_list):
                 log.warning('failed index_name, auto fetch from index_list')
-                self.index_name = index_name_auto
-        elif isinstance(self.index_name, str):
+                index_name_local = index_name_auto
+        elif isinstance(index_name_local, str):
             log.warning('failed index_name, auto fetch from index_list')
-            self.index_name = index_name_auto
+            index_name_local = index_name_auto
         else:
-            raise Exception('failed index_name, list expected, {} found'.format(type(self.index_name).__name__))
+            raise Exception('failed index_name, list expected, {} found'.format(type(index_name_local).__name__))
 
         ## check:
-        chk1 = isinstance(self.index_list, list)
-        chk2 = isinstance(self.index_name, list)
-        chk3 = len(self.index_list) == len(self.index_name)
+        chk1 = isinstance(index_list_local, list)
+        chk2 = isinstance(index_name_local, list)
+        chk3 = len(index_list_local) == len(index_name_local)
         ##
         log_msg1 = '\n'.join([
             'arguments failed: index_list',
-            '{}: {:<20s}: {}'.format(chk0, 'list', self.index_list),
-            '{}: {:<20s}: {}'.format(chk1, 'list', self.index_name),
-            '{}: {:<20s}: {}, {}'.format(chk2, 'equal_number', len(self.index_list), len(self.index_name))])
+            '{}: {:<20s}: {}'.format(chk1, 'index_list', index_list_local),
+            '{}: {:<20s}: {}'.format(chk2, 'index_name', index_name_local),
+            '{}: {:<20s}: {}, {}'.format(chk3, 'equal number', len(index_list_local), len(index_name_local))])
         if not all([chk1, chk2, chk3]):
             raise Exception(log_msg1)
+
+        # update
+        self.index_list = index_list_local
+        self.index_name = index_name_local
 
 
     def init_cpu(self):
@@ -433,18 +420,21 @@ class AlignConfig(object):
         1st level: index_list (ordered, ext_index, TE/piRNA_cluster/consensus/repeat/...)
         2nd level: spikein (rRNA/chrM) | genome (rRNA/chrM) | extra_index
         """
-        index_list = [] # init
+        index_list_local = [] # init
 
+        ##---------------------------##
         # 1st level: index_list, ...
         if isinstance(self.index_list, str):
             if AlignIndex(aligner=self.aligner).is_index(index=self.index_list):
-                index_list += [self.index_list]
+                index_list_local += [self.index_list]
         elif isinstance(self.index_list, list):
             tmp1 = [AlignIndex(aligner=self.aligner).is_index(index=i) for i in self.index_list]
-            index_list += self.index_list
+            if all(tmp1):
+                index_list_local += self.index_list
+        ##---------------------------##
         # 2nd level: [spikein | genome | extra_index] : auto generated, eaual-level
         else: 
-            # 2nd level: spikein
+            # 2.1 level: spikein
             if isinstance(self.spikein, str):
                 if self.spikein == self.genome:
                     self.spikein = None
@@ -467,7 +457,7 @@ class AlignConfig(object):
                             log.warning('index {} for {}, not detected, skipped'.format(
                                 tag, self.spikein))
                         else:
-                            index_list.append(index0)
+                            index_list_local.append(index0)
 
                     # for genome
                     index1 = AlignIndex(aligner=self.aligner).search(genome=self.spikein, group='genome')
@@ -475,9 +465,9 @@ class AlignConfig(object):
                         log.warning('index {} for {}, not detected, skipped'.format(
                                 tag, self.spikein))
                     else:
-                        index_list.append(index1)
+                        index_list_local.append(index1)
 
-            # 2nd level: genome
+            # 2.2 level: genome
             if isinstance(self.genome, str):
                 # choose tag
                 if self.align_to_MT_trRNA is True:
@@ -497,7 +487,7 @@ class AlignConfig(object):
                         log.warning('index {} for {}, not detected, skipped'.format(
                             tag, self.spikein))
                     else:
-                        index_list.append(index0)
+                        index_list_local.append(index0)
 
                 # for genome
                 index1 = AlignIndex(aligner=self.aligner).search(genome=self.genome, group='genome')
@@ -505,25 +495,25 @@ class AlignConfig(object):
                     raise Exception('index {} for {}, not detected, skipped'.format(
                             tag, self.genome))
                 else:
-                    index_list.append(index1)
+                    index_list_local.append(index1)
 
-            # 2nd level: extra-index
+            # 2.3 level: extra-index
             if isinstance(self.extra_index, list):
                 tmp2 = [AlignIndex(aligner=self.aligner).is_index(i) for i in self.extra_index]
-                index_list += self.extra_index
+                index_list_local += self.extra_index
 
-        ## check, index_list, valid
-        chk0 = [AlignIndex(aligner=self.aligner, index=i).is_index() for i in index_list]
+        ## check, index_list_local, valid
+        chk0 = [AlignIndex(aligner=self.aligner, index=i).is_index() for i in index_list_local]
         ## message
         log_msg0 = 'Status of the index:\n'
-        for i, j in zip(chk0, index_list):
+        for i, j in zip(chk0, index_list_local):
             log_msg0 += '{}: {}\n'.format(i, j)
 
         if not all(chk0):
             raise Exception(log_msg0)
 
         ## output
-        return index_list
+        return index_list_local
 
 
     def check_paired(self):
@@ -588,7 +578,8 @@ class AlignConfig(object):
         elif align_type == [1, 1]:
             self.init_fq_1_index_1(create_dirs)
         elif align_type == [2, 1]:
-            self.init_fq_2_index_1(create_dirs)
+            # self.init_fq_2_index_1(create_dirs)
+            self.init_fq_2_index_n(create_dirs) # force index_n
         else:
             pass # no except
 
@@ -721,7 +712,13 @@ class AlignConfig(object):
         chk1 = isinstance(self.smp_name, list) and len(self.smp_name) == 1 # single
         chk2 = isinstance(self.index_name, list) and len(self.index_name) == 1 # single
         chk3 = isinstance(self.index_list, list) and len(self.index_list) == 1 # single
+        msg = '\n'.join([
+            '{:>20s} : {}'.format('fq1=1', self.fq1),
+            '{:>20s} : {}'.format('smp_name=1', self.smp_name),
+            '{:>20s} : {}'.format('index_name=1', self.index_name),
+            '{:>20s} : {}'.format('index_list=1', self.index_list)])
         if not all([chk0, chk1, chk2, chk3]):
+            print(msg)
             raise Exception('check, fq1, smp_name, index_list, index_name: single expected')
 
         smp_name = next(iter(self.smp_name), None) # 
@@ -808,6 +805,9 @@ class AlignFqNIndexN(object):
         # Json(self.__dict__).writer(self.config_json)
         chk1 = args_logger(self.__dict__, self.config_txt)
 
+        # ## add rank in index name
+        # self.index_name = ['{}.{}'.format(i + 1, v) for i, v in enumerate(self.index_name)]
+
 
     def report(self):
         """
@@ -863,6 +863,7 @@ class AlignFqNIndex1(object):
     """
     def __init__(self, **kwargs):
         self.update(kwargs)
+        self.init_args()
 
 
     def update(self, d, force=True, remove=False):
@@ -886,7 +887,8 @@ class AlignFqNIndex1(object):
 
 
     def init_args(self):
-        pass
+        ## add rank in index name
+        self.index_name = ['{}.{}'.format(i + 1, v) for i, v in enumerate(self.index_name)]
         
 
     def run(self):

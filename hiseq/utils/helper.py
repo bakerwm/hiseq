@@ -1083,14 +1083,28 @@ class Genome(object):
         return gtf
 
 
-    def te_gtf(self, format='gtf'):
+    def te(self, format='gtf'):
         """Return TE annotation of the genome
         or return TE consensus sequence for the genome (dm3)
         """
         # only dm3 supported
         te_gtf = os.path.join(self.genome_path, self.genome,
             self.genome + '_transposon',
-            self.genome + '_transposon.gtf')
+            self.genome + '_transposon.' + format)
+        if not os.path.exists(te_gtf):
+            te_gtf = None
+
+        return te_gtf
+
+
+    def piRNA_cluster(self, format='gtf'):
+        """Return TE annotation of the genome
+        or return TE consensus sequence for the genome (dm3)
+        """
+        # only dm3 supported
+        te_gtf = os.path.join(self.genome_path, self.genome,
+            self.genome + '_piRNA_clusters',
+            self.genome + '_piRNA_clusters.' + format)
         if not os.path.exists(te_gtf):
             te_gtf = None
 
