@@ -709,7 +709,6 @@ class RNAseqMultiple(object):
 
         # check arguments
         chk0 = args_checker(self.__dict__, self.config_pickle)
-        # Json(self.__dict__).writer(self.config_json)
         chk1 = args_logger(self.__dict__, self.config_txt)
 
 
@@ -753,23 +752,34 @@ class RNAseqMultiple(object):
         For parallel reason, 
         wrap analysis on single fastq files, into function
         """
-        self_local = copy.copy(self)
+        args_local = self.__dict__.copy()
         i = self.fq1.index(fq1)
 
+        # fq1,fq2,smp_name,...
+        fq2_list = args_local.get('fq2', None)
+        fq2 = fq2_list[i] if isinstance(fq2_list, list) else None
+        # smp_name
+        smp_name_list = args_local.get('smp_name', None)
+        smp_name = smp_name_list[i] if isinstance(smp_name_list, list) else None
+        # group
+        group_list = args_local.get('group', None)
+        group = group_list[i] if isinstance(group_list, list) else None
+        # outdir
+        outdir = os.path.join(args_local['outdir'], smp_name)
+
         # update args
-        init_args = {
+        args_init = {
             'fq1': fq1,
-            'fq2': self_local.fq2[i] if isinstance(self_local.fq2, list) else None,
-            'smp_name': self_local.smp_name[i],
-            'group': self_local.group[i],
-            'outdir': os.path.join(self_local.outdir, self_local.smp_name[i]),
+            'fq2': fq2,
+            'smp_name': smp_name,
+            'group': group,
+            'outdir': outdir,
             'smp_path': None,
             'dirs_ctl': None,
             'dirs_exp': None,
             'pickle': None
         }
-        args_local = self_local.__dict__
-        args_local.update(init_args)
+        args_local.update(args_init)
 
         RNAseqSingle(**args_local).run()
 
@@ -785,11 +795,11 @@ class RNAseqMultiple(object):
             smp_dirs.append(os.path.join(self.outdir, self.smp_name[i]))
 
         ## Pool() run in parallel
-        # with Pool(processes=self.parallel_jobs) as pool:
-        #     pool.map(self.run_rnaseq_single, self.fq1)
-        # for fq1 in self.fq1:
-        for a, b in enumerate(self.fq1):
-            self.run_rnaseq_single(b)
+        with Pool(processes=self.parallel_jobs) as pool:
+            pool.map(self.run_rnaseq_single, self.fq1)
+
+        # for a, b in enumerate(self.fq1):
+        #     self.run_rnaseq_single(b)
 
         ## create report
         # self.report()
@@ -912,40 +922,24 @@ class RNAseqSingle(object):
         """
         Alignment PE reads to reference genome, using STAR
         """
-        self_local = copy.copy(self)
-        args_local = self.__dict__
+        args_local = self.__dict__.copy()
+        fq1, fq2 = args_local.get('clean_fq_list', [None, None])
+        outdir = args_local.get('align_dir', str(pathlib.Path.cwd()))
 
-        fq1, fq2 = self_local.clean_fq_list
         args_init = {
             'fq1': fq1,
             'fq2': fq2,
             'fq': fq1,
-            'outdir': self_local.align_dir
+            'outdir': outdir
         }
         args_local.update(args_init)
 
-        if check_file(self_local.bam_raw):
+        # output
+        if check_file(args_local.get('bam_raw', None)):
             log.info('align() skipped, file exists: {}'.format(
-                self_local.bam_raw))
+                args_local.get('bam_raw', None)))
         else:
             Alignment(**args_local).run()
-
-
-
-        # args_align = self.__dict__.copy()
-        # fq1, fq2 = self.clean_fq_list
-
-        # # update arguments
-        # args_align['fq1'] = args_align['fq'] = fq1
-        # args_align['fq2'] = fq2
-        # args_align['outdir'] = self.align_dir
-        # # args_align['aligner'] = 'STAR' # repeat
-
-        # if check_file(self.bam_raw):
-        #     log.info('align() skipped, file exists: {}'.format(
-        #         self.bam_raw))
-        # else:
-        #     Alignment(**args_align).run()
 
 
     def get_raw_bam(self):
@@ -1135,23 +1129,25 @@ class RNAseqDeseqMultiple(object):
         run 1 RNAseqDeseqSingle() # !!!! parallel-jobs
         input: pair, [index_ctl, index_exp]
         """
+        args_k = self.design_args[k] # fq
+
         ## run locale
-        args_local = self.__dict__
+        args_local = self.__dict__.copy()
         args_local.pop('rnaseq_type', None)
-        fx = args_local.pop('design_args', None) # multiple 
-        f1 = fx.pop(k, None) # single
+        # fx = args_local.pop('design_args', None) # multiple 
+        # f1 = fx.pop(k, None) # single
 
         ## ctl
         args_c = args_local.copy()
-        args_c['fq1'] = f1.get('ctl', None)
-        args_c['fq2'] = f1.get('ctl_read2', None)
+        args_c['fq1'] = args_k.get('ctl', None)
+        args_c['fq2'] = args_k.get('ctl_read2', None)
         args_c['design'] = None
         dirs_ctl = RNAseqMultiple(**args_c).run()
 
         ## exp
         args_e = args_local.copy()
-        args_e['fq1'] = f1.get('exp', None)
-        args_e['fq2'] = f1.get('exp_read2', None)
+        args_e['fq1'] = args_k.get('exp', None)
+        args_e['fq2'] = args_k.get('exp_read2', None)
         args_e['design'] = None
         dirs_exp = RNAseqMultiple(**args_e).run()
 
@@ -1177,11 +1173,13 @@ class RNAseqDeseqMultiple(object):
         """
         for group >= 2, paires >= 1
         """
-        if len(self.design_args) > 0:
-            with Pool(processes=self.parallel_jobs) as pool:
-                pool.map(self.run_pair_single, list(self.design_args.keys()))
-            # for k in self.design_args:
-            #     self.run_pair_single(k)
+        de_list = list(self.design_args.keys())
+        if len(de_list) > 0:
+            ## do not allowed, pool with in pool
+            # with Pool(processes=self.parallel_jobs) as pool:
+            #     pool.map(self.run_pair_single, list(self.design_args.keys()))
+            for k in de_list:
+                self.run_pair_single(k)
         else:
             log.warning('groups >2 expected, {} found'.format(self.group))
 

@@ -1,6 +1,12 @@
 """
 ATAC-seq pipeline
 
+##
+AtacSingle()
+AtacMultiple()
+AtacReplicate()
+Atac()
+
 Input config file:
 
 genome    outdir    name    fq1    fq2
@@ -32,95 +38,381 @@ compare replicates:
 """
 
 import os
-import sys
 import re
-import pandas as pd
 from hiseq.utils.helper import *
 from hiseq.trim.trimmer import Trimmer
 from hiseq.align.alignment import Alignment
 from hiseq.peak.call_peak import Macs2
-from hiseq.utils.rep_cor import *
+from hiseq.atac.atac_utils import *
 import hiseq
 
 
-class AtacConfig(object):
 
-    def __init__(self, fq1, fq2, genome, outdir, **kwargs):
+class Atac(object):
+    """
+    Main port for ATAC pipeline
+    :
+    design : one file
+    config : multiple fq files, one fq per line 
+    --fq1, --fq2 : multiple fq files, 
+    ...
+    """
+    def __init__(self, **kwargs):
         """
-        Config for atac-seq pipeline
-        directories
-        files
+        options: 
+        1. config: *.txt
+        2. design: *.json
+        3. --fq1, --fq2, --genome, --outdir: 
         ...
         """
-        # positional
-        self.fq1 = fq1
-        self.fq2 = fq2
-        self.genome = genome
-        self.outdir = outdir
-        self.kwargs = kwargs
-
-        # update
-        self.args = self.args_init()
-        self.check_status = self.check() # check
+        self.args = kwargs
+        self.init_atac()
 
 
-    def check(self):
+    def init_atac(self):
+        args = self.args.copy()
+
+        config = args.get('config', None)
+        design = args.get('design', None)
+        fq1 = args.get('fq1', None)
+        fq2 = args.get('fq2', None)
+        genome = args.get('genome', None)
+        outdir = args.get('outdir', None)
+        
+        # assert is_path(outdir)
+
+        if check_file(config, show_log=False):
+            # update config to list
+            if isinstance(config, str):
+                self.args['config'] = [config]
+            # print('!aaaa')
+            self.json_list = self.config_to_json()
+        elif check_file(design, show_log=False):
+            # udpate design to list
+            if isinstance(design, str):
+                self.args['design'] = [design]
+            # print('!bbbb')
+            self.json_list = self.design_to_json()
+        elif all([not i is None for i in [fq1, fq2, genome, outdir]]):
+            # print('!cccc')
+            self.json_list = self.args_to_json()
+        else:
+            raise Exception('Check arguments: config=, design=, or \
+                fq1=, fq2=, genome=, outdir=')
+
+
+    def config_to_json(self):
         """
-        Check arguments, target file exists
+        arguments: --config
+        convert config to multiple *.json files
+        """
+        # print('!AAAA1')
+        args = self.args.copy()
+        assert in_dict(args, 'config')
+
+        # update arguments
+        json_list = []
+        nline = 0
+        for config in args['config']:
+            with open(config) as r:
+                for line in r:
+                    nline += 1
+                    if line.startswith('#') or line.strip() == '':
+                        continue # comment, blank rows
+                    fields = line.strip().split('\t')
+                    if len(fields) < 4:
+                        log.warning('line-{}, 4 fields required, get {}'.format(
+                            nline, len(fields)))
+                        continue
+                    # required args
+                    fq1, fq2, genome, outdir = fields[:4]
+                    assert check_path(outdir)
+                    # prefix
+                    fqname = file_prefix(fq1)[0] # name
+                    fqname = re.sub('_1$', '', fqname) #
+
+                    # sample dir
+                    suboutdir = os.path.join(outdir, fqname)
+                    config_json = suboutdir + '.config.json' # file
+                    config_pickle = suboutdir + '.config.pickle' # file
+                    d = {
+                        'fq1': fq1, 
+                        'fq2': fq2, 
+                        'genome': genome, 
+                        'outdir': suboutdir}
+                    # d.update(args) # global config
+                    Json(d).writer(config_json)
+                    dict_to_pickle(d, config_pickle)
+                    json_list.append(config_json)
+                    # print('!AAAA2', config_json)
+
+        self.json_list = json_list
+        return json_list
+
+
+    def design_to_json(self):
+        """
+        Save design to files in outdir
+        for: single fastq file
+        """
+        # print('!BBBB1')
+        args = self.args.copy()
+        assert isinstance(args['design'], list)
+
+        ## save json to outdir
+        json_list = []
+        for i in args['design']:
+            #d = Json(i).dict
+            d = Jons(i).reader()
+            check_path(d['outdir']) # output dir
+            fq1 = d.get('fq1', None)
+            fq2 = d.get('fq2', None)
+            genome = d.get('genome', None)
+            outdir = d.get('outdir', None)
+            assert isinstance(fq1, str)
+            assert isinstance(fq2, str)
+            assert isinstance(genome, str)
+            assert isinstance(outdir, str)
+
+            fqname = file_prefix(d['fq1'])[0]
+            fqname = re.sub('_1$', '', fqname)            
+
+            # sample dir
+            # suboutdir = os.path.join(outdir, fqname)
+            config_json = outdir + '.config.json'
+            config_pickle = outdir + '.config.pickle'
+            d.update(args) # global config
+
+            Json(d).writer(config_json)
+            dict_to_pickle(d, config_pickle)
+            json_list.append(config_json)
+            # print('!BBBB2', config_json)
+
+        self.json_list = json_list
+        return json_list
+
+
+    def args_to_json(self):
+        """
+        fq1, fq2, list
+        genome, str
+        outdir, str
+        ...
+        """
+        # print('!CCCC1')
+        args = self.args.copy()
+        assert in_dict(args, ['fq1', 'fq2', 'genome', 'outdir'])
+        # assert isinstance(args['fq1'], list)
+        # assert isinstance(args['fq2'], list)
+        if isinstance(args['fq1'], str):
+            args['fq1'] = [args['fq1']]
+        if isinstance(args['fq2'], str):
+            args['fq2'] = [args['fq2']]
+        assert isinstance(args['genome'], str)
+        assert isinstance(args['outdir'], str)
+        if not len(self.args['fq1']) == len(self.args['fq2']):
+            raise Exception('fq1 and fq2 are not in same length')
+
+        ## convert to design (Json file)
+        json_list = []
+        for fq1, fq2 in zip(args['fq1'], args['fq2']):
+            print('!AAAA1', fq1, fq2)
+            fqname = file_prefix(fq1)[0]
+            fqname = re.sub('_1$', '', fqname)
+
+            # sample dir
+            suboutdir = os.path.join(self.args['outdir'], fqname)
+            config_json = suboutdir + '.config.json'
+            config_pickle = suboutdir + '.config.pickle'
+            d = {
+                'fq1': fq1, 
+                'fq2': fq2, 
+                'genome': args['genome'], 
+                'outdir': suboutdir}
+            # d.update(args) # global config
+            args.update(d)
+            print('!AAAA2', args)
+            Json(args).writer(config_json)
+            dict_to_pickle(args, config_pickle)
+            json_list.append(config_json)
+
+        self.json_list = json_list
+        return json_list
+
+        
+    def unique_names(self, name_list):
+        """
+        Get the name of replicates
+        common in left-most
+        """
+        name_list = [os.path.basename(i) for i in name_list]
+        name_list = [re.sub('.rep[0-9].*', '', i) for i in name_list]
+        return list(set(name_list))
+
+
+    def get_samples(self, l, x):
+        """
+        get samples from list: x from l
+        """
+        return [i for i in l if x in os.path.basename(i)]
+
+
+    def run(self):
+        # for each sample:
+        smp_dirs = []
+        # sys.exit(self.json_list)
+        self.args.pop('design', None) # 
+        self.args.pop('rep_list', None) # 
+
+        ########################
+        ## for single sample: ##
+        ########################
+        for i in self.json_list:
+            s = AtacSingle(design=i, **self.args).run()
+            smp_dirs.append(re.sub('\.config.json', '', i))
+
+        #######################
+        ## for merge sample: ##
+        #######################
+        smp_names = self.unique_names(smp_dirs)
+        print('!bbbb1', smp_names)
+        for x in smp_names:
+            x_list = self.get_samples(smp_dirs, x)
+            print('!bbbb2', x_list)
+            if len(x_list) < 2:
+                continue
+            else:
+                print('!bbbb3')
+                self.args['rep_list'] = x_list
+                AtacMerge(**self.args).run()
+
+        ##########################
+        ## for multiple sample: ##
+        ##########################
+        # summary report for a project
+        # dirname of smp_dirs
+        # prj_dir = os.path.dirname(smp_dirs[0])
+        self.args['input_dir'] = os.path.dirname(smp_dirs[0])
+        if len(self.json_list) > 1:
+            AtacMultiple(**self.args).run()
+
+
+class AtacConfig(object):
+    """
+    options:
+    """
+    def __init__(self, **kwargs):
+        self.args = kwargs
+        self.atac_type = self.mission()
+
+        # for Atac checker
+        create_dirs = kwargs.get('create_dirs', True)
+
+        if self.atac_type == 'single':
+            # self.atac_type = self.mission()
+            design = self.args.get('design', None)
+            if design is None:
+                pass
+            elif os.path.exists(design):
+                # for --fq1, --fq2, ...
+                args_in = Json(self.args['design']).reader()
+                self.args.update(args_in)
+            self.init_atac_single(create_dirs)
+        elif self.atac_type == 'merge':
+            self.init_atac_merge(create_dirs)
+        elif self.atac_type == 'multiple':
+            self.init_atac_multiple(create_dirs)
+        else:
+            pass
+
+
+    def mission(self):
+        """
+        Determine the purpose of the ATAC, 
+        1. single + merge + multiple 
+        2. single
+        3. merge
+        4. mulltiple
         """
         args = self.args.copy()
 
-        ## check args:
-        config_dir = os.path.join(self.outdir, 'config')
-        assert is_path(config_dir)
-        args_pickle = os.path.join(config_dir, 'arguments.pickle') # out_prefix
-        args_file = os.path.join(config_dir, 'arguments.txt')
-        args_json = os.path.join(config_dir, 'arguments.json')
+        config = args.get('config', None)
+        design = args.get('design', None)
+        fq1 = args.get('fq1', None)
+        fq2 = args.get('fq2', None)
+        genome = args.get('genome', None)
+        outdir = args.get('outdir', None)
+        rep_list = args.get('rep_list', None)
+        input_dir = args.get('input_dir', None)
 
-        ## check files:
-        chk1 = args_checker(args, args_pickle)
-        chk2 = args['overwrite'] is False
+        # atac multiple
+        if isinstance(input_dir, str):
+            flag = 'multiple'
+        # atac merge
+        elif isinstance(rep_list, list):
+            # print('!BBB3')
+            flag = 'merge'
+        # atac single
+        elif not design is None:
+            # print('!BBB1')
+            #args_in = Json(args['design']).dict
+            args_in = Json(args['design']).reader()
+            self.args.update(args_in) # update global self. args
+            flag = 'single'
+        elif all([not i is None for i in [fq1, fq2, genome, outdir]]):
+            # print('!BBB2')
+            flag = 'single'
+        # atac, parse all
+        else:
+            raise Exception("""unknown ATAC() arguments;
+                ATAC single: design=, or fq1, fq2, genome, outdir;
+                ATAC merge: rep_list=;
+                ATAC multiple: input_dir=;
+                """)
+        return flag
 
-        args_logger(args, args_file, True) # update arguments.txt
-        Json(args).writer(args_json) # save to json
 
-        return all([chk1, chk2]) # arguments.pickle, changed 
-
-
-    def args_init(self):
+    def unique_names(self, name_list):
         """
-        Init arguments for ATAC-seq pipeline
-        ##
-        Create directories, filenames
-        raw_data
-        clean_data
-        align
-        bam_files
-        bw_files
-        peak
-        motif
-        report
-        ...
-        files:
-        raw_fastq 
-        clean fastq
-        align.bam 
-        rmdup bam
-        peak (narrowPeak)
-        motif (to-do)
-        report
+        Get the name of replicates
+        common in left-most
         """
-        args = self.kwargs.copy()
+        name_list = [os.path.basename(i) for i in name_list]
+        name_list = [re.sub('.rep[0-9].*', '', i) for i in name_list]
+        return list(set(name_list))
+
+
+    def init_atac_single(self, create_dirs=True):
+        """
+        initiate the config, directories, files for atac single
+        update self.
+        fq1, fq2, genome, outdir: args, 
+        or:
+        design
+        """
+        args = self.args.copy() # global
+
+        self.fq1 = args['fq1']
+        self.fq2 = args['fq2']
+        self.genome = args['genome']
+        self.outdir = args['outdir']
+
+        ## absolute path
+        self.fq1 = os.path.abspath(self.fq1)
+        self.fq2 = os.path.abspath(self.fq2)
+        self.outdir = os.path.abspath(self.outdir)
 
         ## sample name
         args['smp_name'] = args.get('smp_name', None)
-        fqname = file_prefix(self.fq1)[0]
+        fqname = file_prefix(args['fq1'])[0]
         fqname = re.sub('[._][rR]?1$', '', fqname)
+        fqname = re.sub('_1$', '', fqname)
         if args['smp_name']:
             fqname = args['smp_name']
-
         self.fqname = fqname
+
         ## outdir
+        self.configdir = os.path.join(self.outdir, 'config')
         self.rawdir = os.path.join(self.outdir, 'raw_data')
         self.cleandir = os.path.join(self.outdir, 'clean_data')
         self.aligndir = os.path.join(self.outdir, 'align')
@@ -132,10 +424,22 @@ class AtacConfig(object):
         self.reportdir = os.path.join(self.outdir, 'report')
         self.out_prefix = os.path.join(self.outdir, fqname)
 
-        ## names
-        fqnames = list(map(os.path.basename, [self.fq1, self.fq2]))
-        self.raw_fq_list = [os.path.join(self.rawdir, i) for i in fqnames]
-        self.clean_fq_list = [os.path.join(self.cleandir, i) for i in fqnames]
+        # self.raw_fq_list = [os.path.join(self.rawdir, i) for i in fqnames]
+        # self.clean_fq_list = [os.path.join(self.cleandir, i) for i in fqnames]
+        ## fastq files
+        ## consider input:
+        ## input: fastq, fq, fastq.gz, fq.gz
+        ## raw = input
+        ## clean = *.fq.gz # gzip if required.
+        # fqnames = list(map(os.path.basename, [self.fq1, self.fq2]))
+        self.raw_fq_list = [
+            os.path.join(self.rawdir, os.path.basename(self.fq1)),
+            os.path.join(self.rawdir, os.path.basename(self.fq2))]
+        ## clean = fq.gz
+        self.clean_fq_list = [
+            os.path.join(self.cleandir, file_prefix(self.fq1)[0] + '.fq.gz'),
+            os.path.join(self.cleandir, file_prefix(self.fq2)[0] + '.fq.gz')]
+        ## 
         self.trim_stat = os.path.join(self.cleandir, fqname + '.qc.stat')
         self.bam_raw = os.path.join(self.aligndir, fqname, '2.*', fqname + '.bam')
         self.align_stat = os.path.join(self.aligndir, fqname + '.align.txt')
@@ -148,11 +452,7 @@ class AtacConfig(object):
         self.lendist_pdf = os.path.join(self.qcdir, 'length_distribution.pdf')
         self.frip_txt = os.path.join(self.qcdir, 'FRiP.txt')
 
-        ## optional
-        args['fq1'] = self.fq1
-        args['fq2'] = self.fq2
-        args['genome'] = self.genome
-        args['outdir'] = self.outdir
+        ## update args
         args['overwrite'] = args.get('overwrite', False)
         args['threads'] = args.get('threads', 8)
         args['fqname'] = self.fqname
@@ -167,6 +467,7 @@ class AtacConfig(object):
         args['aligner'] = args.get('aligner', 'bowtie2') # bowtie alignment
         args['n_map'] = args.get('n_map', 2)
         args['align_to_chrM'] = True
+        args['extra_para'] = '-X 2000'
 
         ## update args
         args['rawdir'] = self.rawdir
@@ -188,81 +489,307 @@ class AtacConfig(object):
         args['peak'] = self.peak
         args['bw'] = self.bw
 
+        # update, global
+        self.args = args
+
         ## create directories
-        tmp = [is_path(d) for d in [self.rawdir, self.cleandir, self.aligndir, 
-               self.bamdir, self.bwdir, self.peakdir, self.motifdir, 
-               self.qcdir, self.reportdir]]
+        if create_dirs is True:
+            check_path([
+                self.configdir,
+                self.rawdir, 
+                self.cleandir, 
+                self.aligndir, 
+                self.bamdir, 
+                self.bwdir, 
+                self.peakdir, 
+                self.motifdir, 
+                self.qcdir, 
+                self.reportdir])
 
-        return args
+
+    def init_atac_merge(self, create_dirs=True):
+        """
+        initiate the config, directories, files, for atac merge
+        update self.
+        """
+        args = self.args.copy() # global
+        assert 'rep_list' in args # merge
+
+        if len(args['rep_list']) < 2:
+            raise Exception('require at least 2 replicats, get {} files'.format(
+                len(args['rep_list'])))
+
+        for rep in args['rep_list']:
+            assert self.is_atac_single(rep) # should be ATAC single dir
+        
+        ## sample name
+        self.smpname = args.get('smpname', None)
+        self.outdir = args.get('outdir', None)
+        
+        if self.smpname is None:
+            self.smpname = self.unique_names(args['rep_list'])[0]
+
+        ## determine outputdir
+        if self.outdir is None:
+            self.outdir = os.path.join(
+                os.path.dirname(args['rep_list'][0]), 
+                self.smpname)
+        else:
+            self.outdir = os.path.join(
+                self.outdir, self.smpname)
+        
+        ## absolute path
+        self.outdir = os.path.abspath(self.outdir)
+        self.rep_list = [os.path.abspath(i) for i in args['rep_list']]
+
+        ## outdir
+        self.configdir = os.path.join(self.outdir, 'config')
+        self.aligndir = os.path.join(self.outdir, 'align')
+        self.bamdir = os.path.join(self.outdir, 'bam_files')
+        self.bwdir = os.path.join(self.outdir, 'bw_files')
+        self.peakdir = os.path.join(self.outdir, 'peak')
+        self.motifdir = os.path.join(self.outdir, 'motif')
+        self.qcdir = os.path.join(self.outdir, 'qc')
+        self.reportdir = os.path.join(self.outdir, 'report')
+
+        ## names
+        self.bam = os.path.join(self.bamdir, self.smpname + '.bam')
+        self.peak = os.path.join(self.peakdir, self.smpname + '_peaks.narrowPeak')
+        self.bw = os.path.join(self.bwdir, self.smpname + '.bigWig')
+        self.lendist_txt = os.path.join(self.qcdir, 'length_distribution.txt')
+        self.lendist_pdf = os.path.join(self.qcdir, 'length_distribution.pdf')
+        self.frip_txt = os.path.join(self.qcdir, 'FRiP.txt')
+        self.cor_npz = os.path.join(self.qcdir, 'cor.bam.npz')
+        self.cor_counts = os.path.join(self.qcdir, 'cor.bam.counts.tab')
+        self.idr_txt = os.path.join(self.qcdir, 'idr.txt')
+        self.idr_log = os.path.join(self.qcdir, 'idr.log')
+        self.idr_png = self.idr_txt + '.png'
+        self.peak_overlap = os.path.join(self.qcdir, 'peak_overlap.pdf')
+     
+        if create_dirs:
+            check_path([
+                self.configdir,
+                self.aligndir,
+                self.bamdir,
+                self.bwdir,
+                self.peakdir,
+                self.motifdir,
+                self.qcdir,
+                self.reportdir])
 
 
-class Atac(object):
+    def init_atac_multiple(self, create_dirs=True):
+        """
+        initiate the config, directories, files, for atac multiple samples
+        **always for summary report for a project**
+        update self.
+        """
+        args = self.args.copy() # global
+        assert in_dict(args, 'input_dir') # merge
+
+        # outdir, input_dir + summary
+        # self.outdir = args.get('outdir', None)
+        # if self.outdir is None:
+        self.outdir = os.path.join(args['input_dir'], 'summary')
+
+        # absolute path
+        self.outdir = os.path.abspath(self.outdir)
+        self.input_dir = os.path.abspath(args['input_dir'])
+
+        ## outdir
+        # print('!xxxx', self.outdir)
+        # sys.exit('!mmmm')
+        self.configdir = os.path.join(self.outdir, 'config')
+        self.reportdir = os.path.join(self.outdir, 'report')
+
+        if create_dirs:
+            check_path([
+                self.configdir,
+                self.reportdir])
+
+        # list all atac_single, atac_merge directories
+        dirs = listfiles(args['input_dir'], include_dir=True)
+        dirs = [os.path.abspath(i) for i in dirs if os.path.isdir(i)]
+        dirs = sorted(dirs)
+
+        # rep, merge
+        self.single_list = []
+        self.merge_list = []
+        for x in dirs:
+            if self.is_atac_single(x):
+                print('single', x)
+                self.single_list.append(x)
+            elif self.is_atac_merge(x):
+                print('merge', x)
+                self.merge_list.append(x)
+            elif self.is_atac_multiple(x):
+                print('multiple', x)
+            else:
+                print('unknown', x)
+                continue
+
+
+    def is_atac_single(self, x):
+        """
+        The directory is a atac single
+        check required attribtes:
+        ...
+        """
+        x_design = x + '.config.json'
+        x_pickle = x + '.config.pickle'
+        if check_file([x_design, x_pickle]):
+            chk = AtacConfig(design=x_design, create_dirs=False)
+            args = pickle_to_dict(x_pickle)
+
+            tags = in_attr(chk, [
+                'rawdir',
+                'cleandir',
+                'aligndir',
+                'bamdir',
+                'peakdir',
+                'qcdir',
+                'reportdir',
+                'frip_txt',
+                'lendist_txt',
+                'align_stat',
+                'peak',
+                'bam_proper_pair'], True)
+
+            log.info('Check files for ATACseq single: {}'.format(x))
+            check_file(tags, show_log=True)
+            return all(map(os.path.exists, tags))
+        else:
+            logging.error('config files not found: {}, {}'.format(
+                x_design, x_pickle))
+        
+
+    def is_atac_merge(self, x):
+        """
+        The directory is a atac merge replicates
+        check required attributes:
+        ...
+        """
+        sample_list = os.path.join(x, 'config', 'sample_list.txt')
+
+        if os.path.exists(sample_list):
+            n = 0
+            rep_list = []
+            with open(sample_list) as r:
+                for line in r:
+                    n += 1
+                    rep_list.append(line.rstrip())
+                    if n > 100:
+                        break
+            # further config
+            chk = AtacConfig(rep_list=rep_list, create_dirs=False)
+            # print(dir(chk))
+
+            tags = in_attr(chk, [
+                'configdir',
+                'aligndir',
+                'bamdir',
+                'peakdir',
+                'qcdir',
+                'reportdir',            
+                'bam',
+                'peak',
+                'frip_txt',
+                'cor_counts',
+                'idr_txt',
+                'peak_overlap'], True)
+            log.info('Check files for ATACseq merge: {}'.format(x))
+            check_file(tags, show_log=True)
+            return all(map(os.path.exists, tags))
+
+
+    def is_atac_multiple(self, x):
+        """
+        The directory is a atac multiple samples report directories
+        check required attributes:
+        ...
+        """        
+        single_list_file = os.path.join(x, 'config', 'sample_list.txt')
+        merge_list_file = os.path.join(x, 'config', 'merge_list.txt')
+
+        ## file exists
+        if not check_file([single_list_file, merge_list_file]):
+            return False
+
+        # for single
+        n = 0
+        single_list = []
+        with open(single_list_file) as r:
+            for line in r:
+                n += 1
+                single_list.append(line.rstrip())
+                if n > 100:
+                    break
+        chk1 = all([self.is_atac_single(i) for i in single_list])
+
+        # for merge
+        n = 0
+        merge_list = []
+        with open(merge_list_file) as r:
+            for line in r:
+                n += 1
+                merge_list.append(line.rstrip())
+                if n > 100:
+                    break
+        chk2 = all([self.is_atac_merge(i) for i in merge_list])
+        log.info('Check files for ATACseq multiple: {}'.format(x))
+
+        return chk1 and chk2
+
+
+class AtacSingle(object):
     """
     ATAC-seq analysis pipeline
     replicates: 1,2,3,...
     paired-end:
     """
-    def __init__(self, design, **kwargs):
+    def __init__(self, **kwargs):
         """
         Parsing design file: Json
         fq1, fq2, genome, outdir
         """
-        self.design = design
-        self.kwargs = kwargs
-        args_design = self.atac_init()
+        self.args = kwargs
+        self.status = self.init_atac() # update all variables: *.config, *.args
+        
+
+    def init_atac(self):
+        """
+        Initiate directories, config:
+        save config files
+        outdir/config/*json, *pickle, *txt
+        """
+        # args = self.args.copy()
+        self.config = AtacConfig(**self.args) # update, global
+        self.args.update(self.config.args) # update, global
+        assert in_attr(self.config, ['fq1', 'fq2', 'genome', 'outdir'])
+        assert self.config.atac_type == 'single'
+
         # required
-        self.fq1 = args_design.pop('fq1')
-        self.fq2 = args_design.pop('fq2')
-        self.genome = args_design.pop('genome')
-        self.outdir = args_design.pop('outdir')
-        self.outdir = os.path.abspath(self.outdir)
-        # final/global config, args
-        self.config = AtacConfig(
-            self.fq1, 
-            self.fq2, 
-            self.genome, 
-            self.outdir, 
-            **args_design)
+        self.fq1 = os.path.abspath(self.args.get('fq1', None))
+        self.fq2 = os.path.abspath(self.args.get('fq2', None))
+        self.genome = self.args.get('genome', None)
+        self.outdir = os.path.abspath(self.args.get('outdir', None))
+        self.args['fq1'] = self.fq1
+        self.args['fq2'] = self.fq2
+        self.args['outdir'] = self.outdir
 
+        # save config to files
+        args_pickle = os.path.join(self.config.configdir, 'arguments.pickle')
+        args_json = os.path.join(self.config.configdir, 'arguments.json')
+        args_txt = os.path.join(self.config.configdir, 'arguments.txt')
+        # check arguments
+        chk1 = args_checker(self.args, args_pickle)
+        Json(self.args).writer(args_json)
+        args_logger(self.args, args_txt)
+        self.args['overwrite'] = self.args.get('overwrite', False)
+        chk2 = self.args['overwrite'] is False
 
-    def atac_init(self):
-        """
-        Initiate directories, config 
-        """
-        args = self.read_design()
-        # update args
-        args.update(self.kwargs)
-        # check required arguments
-        # fq1, fq2, genome, outdir
-        args_required = ['fq1', 'fq2', 'genome', 'outdir']
-        chk = [i for i in args_required if not i in args] # missing args
-        if len(chk) > 0:
-            raise Exception('check design file for: {}'.format(' '.join(chk)))
-
-        return args
-
-
-    def read_design(self):
-        """
-        default parameters for ATAC-seq
-        Json -> dict
-        """
-        return Json(self.design).dict
-
-
-    def symlink(self, src, dest, absolute_path=True):
-        """
-        Create symlinks within output dir
-        ../src
-        """
-        if absolute_path:
-            # support: ~, $HOME,
-            srcname = os.path.abspath(os.path.expanduser(os.path.expandvars(src)))
-        else:
-            srcname = os.path.join('..', os.path.basename(src))
-
-        if not os.path.exists(dest):
-            os.symlink(srcname, dest)
+        # status
+        return all([chk1, chk2])
 
 
     #######################################
@@ -281,8 +808,8 @@ class Atac(object):
             shutil.copy(self.fq1, raw_fq1)
             shutil.copy(self.fq2, raw_fq2)
         else:
-            self.symlink(self.fq1, raw_fq1, absolute_path=True)
-            self.symlink(self.fq2, raw_fq2, absolute_path=True)
+            symlink(self.fq1, raw_fq1, absolute_path=True)
+            symlink(self.fq2, raw_fq2, absolute_path=True)
 
 
     def trim(self, trimmed=False):
@@ -297,36 +824,59 @@ class Atac(object):
         """
         # args = self.args.copy()
         fq1, fq2 = self.config.raw_fq_list
+        clean_fq1, clean_fq2 = self.config.clean_fq_list
 
         # update args
         args = self.config.args # all
         args['fq1'] = args['fq'] = fq1
         args['fq2'] = fq2
         args['outdir'] = self.config.cleandir
-        if not trimmed is True:
-            Trimmer(**args).run()
+        args['library_type'] = 'Nextera'
+        
+        if trimmed is True:
+            # create symlink from rawdir
+            # if raw is not gzipped, do it
+            if is_gz(fq1) and is_gz(fq2):
+                symlink(fq1, clean_fq1)
+                symlink(fq2, clean_fq2)
+            else:
+                # gzip files
+                gzip_cmd(fq1, clean_fq1, decompress=False, rm=False)
+                gzip_cmd(fq2, clean_fq2, decompress=False, rm=False)
         else:
-            # create links
-            for s, d in zip(self.config.raw_fq_list, self.config.clean_fq_list):
-                self.symlink(s, d)
+            if check_file(self.config.clean_fq_list):
+                log.info('trim() skipped, file exists: {}'.format(
+                    self.config.clean_fq_list))
+            else:
+                Trimmer(**args).run()
 
 
     def align(self):
         """
-        Alignment
+        Alignment PE reads to reference genome, using bowtie2
 
         -X 2000, ...
         """
-        fq1, fq2 = self.config.clean_fq_list
+        args_local = self.__dict__.copy()
+        fq1, fq2 = args_local.get('clean_fq_list', [None, None])
+        outdir = args_local.get('align_dir', str(pathlib.Path.cwd()))
 
-        # update arguments
-        args = self.config.args
-        args['fq1'] = args['fq'] = fq1
-        args['fq2'] = fq2
-        args['outdir'] = self.config.aligndir
-        #
-        args['extra_para'] = '-X 2000'
-        Alignment(**args).run()
+        args_init = {
+            'fq1': fq1,
+            'fq2': fq2,
+            'fq': fq1,
+            'outdir': outdir,
+            'extra_para': '-X 2000',
+            'aligner': 'bowtie2'
+        }
+        args_local.update(args_init)
+
+        # output
+        if check_file(args_local.get('bam_rmdup', None)):
+            log.info('align() skipped, file exists: {}'.format(
+                args_local.get('bam_rmdup', None)))
+        else:
+            Alignment(**args_local).run()
 
 
     def get_raw_bam(self):
@@ -337,10 +887,12 @@ class Atac(object):
         """
         # bamdir = os.path.join(self.config.aligndir, '2.*')
         bamdir = self.config.align_stat.rstrip('.align.txt')
-        # print(bamdir)
         bamlist = listfiles2('*.bam', bamdir, recursive=True)
+        bamlist = sorted(bamlist)
+        bamlist = [i for i in bamlist if not os.path.basename(i).endswith('.raw.bam')] # remove raw.bam
         # [chrM, genome]
-        return(bamlist[1]) # genome
+        print('!AAAA1', bamlist)
+        return(bamlist[-1]) # the last one
 
 
     def bam_rmdup(self, rmdup=True):
@@ -356,10 +908,34 @@ class Atac(object):
         else:
             shutil.copy(bam_raw, self.config.bam_rmdup)
 
-        # save proper pair reads
-        Bam(self.config.bam_rmdup).proper_pair(self.config.bam_proper_pair)
-        # index
-        Bam(self.config.bam_proper_pair).index()
+        if check_file(self.config.bam_proper_pair):
+            log.info('bam_rmdup() skipped, file exists: {}'.format(
+                self.config.bam_proper_pair))
+        else:
+            # save proper pair reads
+            Bam(self.config.bam_rmdup).proper_pair(self.config.bam_proper_pair)
+            # index
+            Bam(self.config.bam_proper_pair).index()
+
+
+    def bam2bw(self, norm=1000000):
+        """
+        Create bigWig
+        bam -> bigWig
+        """
+        args = self.config.args.copy()
+        tmp = args.pop('outdir', None)
+        bam = self.config.bam_proper_pair
+        outdir = self.config.bwdir
+        bw = self.config.bw
+        ## read counts BAM
+        ntotal = Bam(bam).getNumberOfAlignments()
+        if Bam(bam).isPaired():
+            ntotal = ntotal / 2
+        scale = norm / ntotal # norm to 1M
+
+        return bam_to_bw(bam, outdir, scale=scale, **args)
+
 
 
     def callpeak(self):
@@ -368,42 +944,64 @@ class Atac(object):
         """
         args = self.config.args.copy()
         bam = self.config.bam_proper_pair
+        bed = os.path.splitext(bam)[0] + '.bed'
+        Bam(bam).to_bed(bed)
         genome = args.pop('genome', None)
         output = args.pop('peakdir', None)
         prefix = args.pop('fqname', None)
-        m = Macs2(bam, genome, output, prefix, atac=True, **args).callpeak()
+
+        if check_file(self.config.peak):
+            log.info('callpeak() skipped, file exists: {}'.format(
+                self.config.peak))
+        else:
+            args['genome_size'] = args.get('genome_size', 0)
+            Macs2(bed, genome, output, prefix, atac=True, **args).callpeak()
 
 
     def qc_lendist(self):
         """
         Create length distribution plot
         """
-        # compute length distribution
-        x = frag_length(self.config.bam_proper_pair, self.config.lendist_txt)
-
         # create plot
         pkg_dir = os.path.dirname(hiseq.__file__)
-        lendistR = os.path.join(pkg_dir, 'bin', 'qc.lendist.R')
+        lendistR = os.path.join(pkg_dir, 'bin', 'atac_qc_lendist.R')
         cmd = 'Rscript {} {} {}'.format(
             lendistR,
             self.config.lendist_txt,
             self.config.lendist_pdf)
-        run_shell_cmd(cmd)
+
+        if check_file(self.config.lendist_txt):
+            log.info('qc_lendist() skipped, file exists: {}'.format(
+                self.config.lendist_txt))
+        else:
+            # compute length distribution
+            frag_length(self.config.bam_proper_pair, self.config.lendist_txt)
+            # create plot
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.warning('qc_lendist() failed.')
 
 
     def qc_frip(self):
         """
         Compute frip
         """
-        frip, n, total = cal_FRiP(self.config.peak, self.config.bam_proper_pair)
+        if check_file(self.config.frip_txt):
+            log.info('qc_frip() skipped, file exists: {}'.format(
+                self.config.frip_txt))
+        else:
+            print("!XXXX " + self.config.bam_proper_pair)
+            frip, n, total = cal_FRiP(self.config.peak, 
+                self.config.bam_proper_pair)
 
-        # head
-        hd = ['FRiP', "peak_reads", "total_reads", "id"]
-        n = list(map(str, [frip, n, total]))
-        n.append('self.config.fqname')
-        with open(self.config.frip_txt, 'wt') as w:
-            w.write('\t'.join(hd) + '\n')
-            w.write('\t'.join(n) + '\n')
+            hd = ['FRiP', "peak_reads", "total_reads", "id"]
+            n = list(map(str, [frip, n, total]))
+            n.append('self.config.fqname')
+            with open(self.config.frip_txt, 'wt') as w:
+                w.write('\t'.join(hd) + '\n')
+                w.write('\t'.join(n) + '\n')
+
 
 
     def qc_mito(self):
@@ -442,11 +1040,23 @@ class Atac(object):
         """
         pkg_dir    = os.path.dirname(hiseq.__file__)
         qc_reportR = os.path.join(pkg_dir, 'bin', 'atac_report_single.R')
+        atac_report_html = os.path.join(
+            self.config.reportdir, 
+            'atac_report.html')
+
         cmd = 'Rscript {} {} {}'.format(
             qc_reportR,
             self.config.outdir,
             self.config.reportdir)
-        run_shell_cmd(cmd)
+        
+        if check_file(atac_report_html):
+            log.info('report() skipped, file exists: {}'.format(
+                atac_report_html))
+        else:
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.warning('report() failed.')
 
 
     def run(self):
@@ -472,10 +1082,14 @@ class Atac(object):
         # 4. rmdup
         self.bam_rmdup(rmdup)
 
+        # 5. bw
+        #self.bam2bw()
+
         # 5. peak 
         self.callpeak()
         
         # 6. motif
+        # self.motif()
 
         # 7. qc
         self.qc()
@@ -484,386 +1098,67 @@ class Atac(object):
         self.report()
 
 
-class AtacBatch(object):
+class AtacMerge(object):
     """
-    option-1
-    required: fq1, fq2, genome, outdir
-    option: len_min, n_map, overwrite, smp_name, threads, adapter3, AD3
-
-    fq1 (list), fq2 (list) => multiple samples
-
-    option-2
-    config: table
-    fq1, fq2, genome, outdir, ...
-
-    one sample per line
+    Merge replicates for ATAC samples:
+    require: rep_list
     """
-
     def __init__(self, **kwargs):
+        self.args = kwargs
+        assert in_dict(self.args, ['rep_list'])
+        self.status = self.init_atac() # update all variables: *.config, *.args
+
+
+    def init_atac(self):
         """
-        option-1:
-        --config: (one sample per line)
-
-        option-2:
-        fq1, fq2, genome, outdir, ...
+        Initiate directories, config:
+        save config files
+        outdir/config/*json, *pickle, *txt
         """
-        args = kwargs # udpate
+        self.config = AtacConfig(**self.args) # update, global
+        print('!cccc', self.args)
 
-        # required args
-        self.fq1_list = args.pop('fq1', None)
-        self.fq2_list = args.pop('fq2', None)
-        self.genome = args.pop('genome', None)
-        self.outdir = args.pop('outdir', None)
-        self.config = args.pop('config', None)
-        self.args = args # global
+        self.args.update(self.config.args) # update, global
+        # assert in_attr(self., ['rep_list'])
+        assert self.config.atac_type == 'merge'
+        self.args['rep_list'] = [os.path.abspath(i) for i in self.args['rep_list']]
 
-        # json_list
-        if not self.config is None:
-            json_list = self.config_to_json()
-        else:
-            json_list = self.args_to_json()
+        # config for all replicates
+        self.rep_config = []
+        # print(self.args['rep_list'])
+        for i in self.args['rep_list']:
+            i_design = os.path.join(i, 'config', 'arguments.json')
+            self.rep_config.append(AtacConfig(design=i_design))
 
-        if len(json_list) == 0:
-            raise ValueError('required: --config or --fq1, --fq2, --genome, --outdir')
-
-        # update: self.json_list
-
-
-    def config_to_json(self):
-        """
-        convert config to multiple *.json files
-        """
-        args = self.args.copy()
-
-        if self.config is None:
-            return None
-
-        # update arguments
-        json_list = []
-        nline = 0
-        with open(self.config) as r:
-            for line in r:
-                nline += 1
-                if line.startswith('#') or line.strip() == '':
-                    continue # comment, blank rows
-                fields = line.strip().split('\t')
-                if len(fields) < 4:
-                    logging.warning('line-{}, arguments not enough: \n{}'.format(nline, line))
-                    continue
-                # required args
-                fq1, fq2, genome, outdir = fields[:4]
-                assert is_path(outdir)
-                # prefix
-                fq_prefix = file_prefix(fq1)[0] # name
-                # suboutdir
-                suboutdir = os.path.join(outdir, fq_prefix)
-                config_json = suboutdir + '.config.json' # file
-                config_pickle = suboutdir + '.config.pickle' # file
-                d = {'fq1': fq1, 'fq2': fq2, 'genome': genome, 'outdir': suboutdir}
-                d.update(args) # global config
-                Json(d).writer(config_json)
-                self.dict_to_pickle(d, config_pickle)
-                json_list.append(config_json)
-
-        self.json_list = json_list
-        return json_list
-
-
-    def args_to_json(self):
-        """
-        fq1, fq2 list, fastq files
-        genome, str
-        outdir, str
-        ...
-        """
-        args = self.args.copy()
-
-        # dir
-        assert is_path(self.outdir)
-
-        json_list = []
-        if isinstance(self.fq1_list, list) and isinstance(self.fq2_list, list):
-            # require genome, outdir
-            assert isinstance(self.genome, str)
-            assert isinstance(self.outdir, str)
-            if len(self.fq1_list) == len(self.fq2_list):
-                for fq1, fq2 in zip(self.fq1_list, self.fq2_list):
-                    # prefix
-                    fq_prefix = file_prefix(fq1)[0] # name
-                    # suboutdir
-                    suboutdir = os.path.join(self.outdir, fq_prefix)
-                    config_json = suboutdir + '.config.json' # file
-                    config_pickle = suboutdir + '.config.pickle' # file
-                    d = {'fq1': fq1, 'fq2': fq2, 'genome': self.genome, 'outdir': suboutdir}
-                    d.update(args) # global config
-                    Json(d).writer(config_json)
-                    self.dict_to_pickle(d, config_pickle)
-                    json_list.append(config_json)
-            else:
-                raise Exception('Error, the --fq1 and --fq2 are not same in length')
-        else:
-            return None
-        
-        self.json_list = json_list
-        return json_list
-
-
-    def dict_to_log(self, d, x, overwrite=False):
-        """
-        Convert dict to log style
-            key | value
-        """
-        assert isinstance(d, dict)
-        logout = ['%30s |    %-40s' % (k, d[k]) for k in sorted(d.keys())]
-        if overwrite is True or not os.path.exists(x): 
-            with open(x, 'wt') as w:
-                w.write('\n'.join(logout) + '\n')
-
-        return '\n'.join(logout)
-
-
-    def dict_to_pickle(self, d, x):
-        """
-        Convert dict to pickle
-        """
-        assert isinstance(d, dict)
-        with open(x, 'wb') as w:
-            pickle.dump(d, w, protocol=pickle.HIGHEST_PROTOCOL)
-
-
-    def pickle_to_dict(self, x):
-        """
-        Convert pickle file to dict
-        """
-        with open(x, 'rb') as r:
-            return pickle.load(r)
-
-
-    def run(self):
-        """
-        Run multiple fastq files
-        with input: confi
-        """
-        args = self.args.copy()
-
-        # iterator json_list
-        for config in self.json_list:
-            Atac(config, **args).run()
-
-
-class AtacConfig2(object):
-    """
-    Config for replicates
-
-    save: merge to the same directories
-    merge: report + html 
-    """
-    def __init__(self, rep_list, **kwargs):
-        self.smpname = kwargs.get('smpname', None)
-        self.outdir = kwargs.get('outdir', None)
-        self.rep_list = rep_list
-
-        # rep_list: config
-        self.rep_config = [self.rep_parser(i) for i in rep_list]
-
-        # global vars
+        # global variables, replicates
         self.align_txt = [c.align_stat for c in self.rep_config]
         self.bam_list = [c.bam_proper_pair for c in self.rep_config]
         self.peak_list = [c.peak for c in self.rep_config]
         self.frip_list = [c.frip_txt for c in self.rep_config]
 
-        # outdir
-        self.args_init()
-        kwargs.update(self.config_to_dict())
-        self.args = kwargs
-        self.config_save()
-
-
-    def args_init(self):
-        """
-        Init arguments for ATAC-seq pipeline, merge
-
-        Create directories, filenames
-        config/
-        bam_files/
-        bw_files/
-        peak/
-        motif/
-        qc/
-        report/
-        ...
-
-        proper_pair bam
-        bigWig files
-        peak (narrowPeak)
-        motif (to-do)
-        qc/
-        report/html
-        ...
-
-        qc/
-        align.txt
-        peaks
-        FRiP
-        bam_cor
-        peak_overlap
-        IDR
-        """
-        # args = self.kwargs.copy()
-
-        ## sample name
-        if self.smpname is None:
-            self.smpname = self.merge_name()
-
-        ## outdir
-        if self.outdir is None:
-            # the first one
-            self.outdir = os.path.join(
-                os.path.dirname(self.rep_config[0].outdir), self.smpname)
-
-        ## outdir
-        self.configdir = os.path.join(self.outdir, 'config')
-        self.aligndir = os.path.join(self.outdir, 'align')
-        self.bamdir = os.path.join(self.outdir, 'bam_files')
-        self.bwdir = os.path.join(self.outdir, 'bw_files')
-        self.peakdir = os.path.join(self.outdir, 'peak')
-        self.motifdir = os.path.join(self.outdir, 'motif')
-        self.qcdir = os.path.join(self.outdir, 'qc')
-        self.reportdir = os.path.join(self.outdir, 'report')
-
-        ## names
-        self.bam = os.path.join(self.bamdir, self.smpname + '.bam')
-        self.peak = os.path.join(self.peakdir, self.smpname + '_peaks.narrowPeak')
-        self.bw = os.path.join(self.bwdir, self.smpname + '.bigWig')
-        self.lendist_txt = os.path.join(self.qcdir, 'length_distribution.txt')
-        self.lendist_pdf = os.path.join(self.qcdir, 'length_distribution.pdf')
-        self.frip_txt = os.path.join(self.qcdir, 'FRiP.txt')
-        self.cor_npz = os.path.join(self.qcdir, 'cor.bam.npz')
-        self.cor_counts = os.path.join(self.qcdir, 'cor.bam.counts.tab')
-        self.idr_txt = os.path.join(self.qcdir, 'idr.txt')
-        self.idr_log = os.path.join(self.qcdir, 'idr.log')
-        self.idr_png = self.idr_txt + '.png'
-        self.peak_overlap = os.path.join(self.qcdir, 'peak_overlap.pdf')
-
-        ## create directories
-        tmp = [is_path(d) for d in [self.configdir, self.aligndir, self.bamdir, 
-            self.bwdir, self.peakdir, self.motifdir, self.qcdir, 
-            self.reportdir]]
-
-
-    def merge_name(self):
-        """
-        Get the name of replictes
-        common in left-most
-        """
-        name_list = [os.path.basename(i) for i in self.rep_list]
-        name_list = [re.sub('.rep[0-9]', '', i) for i in name_list]
-        return list(set(name_list))[0]
-
-
-    def is_abspath(self, x):
-        """
-        x is the absolute path
-        """
-        return x == os.path.abspath(x)
-
-
-    def rep_parser(self, x):
-        """
-        Parse the config, pickle, for each replicate
-        return:
-        BAM,
-        ...
-        """
-        design = x + '.config.json'
-        args_pickle = x + '.config.pickle'
-        args = self.pickle_to_dict(args_pickle)
-        return Atac(design, **args).config
-
-
-    def config_to_dict(self):
-        """
-        Save config to dict
-        """
-        args = {
-            'rep_list': self.rep_list,
-            'bam': self.bam_list,
-            'peak': self.peak_list, 
-            'idr_txt': self.idr_txt,
-            'cor_counts': self.cor_counts,
-            'peak_overlap': self.peak_overlap,
-        }
-
-        return args
-
-
-    def config_save(self):
-        """
-        Save config to json file
-        """
-        config_json = os.path.join(self.configdir, 'arguments.json')
-        config_pickle = os.path.join(self.configdir, 'arguments.pickle')
-        config_txt = os.path.join(self.configdir, 'arguments.txt')
-        replist_txt = os.path.join(self.configdir, 'sample_list.txt')
-        Json(self.args).writer(config_json)
-        self.dict_to_pickle(self.args, config_pickle)
-        args_logger(self.args, config_txt, True) # update arguments.txt
+        # save config to files
+        args_pickle = os.path.join(self.config.configdir, 'arguments.pickle')
+        args_json = os.path.join(self.config.configdir, 'arguments.json')
+        args_txt = os.path.join(self.config.configdir, 'arguments.txt')
+        replist_txt = os.path.join(self.config.configdir, 'sample_list.txt')
+        # check arguments
+        chk1 = args_checker(self.args, args_pickle)
+        Json(self.args).writer(args_json)
+        args_logger(self.args, args_txt)
+        self.args['overwrite'] = self.args.get('overwrite', False)
+        chk2 = self.args['overwrite'] is False
         # save replist
         with open(replist_txt, 'wt') as w:
-            w.write('\n'.join(self.rep_list) + '\n')
+            w.write('\n'.join(self.args['rep_list']) + '\n')
 
-                
-    def dict_to_pickle(self, d, x):
-        """
-        Convert dict to pickle
-        """
-        assert isinstance(d, dict)
-        with open(x, 'wb') as w:
-            pickle.dump(d, w, protocol=pickle.HIGHEST_PROTOCOL)
-
-
-    def pickle_to_dict(self, x):
-        """
-        Convert pickle file to dict
-        """
-        with open(x, 'rb') as r:
-            return pickle.load(r)
-
-
-class Atac2(object):
-    """
-    For replicates:
-    1. mito%
-    2. frag size
-    3. TSS enrich
-    4. Correlation (pearson)
-    5. IDR
-    6. Peaks overlap
-
-
-    directory:
-    qc
-    report
-
-    report:
-    bam correlation
-    peaks overlap
-    IDR
-    """
-    def __init__(self, rep_list, **kwargs):
-        """
-        A list of directories of replicates:
-        """
-        self.config = AtacConfig2(rep_list, **kwargs)
-        self.bam_list = self.config.bam_list # [c.bam_proper_pair for c in self.config.rep_config]
-        self.peak_list = self.config.peak_list  # [c.peak for c in self.config.rep_config]
+        # status
+        return all([chk1, chk2])
 
 
     def mergebam(self):
         """
         Merge replicates, BAM
         """
-
         cmd = 'samtools merge {} {} && \
             samtools sort -o {} {} && \
             samtools index {}'.format(
@@ -874,9 +1169,31 @@ class Atac2(object):
             self.config.bam)
 
         if os.path.exists(self.config.bam):
-            logging.info('file exists: {}'.format(self.config.bam))
+            log.info('mergebam() skipped, file exists: {}'.format(
+                self.config.bam))
         else:
-            run_shell_cmd(cmd)
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.warning('mergebam() failed.')
+
+
+    def bam2bw(self, norm=1000000):
+        """
+        Create bigWig
+        bam -> bigWig
+        """
+        args = self.config.args.copy()
+        bam = self.config.bam
+        outdir = self.config.bwdir
+        bw = self.config.bw
+        ## read counts BAM
+        ntotal = Bam(bam).getNumberOfAlignments()
+        if Bam(bam).isPaired():
+            ntotal = ntotal / 2
+        scale = norm / ntotal # norm to 1M
+
+        return bam_to_bw(bam, outdir, scale=scale, **args)
 
 
     def callpeak(self):
@@ -884,40 +1201,52 @@ class Atac2(object):
         Call peaks using MACS2
         """        
         bam = self.config.bam
-        genome = self.config.rep_config[0].genome
+        genome = self.rep_config[0].genome
         output = self.config.peakdir
         prefix = self.config.smpname
-        m = Macs2(bam, genome, output, prefix, atac=True).callpeak()
+        if os.path.exists(self.config.peak):
+            log.info('callpeak() skipped, file exists: {}'.format(
+                self.config.peak))
+        else:
+            self.args['genome_size'] = self.args.get('genome_size', 0)
+            m = Macs2(bam, genome, output, prefix, atac=True,
+                genome_size=self.args['genome_size']).callpeak()
 
 
-    def bam_cor(self, window = 500):
+    def bam_cor(self, window=500):
         """
         Compute correlation (pearson) between replicates
         window = 500bp
         
         eg:
-        multiBamSummary bins --binSize 500 --smartLabels -o *bam.npz --outRawCounts *counts.tab -b bam
+        multiBamSummary bins --binSize 500 --smartLabels -o *bam.npz \
+            --outRawCounts *counts.tab -b bam
         """
         multiBamSummary = shutil.which('multiBamSummary')
 
-        cmd = '{} bins --binSize {} --smartLabels -o {} --outRawCounts {} -b {}'.format(
-            multiBamSummary, 
-            window,
-            self.config.cor_npz,
-            self.config.cor_counts,
-            ' '.join(self.config.bam_list))
+        cmd = '{} bins --binSize {} --smartLabels -o {} --outRawCounts {} \
+            -b {}'.format(
+                multiBamSummary, 
+                window,
+                self.config.cor_npz,
+                self.config.cor_counts,
+                ' '.join(self.bam_list))
 
         if os.path.exists(self.config.cor_counts):
-            logging.info('file.exsits: {}'.format(self.config.cor_counts))
+            log.info('bam_cor() skipped, file.exsits: {}'.format(
+                self.config.cor_counts))
         else:
-            run_shell_cmd(cmd)
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.warning('bam_cor() failed.')
 
 
     def peak_overlap(self):
         """
         Compute the overlaps between overlaps
         """
-        pkg_dir    = os.path.dirname(hiseq.__file__)
+        pkg_dir = os.path.dirname(hiseq.__file__)
         peak_overlapR = os.path.join(pkg_dir, 'bin', 'atac_peak_overlap.R')
 
         cmd = 'Rscript {} {} {}'.format(
@@ -926,9 +1255,13 @@ class Atac2(object):
             ' '.join(self.peak_list))
 
         if os.path.exists(self.config.peak_overlap):
-            logging.info('file exists: {}'.format(self.config.peak_overlap))
+            log.info('peak_overlap() skipped, file exists: {}'.format(
+                self.config.peak_overlap))
         else:
-            run_shell_cmd(cmd)
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.warning('peak_overlap() failed.')
 
 
     def rep_idr(self):
@@ -941,8 +1274,8 @@ class Atac2(object):
         # sort peakfile by p.value
         cmd = 'sort -k8,8nr -o {} {} && \
             sort -k8,8nr -o {} {} && \
-            {} --input-file-type narrowPeak --rank p.value --plot --output-file {} \
-            --log-output-file {} --samples {}'.format(
+            {} --input-file-type narrowPeak --rank p.value --plot \
+            --output-file {} --log-output-file {} --samples {}'.format(
             self.peak_list[0],
             self.peak_list[0],
             self.peak_list[1],
@@ -953,21 +1286,25 @@ class Atac2(object):
             ' '.join(self.peak_list))
 
         if os.path.exists(self.config.idr_txt):
-            logging.info('file exists: {}'.format(self.config.idr_txt))
+            logging.info('rep_idr() skipped, file exists: {}'.format(
+                self.config.idr_txt))
         else:
-            run_shell_cmd(cmd)
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.warning('rep_idr() failed.')
 
 
     def get_frip(self):
         """
         Save all FRiP.txt file to one
         """
-        # print(self.config.frip_txt)
-        with open(self.config.frip_txt, 'wt') as w:
-            for f in self.config.frip_list:
-                with open(f) as r:
-                    for line in r:
-                        w.write(line)
+        if not os.path.exists(self.config.frip_txt):
+            with open(self.config.frip_txt, 'wt') as w:
+                for f in self.frip_list:
+                    with open(f) as r:
+                        for line in r:
+                            w.write(line)
 
 
     def get_align_txt(self):
@@ -990,13 +1327,24 @@ class Atac2(object):
         html
         """
         pkg_dir    = os.path.dirname(hiseq.__file__)
-        qc_reportR = os.path.join(pkg_dir, 'bin', 'atac_report_single.R')
+        qc_reportR = os.path.join(pkg_dir, 'bin', 'atac_report.R')
+        atac_report_html = os.path.join(
+            self.config.reportdir, 
+            'atac_report.html')
+
         cmd = 'Rscript {} {} {}'.format(
             qc_reportR,
             self.config.outdir,
             self.config.reportdir)
-        run_shell_cmd(cmd)
-
+        
+        if check_file(atac_report_html):
+            log.info('report() skipped, file exists: {}'.format(
+                atac_report_html))
+        else:
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.warning('report() failed.')
 
 
     def run(self):
@@ -1015,111 +1363,85 @@ class Atac2(object):
         self.report()
 
 
-class AtacBatch2(object):
+class AtacMultiple(object):
     """
-    Run merge for all samples
+    Organize multiple ATAC-seq directories
+    create a summary report
     """
-    def __init__(self, sample_dirs, **kwargs):
-        """
-        option-1:
-        --config: list of config json files
-                  the same directory with outdir
-        """
-        self.sample_dirs = [i for i in sample_dirs if self.is_atac_single(i)]
-        self.sample_dirs = sorted(self.sample_dirs)
-        self.outdir = kwargs.pop('outdir', None)
-        self.name_list = self.unique_names(self.sample_dirs)
-        self.name_list = sorted(self.name_list)
-        self.args = kwargs # global
+    def __init__(self, **kwargs):
+        self.args = kwargs
+        assert in_dict(self.args, ['input_dir'])
+        self.status = self.init_atac() # update all variables: *.config, *.args
 
-        if len(sample_dirs) < 2:
-            raise ValueError('required: --sample-dirs, >=2 dirs')
 
+    def init_atac(self):
+        """
+        Initiate directories, config:
+        save config files
+        outdir/config/*json, *pickle, *txt
+        """
+        print('!dddd1', self.args)
+        self.config = AtacConfig(**self.args) # update, global
+        self.args.update(self.config.args) # update, global
+        assert self.config.atac_type == 'multiple'
+        self.args['input_dir'] = os.path.abspath(self.args['input_dir'])
+
+        # save config to files
+        args_pickle = os.path.join(self.config.configdir, 'arguments.pickle')
+        args_json = os.path.join(self.config.configdir, 'arguments.json')
+        args_txt = os.path.join(self.config.configdir, 'arguments.txt')
+        single_list = os.path.join(self.config.configdir, 'single_list.txt')
+        merge_list = os.path.join(self.config.configdir, 'merge_list.txt')
+
+        # check arguments
+        chk1 = args_checker(self.args, args_pickle)
+        Json(self.args).writer(args_json)
+        args_logger(self.args, args_txt)
+        self.args['overwrite'] = self.args.get('overwrite', False)
+        chk2 = self.args['overwrite'] is False
         
-    def unique_names(self, name_list):
-        """
-        Get the name of replictes
-        common in left-most
-        """
-        name_list = [os.path.basename(i) for i in name_list]
-        name_list = [re.sub('.rep[0-9].*', '', i) for i in name_list]
-        return list(set(name_list))
+        # save replist
+        with open(single_list, 'wt') as w:
+            w.write('\n'.join(self.config.single_list) + '\n')
+
+        # save mergelist
+        with open(merge_list, 'wt') as w:
+            w.write('\n'.join(self.config.merge_list) + '\n')
+
+        # status
+        return all([chk1, chk2])
 
 
-    def is_atac_single(self, x):
+    def report(self):
         """
-        Check input directory is ATAC_single outdir
-        required directories
-        required files
+        Create report for multiple samples within the directories
+        html
+        """
+        pkg_dir    = os.path.dirname(hiseq.__file__)
+        qc_reportR = os.path.join(pkg_dir, 'bin', 'atac_report.R')
+        atac_report_html = os.path.join(
+            self.config.reportdir, 
+            'atac_report.html')
+
+        cmd = 'Rscript {} {} {}'.format(
+            qc_reportR,
+            os.path.dirname(self.config.outdir),
+            self.config.reportdir)
         
-        # config file is 
-        x.config.json
-        x.config.pickle
-        """
-        x_config = self.rep_parser(x)
-
-        if x_config is None:
-            return None
+        if check_file(atac_report_html):
+            log.info('report() skipped, file exists: {}'.format(
+                atac_report_html))
         else:
-            # required directories
-            atac_required = [
-                x_config.rawdir,
-                x_config.cleandir,
-                x_config.aligndir,
-                x_config.bamdir,
-                x_config.peakdir,
-                x_config.qcdir,
-                x_config.reportdir,
-                x_config.frip_txt,
-                x_config.lendist_txt,
-                x_config.align_stat,
-                x_config.peak,
-                x_config.bam_proper_pair]
-            return all([os.path.exists(i) for i in atac_required])
-
-
-    def rep_parser(self, x):
-        """
-        Parse the config, pickle, for each replicate
-        return:
-        BAM,
-        ...
-        """
-        design = x + '.config.json'
-        args_pickle = x + '.config.pickle'
-        if os.path.exists(args_pickle) and os.path.exists(design):
-            args = self.pickle_to_dict(args_pickle)
-            return Atac(design, **args).config
-        else:
-            return None
-
-
-    def pickle_to_dict(self, x):
-        """
-        Convert pickle file to dict
-        """
-        with open(x, 'rb') as r:
-            return pickle.load(r)
-
-
-    def get_samples(self, x):
-        """
-        samples from list
-        """
-        return [i for i in self.sample_dirs if x in os.path.basename(i)]
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.warning('report() failed.')
 
 
     def run(self):
         """
-        Iterator all sample names
+        Run AtacMultiple
         """
-        for x in self.name_list:
-            x_list = self.get_samples(x)
-            # check outdir
-            if self.outdir is None:
-                x_outdir = os.path.join(
-                    os.path.dirname(x_list[0]),
-                    x)
-            Atac2(x_list, outdir=x_outdir).run()
-            # print(x, x_list)
-            # print(x_outdir)
+        self.report()
+
+

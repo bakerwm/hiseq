@@ -1253,7 +1253,7 @@ class AlignConfig2(object):
         ## file exists
         chk0 = isinstance(self.fq1, str)
         chk1 = isinstance(self.fq2, str) or self.fq2 is None
-        chk2 = isinstance(self.smp_name, str)
+        chk2 = True #isinstance(self.smp_name, str)
         chk3 = file_exists(self.fq1, isfile=True)
         chk4 = file_exists(self.fq2, isfile=True) or self.fq2 is None
         log_msg0 = '\n'.format([
@@ -1261,10 +1261,12 @@ class AlignConfig2(object):
             '{:>30s}: {}'.format('fq1, str or list', self.fq1),
             '{:>30s}: {}'.format('fq2, str, list, None', self.fq2),
             '{:>30s}: {}'.format('smp_name, str or list', self.smp_name)])
+        print('!BBBB-1', self.fq1)
         if not all([chk0, chk1, chk2, chk3, chk4]):
             # raise Exception('failed, fq1, fq2: \nfq1: {}, \nfq2: {}'.format(
             #     self.fq1, self.fq2))
-            raise Exception(log_msg0)
+            log.error(log_msg0)
+            raise ValueError('fastq files failed')
 
 
     def init_index(self):

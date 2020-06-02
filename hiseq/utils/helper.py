@@ -221,7 +221,6 @@ def file_prefix(fn, with_path=False):
         p1 = os.path.basename(p1)
     return [p1, px]
 
-
 def symlink(src, dest, absolute_path=True):
     """
     Create symlinks within output dir
@@ -232,14 +231,27 @@ def symlink(src, dest, absolute_path=True):
     elif file_exists(dest):
         log.warning('symlink skipped: target exists...'.format(dest))
     else:
-        if absolute_path:
-            # support: ~, $HOME,
-            srcname = os.path.abspath(os.path.expanduser(os.path.expandvars(src)))
-        else:
-            # only for directories within the same folder
-            # srcname = os.path.join('..', os.path.basename(src))
-            srcname = src
-            os.symlink(srcname, dest)
+        src = os.path.abspath(os.path.expanduser(os.path.expandvars(src)))
+        os.symlink(src, dest)
+
+# def symlink(src, dest, absolute_path=True):
+#     """
+#     Create symlinks within output dir
+#     ../src
+#     """
+#     if src is None or dest is None:
+#         log.warning('symlink skipped: {}, to: {}'.format(src, dest))
+#     elif file_exists(dest):
+#         log.warning('symlink skipped: target exists...'.format(dest))
+#     else:
+#         if absolute_path:
+#             # support: ~, $HOME,
+#             srcname = os.path.abspath(os.path.expanduser(os.path.expandvars(src)))
+#         else:
+#             # only for directories within the same folder
+#             # srcname = os.path.join('..', os.path.basename(src))
+#             srcname = src
+#             os.symlink(srcname, dest)
 
         # if not os.path.exists(dest):
 

@@ -20,7 +20,7 @@ from .utils.argsParser import *
 from .qc.fastqc import Fastqc
 from .trim.trimmer import Trimmer
 from .align.alignment import Alignment
-from .atac.atac2 import Atac
+from .atac.atac import Atac
 from .rnaseq.rnaseq import RNAseq
 from .rnaseq.rnaseq_pipe import RNAseqPipe
 from .go.go import Go
