@@ -855,8 +855,6 @@ class RNAseqSingle(object):
     def prep_raw(self, copy=False):
         """
         Copy raw data to dest dir
-        if not: create a symlink
-
         self.fq1, self.fq2 => raw_fq_list
         """
         raw_fq1, raw_fq2 = self.raw_fq_list
@@ -890,17 +888,15 @@ class RNAseqSingle(object):
         args_trim['outdir'] = self.clean_dir
 
         if trimmed is True:
-            # create symlink from raw_dir
-            # if raw is not gzipped, do it
             ## fq1
             if is_gz(fq1):
-                symlink(fq1, clean_fq1)
+                symlink(fq1, clean_fq1, absolute_path=True)
             else:
                 gzip_cmd(fq1, clean_fq1, decompress=False, rm=False)
             ## fq2
             if not fq2 is None:
                 if is_gz(fq2):
-                    symlink(fq2, clean_fq2)
+                    symlink(fq2, clean_fq2, absolute_path=True)
                 else:
                     gzip_cmd(fq2, clean_fq2, decompress=False, rm=False)
 
@@ -971,7 +967,7 @@ class RNAseqSingle(object):
         to: self.bam_out, bam_files/smp_name.bam
         """
         if not os.path.exists(self.bam_out):
-            symlink(self.bam_raw, self.bam_out)
+            symlink(self.bam_raw, self.bam_out, absolute_path=True)
 
 
     def fc_count(self):

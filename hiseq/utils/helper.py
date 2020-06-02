@@ -230,17 +230,18 @@ def symlink(src, dest, absolute_path=True):
     if src is None or dest is None:
         log.warning('symlink skipped: {}, to: {}'.format(src, dest))
     elif file_exists(dest):
-        log.warning('symlink skipped, target exists...'.format(dest))
+        log.warning('symlink skipped: target exists...'.format(dest))
     else:
         if absolute_path:
             # support: ~, $HOME,
             srcname = os.path.abspath(os.path.expanduser(os.path.expandvars(src)))
         else:
             # only for directories within the same folder
-            srcname = os.path.join('..', os.path.basename(src))
-
-        if not os.path.exists(dest):
+            # srcname = os.path.join('..', os.path.basename(src))
+            srcname = src
             os.symlink(srcname, dest)
+
+        # if not os.path.exists(dest):
 
 
 def check_file(x, show_log=False):

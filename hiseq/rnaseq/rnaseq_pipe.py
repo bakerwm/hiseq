@@ -21,14 +21,10 @@ from hiseq.align.alignment import AlignIndex
 from hiseq.rnaseq.rnaseq import RNAseq
 
 
-
-
 class RNAseqPipe(object):
     def __init__(self, **kwargs):
         self.update(kwargs, force=True) # init
-        print('!AAAA-3', self.outdir)
         self.args_init()
-        print('!AAAA-4', self.outdir)
 
 
     def update(self, d, force=True, remove=False):
@@ -69,10 +65,16 @@ class RNAseqPipe(object):
             'spikein': None,
             'trimmed': True,
             'unique_only': True,
-            'smp_name': None}
+            'smp_name': None,
+            'mode': 'gtp'}
         self.update(args_init, force=False)
 
-        # require design
+        # required args: design, genome, outdir, threads
+        genome = getattr(self, 'genome', None)
+        if genome is None:
+            raise ValueError('-g required')
+
+        # required args: design, genome, outdir, threads
         design = getattr(self, 'design', None)
         if design is None:
             raise ValueError('--design required')
@@ -83,73 +85,78 @@ class RNAseqPipe(object):
         require: genome
         remove: index_list
         """
-        self_local = copy.copy(self)
-        setattr(self_local, 'aligner', 'STAR')
-        genome = getattr(self_local, 'genome', None)
+        args_local = self.__dict__.copy()
 
-        if genome is None:
-            raise ValueError('-g required')
+        ## default
+        args_init = {
+            'aligner': 'STAR',
+            'feature': 'gene',
+            'index_list': None  # remove index_list, if exists
+        }
+        args_local.update(args_init)
 
-        # remove Index_list
-        self_local.index_list = None
-        setattr(self_local, 'feature', 'te')
-        RNAseq(**self_local.__dict__).run()
+        RNAseq(**args_local).run()
 
 
     def run_te(self):
         """
         require: index_list, gtf, feature: te
         """
-        self_local = copy.copy(self)
-        setattr(self_local, 'aligner', 'bowtie2')
-        genome = getattr(self_local, 'genome', None)
-        aligner = getattr(self_local, 'aligner', 'bowtie2')
-
-        if genome is None:
-            raise ValueError('-g required')
+        args_local = self.__dict__.copy()
+        genome = args_local.get('genome', None)
 
         # get index
-        te_index = AlignIndex(aligner=aligner).search(genome=genome, group='te')
-        te_gtf = Genome(genome).te()
+        te_index = AlignIndex(aligner='bowtie2').search(genome=genome, group='te')
+        te_gtf = Genome(genome).te('gtf')
 
-        if te_index is None:
-            log.info('te index not found, skipped...')
+        ## default
+        args_init = {
+            'aligner': 'bowtie2',
+            'feature': 'te',
+            'index_list': te_index,
+            'gtf': te_gtf
+        }
+        args_local.update(args_init)
+
+        if te_index is None or not os.path.exists(te_gtf):
+            log.warning('te not found, skipped ...')
         else:
-            setattr(self_local, 'index_list', te_index)
-            setattr(self_local, 'gtf', te_gtf)
-            setattr(self_local, 'feature', 'te')
-            RNAseq(**self_local.__dict__).run()
+            RNAseq(**args_local).run()
 
 
     def run_piRNA_cluster(self):
         """
         require: index_list, gtf, feature: piRNAcluster
         """
-        self_local = copy.copy(self)
-        setattr(self_local, 'aligner', 'bowtie2')
-        genome = getattr(self_local, 'genome', None)
-        aligner = getattr(self_local, 'aligner', 'bowtie2')
-
-        if genome is None:
-            raise ValueError('-g required')
+        args_local = self.__dict__.copy()
+        genome = args_local.get('genome', None)
 
         # get index
-        pi_index = AlignIndex(aligner=aligner).search(genome=genome, group='piRNA_cluster')
+        pi_index = AlignIndex(aligner='bowtie2').search(genome=genome, group='piRNA_cluster')
         pi_gtf = Genome(genome).piRNA_cluster('gtf')
 
-        if pi_index is None:
-            log.info('te index not found, skipped...')
+        ## default
+        args_init = {
+            'aligner': 'bowtie2',
+            'feature': 'piRNA_cluster', 
+            'index_list': pi_index,
+            'gtf': pi_gtf
+        }
+        args_local.update(args_init)
+
+        if pi_index is None or not os.path.exists(pi_gtf):
+            log.warning('piRNA_cluster not found, skipped ...')
         else:
-            setattr(self_local, 'index_list', pi_index)
-            setattr(self_local, 'gtf', pi_gtf)
-            setattr(self_local, 'feature', 'piRNA_cluster')
-            RNAseq(**self_local.__dict__).run()
+            RNAseq(**args_local).run()
 
 
     def run(self):
-        self.run_genome()
-        self.run_te()
-        self.run_piRNA_cluster()
+        if('g' in self.mode):
+            self.run_genome()
+        if('t' in self.mode):
+            self.run_te()
+        if('p' in self.mode):
+            self.run_piRNA_cluster()
 
 
 

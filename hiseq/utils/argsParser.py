@@ -527,6 +527,10 @@ def add_rnaseq_args2():
         help='Reference genome : dm3, dm6, hg19, hg39, mm9, mm10, default: hg19')
     parser.add_argument('--threads', default=1, type=int,
         help='Number of threads for each job, default [1]')
+    parser.add_argument('-m', '--mode', default='gtp', 
+        choices=['g', 't', 'p', 'gt', 'gp', 'tp', 'gtp'], 
+        help='Run for g:gene, t:te, p:piRNA_cluster, default: [gtp]')
+
     return parser
 
 
