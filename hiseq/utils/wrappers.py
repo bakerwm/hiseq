@@ -23,7 +23,7 @@ class ReportFastqc(object):
 
         ## search all fastq files, in current dir
         pattern = re.compile('.f(ast)?[aq](.gz)?$')        
-        fq_files = listfiles(self.path, recursive=False)
+        fq_files = listfile(self.path, '*') # all
         fq_files = [f for f in fq_files if re.search(pattern, f)]
 
         self.path = path
@@ -137,7 +137,7 @@ class ReportAlignment(object):
         pass
 
         self.path = path
-        self.stat_files = listfiles2('*.align.json', path, True, True)
+        self.stat_files = listfile(path, '*.align.json', True, True)
 
 
     def json2dataframe(self):
