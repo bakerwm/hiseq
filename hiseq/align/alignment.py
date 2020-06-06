@@ -578,8 +578,8 @@ class AlignConfig(object):
         elif align_type == [1, 1]:
             self.init_fq_1_index_1(create_dirs)
         elif align_type == [2, 1]:
-            # self.init_fq_2_index_1(create_dirs)
-            self.init_fq_2_index_n(create_dirs) # force index_n
+            self.init_fq_n_index_1(create_dirs)
+            # self.init_fq_2_index_n(create_dirs) # force index_n
         else:
             pass # no except
 

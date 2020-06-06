@@ -201,9 +201,11 @@ class Macs2(object):
             logging.error('command not exists, skip annotation - {}'.format(anno_exe))
             return None
 
-        # narrow peak file
-        peak_listA = listfiles2('*_peaks.narrowPeak', self.output)
-        peak_listB = listfiles2('*_peaks.broadPeak', self.output)
+        # # narrow peak file
+        # peak_listA = listfiles2('*_peaks.narrowPeak', self.output)
+        # peak_listB = listfiles2('*_peaks.broadPeak', self.output)
+        peak_listA = listfille(self.output, '*_peaks.narrowPeak')
+        peak_listB = listfille(self.output, '*_peaks.broadPeak')
         peak_list = peak_listA + peak_listB
 
         anno_list = []
@@ -269,7 +271,7 @@ class Macs2(object):
             alternative fragment length(s) may be 122 bps
         """
         # search the xls file
-        f = listfiles2("*peaks.xls", self.output)
+        f = listfile(self.output, '*peaks.xls')
         if not os.path.exists(f[0]):
             raise ValueError('file missing in macs2 callpeak output: {}'.format(f))
 
