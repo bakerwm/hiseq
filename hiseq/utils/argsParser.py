@@ -169,7 +169,7 @@ def add_align_args():
         help='names for the input index list')
     parser.add_argument('-x', '--extra-index', nargs='+', dest="extra_index", default=None,
         help='Extra index for alignment, default: []')
-    parser.add_argument('-n', '--smp_name', required=False,
+    parser.add_argument('-n', '--smp-name', dest='smp_name', required=False,
         help='Name of the experiment')
     parser.add_argument('--index-list-equal', action='store_true',
         help='Align reads to each index list in parallel, if specified')

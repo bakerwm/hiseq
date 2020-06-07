@@ -598,8 +598,8 @@ class AtacConfig(object):
         self.raw_fq_list.append(fq2_raw)
 
         ## clean data
-        self.clean_fq_list = [os.path.join(self.clean_dir, fq_name(self.fq1, pe_fix=True) + '.fq.gz')]
-        fq2_clean = None if self.fq2 is None else os.path.join(self.clean_dir, fq_name(self.fq2, pe_fix=True) + '.fq.gz')
+        self.clean_fq_list = [os.path.join(self.clean_dir, fq_name(self.fq1, pe_fix=False) + '.fq.gz')]
+        fq2_clean = None if self.fq2 is None else os.path.join(self.clean_dir, fq_name(self.fq2, pe_fix=False) + '.fq.gz')
         self.clean_fq_list.append(fq2_clean)
 
         if create_dirs:

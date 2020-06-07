@@ -100,6 +100,14 @@ from hiseq.utils.seq import Fastx
 from hiseq.utils.helper import * # all help functions
 
 
+def print_df(x):
+    # for k, v in x.items():
+    #     print('{:30s} : {}'.format(k, v))
+    for k in sorted(x.keys()):
+        print('{:30s} : {}'.format(k, x[k]))
+
+
+
 @Logger('INFO')
 class Alignment(object):
     """
@@ -139,12 +147,16 @@ class Alignment(object):
         args = self.__dict__.copy() # local
 
         if self.align_type == [2, 2]:
+            print('!CCCC-1', 'align: 2,2')
             AlignFqNIndexN(**args).run()
         elif self.align_type == [2, 1]:
+            print('!CCCC-2', 'align: 2,1')
             AlignFqNIndex1(**args).run()
         elif self.align_type == [1, 2]:
+            print('!CCCC-3', 'align: 1,2')
             AlignFq1IndexN(**args).run()
         elif self.align_type == [1, 1]:
+            print('!CCCC-4', 'align: 1,1')
             AlignFq1Index1(**args).run()
         else:
             pass # no except
@@ -192,6 +204,9 @@ class Alignment(object):
 class AlignConfig(object):
     """
     The wrapper for alignment, init arguments, top-level:
+
+    working flow:
+    fq(n),index(n) -> fq(1),index(n) -> fq(1),index(1); (force: fq(n),index(1) to fq(n),index(n))
     
     Determine the align_type:
     [2, 2] : N fastq, N index
@@ -249,6 +264,7 @@ class AlignConfig(object):
             'spikein': None,
             'index_name': None,
             'extra_index': None,
+            'smp_name': None,
             'index_list_equal': False,
             'align_parallel': False,
             'align_to_chrM': False,
@@ -564,11 +580,19 @@ class AlignConfig(object):
         """
         create_dirs = getattr(self, 'create_dirs', True)
 
-        # fq1 number
-        align_type = [2] if len(self.fq1) > 1 else [1] # single / multiple
+        # # fq1 number
+        # align_type = [2] if len(self.fq1) > 1 else [1] # single / multiple
 
-        # index number
-        align_type += [2] if len(self.index_list) > 1 else [1] # [2, 2], [2, 1], [1, 2], [1, 1]
+        # # index number
+        # align_type += [2] if len(self.index_list) > 1 else [1] # [2, 2], [2, 1], [1, 2], [1, 1]
+
+        # code
+        if len(self.fq1) > 1:
+            align_type = [2, 2]
+        elif len(self.index_list) > 1:
+            align_type = [1, 2]
+        else:
+            align_type = [1, 1]
 
         # choose sub-program
         if align_type == [2, 2]:
@@ -578,8 +602,8 @@ class AlignConfig(object):
         elif align_type == [1, 1]:
             self.init_fq_1_index_1(create_dirs)
         elif align_type == [2, 1]:
-            self.init_fq_n_index_1(create_dirs)
-            # self.init_fq_2_index_n(create_dirs) # force index_n
+            # self.init_fq_n_index_1(create_dirs)
+            self.init_fq_n_index_n(create_dirs) # force index_n? why?
         else:
             pass # no except
 
@@ -847,8 +871,11 @@ class AlignFqNIndexN(object):
         run in parallel
         """
         ## run in parallel !!!
-        with Pool(processes=self.parallel_jobs) as pool:
-            pool.map(self.run_fq_single, self.fq1)
+        # with Pool(processes=self.parallel_jobs) as pool:
+        #     pool.map(self.run_fq_single, self.fq1)
+
+        for fq in self.fq1:
+            self.run_fq_single(fq)
 
         ## report
         self.report()
@@ -857,6 +884,7 @@ class AlignFqNIndexN(object):
         return self.outdir
 
 
+# deprecated
 class AlignFqNIndex1(object):
     """
     Align 1 fq to N index
@@ -1164,6 +1192,7 @@ class AlignConfig2(object):
             'index_name': None,
             'smp_name': None,
             'extra_para': None,
+            'smp_name': None,
             'threads': 1,
             'parallel_jobs': 1,
             'overwrite': False,
@@ -1206,7 +1235,7 @@ class AlignConfig2(object):
             if len(self.fq1) > 1:
                 log.warning('str expected, str found, pick the 1 fastq: {}'.format(
                     next(iter(self.fq1), None)))
-            self.fq1 = file_abspath(next(iter(self.fq1), None))
+            self.fq1 = file_abspath(next(iter(self.fq1), None)) # 1st one
 
         if isinstance(self.fq1, str):
             self.fq1 = file_abspath(self.fq1)
@@ -1214,18 +1243,24 @@ class AlignConfig2(object):
             raise Exception('failed fq1: str expected, {} found'.format(
                 type(self.fq1).__name__))
 
+        if not file_exists(self.fq1):
+            raise ValueError('fq1, file not exists')
+
         ####################################################
         ## 2. for fastq2 files                             #
         if isinstance(self.fq2, list):
             if len(self.fq2) > 1:
                 log.warning('str expected, list found, pick the 1 fastq: {}'.format(
                     next(iter(self.fq2), None)))
-            self.fq2 = file_abspath(next(iter(self.fq2), None))
+            self.fq2 = file_abspath(next(iter(self.fq2), None)) # 1st one
 
         if self.fq2 is None:
             pass
         elif isinstance(self.fq2, str):
             self.fq2 = file_abspath(self.fq2)
+            # check exists
+            if not file_exists(self.fq2):
+                raise ValueError('fq2, file not exists')
         else:
             raise Exception('failed, fq2, None, str expected: {} found'.format(
                 type(self.fq2).__name__))
@@ -1261,7 +1296,6 @@ class AlignConfig2(object):
             '{:>30s}: {}'.format('fq1, str or list', self.fq1),
             '{:>30s}: {}'.format('fq2, str, list, None', self.fq2),
             '{:>30s}: {}'.format('smp_name, str or list', self.smp_name)])
-        print('!BBBB-1', self.fq1)
         if not all([chk0, chk1, chk2, chk3, chk4]):
             # raise Exception('failed, fq1, fq2: \nfq1: {}, \nfq2: {}'.format(
             #     self.fq1, self.fq2))
