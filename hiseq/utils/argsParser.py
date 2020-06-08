@@ -267,45 +267,6 @@ def add_motif_args():
     return parser
 
 
-def add_go_args():
-    """
-    Run GO analysis
-    """
-    parser = argparse.ArgumentParser(description='hiseq go -i gene.xls -g dm6 -o output')
-    parser.add_argument('-a', '--all', 
-        help='for all siginificantly changed genes, require "sig" in header, ignore: -i')
-    parser.add_argument('-i', '--input', 
-        help='directory of deseq_dir (a.vs.b), or path to file, contain genes')
-    parser.add_argument('-o', '--outdir', 
-        help='directory to save the GO results, only works if -i is gene_list') 
-    parser.add_argument('-g', '--genome',
-        help='genome name, scientific_name prefer, eg: Drosophila melanogaster, also support: dm3/hg19/mm10')
-    parser.add_argument('-f', '--foldChange', 
-        help='path to file, contains log2FoldChange, Gene')
-    parser.add_argument('-t', '--feature', default='gene',
-        help='feature of the analysis, only works if -i is deseq_dir')
-    parser.add_argument('-c', '--ctl-vs-exp', default='1',
-        choices=['1', '2'],
-        help='1=exp/ctl, 2=ctl/exp; default:1')
-    return parser
-    
-
-def add_rnaseq_cmp_args():
-    """
-    Run RNAseq compare
-    """
-    parser = argparse.ArgumentParser(description='hiseq rnaseq_cmp -a dirA -b dirB -f gene -o outdir')
-    parser.add_argument('-a', '--dirA', required=True,
-        help='deseq_dir (a.vs.b) for groupA')
-    parser.add_argument('-b', '--dirB', required=True,
-        help='deseq_dir (a.vs.b) for groupB')
-    parser.add_argument('-f', '--feature', default='gene',
-        help='feqture of the RNAseq, gene|te|..., ')
-    parser.add_argument('-o', '--outdir', default=None,
-        help='directory to save the results')
-    return parser
-
-
 def add_rnaseq_args():
     """
     Arguments for RNAseq pipeline
@@ -455,8 +416,6 @@ def add_rnaseq_args2():
     return parser
 
 
-
-
 def add_atac_args():
     """
     Arguments for ATAC-seq pipeline
@@ -531,4 +490,140 @@ def add_atac_args():
 
 
     return parser
+
+
+##################################
+## Utils
+def add_rnaseq_cmp_args():
+    """
+    Run RNAseq compare
+    """
+    parser = argparse.ArgumentParser(description='hiseq rnaseq_cmp -a dirA -b dirB -f gene -o outdir')
+    parser.add_argument('-a', '--dirA', required=True,
+        help='deseq_dir (a.vs.b) for groupA')
+    parser.add_argument('-b', '--dirB', required=True,
+        help='deseq_dir (a.vs.b) for groupB')
+    parser.add_argument('-f', '--feature', default='gene',
+        help='feqture of the RNAseq, gene|te|..., ')
+    parser.add_argument('-o', '--outdir', default=None,
+        help='directory to save the results')
+    return parser
+
+
+def add_go_args():
+    """
+    Run GO analysis
+    """
+    parser = argparse.ArgumentParser(description='hiseq go -i gene.xls -g dm6 -o output')
+    parser.add_argument('-a', '--all', 
+        help='for all siginificantly changed genes, require "sig" in header, ignore: -i')
+    parser.add_argument('-i', '--input', 
+        help='directory of deseq_dir (a.vs.b), or path to file, contain genes')
+    parser.add_argument('-o', '--outdir', 
+        help='directory to save the GO results, only works if -i is gene_list') 
+    parser.add_argument('-g', '--genome',
+        help='genome name, scientific_name prefer, eg: Drosophila melanogaster, also support: dm3/hg19/mm10')
+    parser.add_argument('-f', '--foldChange', 
+        help='path to file, contains log2FoldChange, Gene')
+    parser.add_argument('-t', '--feature', default='gene',
+        help='feature of the analysis, only works if -i is deseq_dir')
+    parser.add_argument('-c', '--ctl-vs-exp', default='1',
+        choices=['1', '2'],
+        help='1=exp/ctl, 2=ctl/exp; default:1')
+    return parser
+    
+
+def add_bam2bw_args():
+    """
+    required:
+    bam
+    outdir
+    binsize
+    """
+    parser = argparse.ArgumentParser(description='hiseq bam2bw -i bam -g dm6 -o outdir')
+    parser.add_argument('-i', '--bam', nargs='+', required=True,
+        help='BAM files')
+    parser.add_argument('-o', '--outdir', default=None,
+        help='output directory to save results')
+    parser.add_argument('-s', '--strandness', default=0, type=int,
+        help='the strandness, 0=no, 1=fwd, 2=rev, 12=fwd&rev, default: [0]')
+    parser.add_argument('-b', '--binsize', default=50, type=int,
+        help='set binSize for bigWig, default: [50]')
+    parser.add_argument('-g', '--genome', default=None,
+        help='choose genome for the bam file, default: [None]')
+    parser.add_argument('-gs', '--genome-size', dest='genome_size', default=None,
+        help='set the genome size for input genome, default: [None]' )
+    parser.add_argument('-r', '--reference', default=None,
+        help='the reference genome in fasta format, default: [None]')
+    parser.add_argument('-w', '--overwrite', action='store_true',
+        help='Whether overwrite exists files')
+    return parser
+
+
+def add_bam2cor_args():
+    """
+    required:
+    bam
+    outdir
+    """
+    parser = argparse.ArgumentParser(description='hiseq bam2cor -i bam -o outdir')
+    parser.add_argument('-i', '--bam', nargs='+', required=True,
+        help='BAM files')
+    parser.add_argument('-o', '--outdir', default=None,
+        help='output directory to save results')
+    parser.add_argument('-m', '--cor-method', default='pearson',
+        choices=['pearson', 'spearman'], 
+        help='method to calculate correlation, default: [pearson]')
+    parser.add_argument('-np', '--no-plot', dest='no_plot', action='store_false',
+        help='do not make plots')
+    parser.add_argument('-n', '--prefix', default=None,
+        help='set the prefix for output files, default: [multibam]')
+    parser.add_argument('-p', '--threads', default=1, type=int,
+        help='number of threads, default: [1]')
+    parser.add_argument('-b', '--binsize', default=50, type=int,
+        help='set binSize for bigWig, default: [50]')
+    parser.add_argument('-w', '--overwrite', action='store_true',
+        help='Whether overwrite exists files')
+    return parser
+
+
+def add_peak2idr_args():
+    """
+    required:
+    bam
+    outdir
+    """
+    parser = argparse.ArgumentParser(description='hiseq peak2idr -i peak -o outdir')
+    parser.add_argument('-i', '--peak', nargs='+', required=True,
+        help='peak files')
+    parser.add_argument('-o', '--outdir', default=None,
+        help='output directory to save results')
+    parser.add_argument('-m', '--cor-method', default='pearson',
+        choices=['pearson', 'spearman'], 
+        help='method to calculate correlation, default: [pearson]')
+    parser.add_argument('-w', '--overwrite', action='store_true',
+        help='Whether overwrite exists files')
+    return parser
+
+
+def add_bed2overlap_args():
+    """
+    required:
+            'peak': None,
+            'outdir': str(pathlib.Path.cwd()),
+            'flag': False,
+            'prefix': None,
+            'overwrite': False
+    """
+    parser = argparse.ArgumentParser(description='hiseq peak2idr -i peak -o outdir')
+    parser.add_argument('-i', '--peak', nargs='+', required=True,
+        help='peak files')
+    parser.add_argument('-o', '--outdir', default=None,
+        help='output directory to save results')
+    parser.add_argument('-n', '--prefix', default=None,
+        help='set the prefix for output files, default: [multibam]')
+    parser.add_argument('-w', '--overwrite', action='store_true',
+        help='Whether overwrite exists files')
+    return parser
+
 
