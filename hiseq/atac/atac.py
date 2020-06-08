@@ -125,7 +125,7 @@ class Atac(object):
         args = self.__dict__.copy()
         if self.atacseq_type == 'build_design':
             # RNAseqBuildDesign(**args).run()
-            ATACseqFqDesign(**args)
+            ATACseqFqDesignN(**args)
         elif self.atacseq_type == 'atacseq_from_design':
             AtacFromDesign(**args).run()
         elif self.atacseq_type == 'atacseq_snrn':
@@ -198,8 +198,8 @@ class AtacConfig(object):
 
         # 1st level: create design.json
         if self.build_design:
-            if self.fq1 is None:
-                log.warning('-1, -2 required for build-design')
+            if self.fq_dir is None and self.fq1 is None and self.rep_list is None:
+                log.warning('fq_dir, fq1, rep_list: required for build-design')
 
         # outdir
         self.outdir = file_abspath(self.outdir) # absolute path
@@ -364,7 +364,7 @@ class AtacConfig(object):
         print('!BBBB-1, init_build_design')
         if self.design is None:
             raise ValueError('--design required')
-        if self.fq1 is None and self.rep_list is None:
+        if self.fq_dir is None and self.fq1 is None and self.rep_list is None:
             raise ValueError('fq1 or rep_list, required')
         pass
 
@@ -1630,11 +1630,18 @@ class ATACseqFqDesign(object):
             if not self.rep_list is None:
                 log.info('ignore: rep_list')
             self.rep_list = None
+
+            # info
+            log.info('\n'.join(['Found fq files: fq1'] + self.fq1))
+
             # for paired reads
             if not self.fq2 is None:
                 tags = [self.fq_pair(a, b) for a, b in zip(self.fq1, self.fq2)]
                 if not all(tags):
                     raise ValueError('fq1, fq2 not matched')
+
+                log.info('\n'.join(['Found fq files: fq2'] + self.fq2))
+
 
             # for group
             if self.group is None:
@@ -1645,6 +1652,10 @@ class ATACseqFqDesign(object):
             if not self.fq1 is None:
                 log.info('ignore: fq1, fq2')
             self.fq1 = self.fq2 = None
+
+            # info
+            log.info('\n'.join(['Found rep_list'] +self.rep_list))
+
             tags = [AtacReader(i).is_atac_single() for i in self.rep_list]
             if not all(tags):
                 raise ValueError('rep_list, should be ATAC_single dir')
@@ -1731,4 +1742,100 @@ class ATACseqFqDesign(object):
 
         # save
         Json(args_pre).writer(self.design)
+
+
+class ATACseqFqDesignN(object):
+    """
+    Save multiple groups of files
+    """
+    def __init__(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+        self.init_args()
+        self.save()
+
+
+    def init_args(self):
+        """
+        required: fq_dir
+        """
+        args_init = {
+            'fq_dir': None,
+            'design': None,
+            'fq1': None,
+            'fq2': None,
+            'group': None,
+            'flag': True
+        }
+        for k, v in args_init.items():
+            if not hasattr(self, k):
+                setattr(self, k, v)
+
+        # check
+        if not self.fq_dir is None:
+            self.groups = self.list_fq_files(self.fq_dir)
+            if len(self.groups) < 1:
+                log.warning('fq_dir: fq files not found')
+                self.flag = False
+        else:
+            if self.fq1 is None:
+                log.warning('fq_dir, fq1; required')
+                self.flag = False
+            else:
+                group = fq_name_rmrep(self.fq1).pop()
+                self.groups = {
+                    group: {
+                        'fq1': self.fq1,
+                        'fq2': self.fq2,
+                        'rep_list': None,
+                        'group': group,
+                        'design': self.design
+                    }
+                }
+
+
+    def list_fq_files(self, x):
+        """
+        list all fq fies from path(x)
+        """
+        f1 = listfile(x, "*.fastq.gz")
+        f2 = listfile(x, "*.fq.gz")
+        f3 = listfile(x, "*.fastq")
+        f4 = listfile(x, "*.fq")
+        f_list = f1 + f2 + f3 + f4 # all fastq files
+        g_list = fq_name_rmrep(f_list)
+        g_list = sorted(list(set(g_list))) # unique
+
+        # split into groups
+        d = {} # 
+        for g in g_list:
+            # fq files for one group
+            g_fq = [i for i in f_list if g in os.path.basename(i)]
+            # for fq1, fq2
+            r1 = re.compile('1.f(ast)?q(.gz)?')
+            r2 = re.compile('1.f(ast)?q(.gz)?')
+            g_fq1 = [i for i in g_fq if r1.search(i)]
+            g_fq2 = [i for i in g_fq if r2.search(i)]
+            # save to dict
+            d[g] = {'fq1': g_fq1,
+                    'fq2': g_fq2,
+                    'group': g}
+
+        return d
+                    
+
+    def save(self):
+        if self.flag:
+            for g, d in self.groups.items():
+                args_local = {
+                    'fq1': d.get('fq1', None),
+                    'fq2': d.get('fq2', None),
+                    'rep_list': None,
+                    'group': g,
+                    'design': self.design
+                }
+                log.info('Build design: {}'.format(g))
+                ATACseqFqDesign(**args_local)
+
+
 

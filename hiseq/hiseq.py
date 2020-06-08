@@ -16,6 +16,7 @@ __version__ = '0.0.1'
 import os
 import sys
 import argparse
+from multiprocessing import Pool
 from .utils.argsParser import *
 from .qc.fastqc import Fastqc
 from .trim.trimmer import Trimmer
@@ -23,8 +24,10 @@ from .align.alignment import Alignment
 from .atac.atac import Atac
 from .rnaseq.rnaseq import RNAseq
 from .rnaseq.rnaseq_pipe import RNAseqPipe
-from .go.go import Go
 from .rnaseq.rnaseq_cmp import RnaseqCmp
+from .go.go import Go
+from .atac.atac_utils import Bam2bw, Bam2cor, PeakIDR, BedOverlap
+
 
 class Hiseq(object):
     """The 1st-level of command, choose which sub-command to use
@@ -278,7 +281,11 @@ class Hiseq(object):
         parser = add_bam2bw_args()
         args = parser.parse_args(sys.argv[2:])
         args = vars(args)
-        Bam2bw(**args).run()
+
+        for bam in args.get('bam', None):
+            args_local = args.copy()
+            args_local['bam'] = bam
+            Bam2bw(**args_local).run()
 
 
     def bam2cor(self):
