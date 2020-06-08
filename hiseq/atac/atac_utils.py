@@ -14,6 +14,7 @@ import shlex
 import subprocess
 from xopen import xopen
 from shutil import which
+from PIL import Image # pillow
 import pysam
 import pybedtools
 from collections import OrderedDict
@@ -187,6 +188,293 @@ def bed2gtf(infile, outfile):
                 'gene_id "{}"; gene_name "{}"'.format(fields[3], fields[3])
                 ]) + '\n')
     return outfile
+
+
+def bam2bigwig(bam, genome, outdir, strandness=0, binsize=1, overwrite=False, **kwargs):
+    """Convert bam to bigWig using deeptools
+    https://deeptools.readthedocs.io/en/develop/content/feature/effectiveGenomeSize.html
+    history:
+    1. Mappable sequence of a genome, see Table 1 in 
+       url: https://www.nature.com/articles/nbt.1518.pdf
+    2. effective genome size:
+        - non-N bases
+        - regions (of some size) uniquely mappable
+    3. UCSC
+    http://genomewiki.ucsc.edu/index.php/Hg19_100way_Genome_size_statistics
+    http://genomewiki.ucsc.edu/index.php/Hg38_7-way_Genome_size_statistics
+
+    !!! strandness
+    default: dUTP-based library (read2 is sense strand, read1 is anti-sense strand)
+    general RNA library: (NSR, small-RNA-library), read1 is sense, read2 is antisense
+    """
+    assert os.path.exists(bam)
+    assert isinstance(genome, str)
+    assert is_path(outdir)
+    assert isinstance(strandness, int)
+    assert isinstance(binsize, int)
+    assert isinstance(overwrite, bool)
+
+    bamcoverage = which('bamCoverage')
+    if bamcoverage is None:
+        raise ValueError('failed | program not found: bamCoverage')
+
+    # genome size
+    effsize = {'dm3': 162367812,
+               'dm6': 142573017,
+               'mm9': 2620345972,
+               'mm10': 2652783500,
+               'hg19': 2451960000,
+               'hg38': 2913022398,
+               'GRCh38': 2913022398}
+    genome_size = effsize.get(genome, 0) 
+
+    # create bam index
+    Bam(bam).index()
+
+    # prepare output
+    prefix = fq_name(bam)
+    bw_log = os.path.join(outdir, prefix + '.deeptools.log')
+    # log.info('create bigWig for: %s' % prefix)
+
+    
+    def run_run(cmd, bw, bw_log):
+        if os.path.exists(bw) and not overwrite:
+            log.info('file exists, bigWig skipped ...')
+        else:
+            with open(bw_log, 'wt') as w:
+                p1 = subprocess.run(shlex.split(cmd), stdout=w, stderr=w)
+        if not os.path.exists(bw):
+            raise ValueError('output file is missing, check log file: %s' % bw_log)
+
+
+    def run_fwd():
+        bw_fwd = os.path.join(outdir, prefix + '.fwd.bigWig')
+        bw_log = os.path.join(outdir, prefix + '.fwd.deeptools.log')
+        cmd = ' '.join([
+                '{} -b {} -o {}'.format(bamcoverage, bam, bw_fwd),
+                '--filterRNAstrand forward',
+                '--binSize {} --effectiveGenomeSize {}'.format(binsize, genome_size)])
+        run_run(cmd, bw_fwd, bw_log)
+
+
+    def run_rev():
+        bw_fwd = os.path.join(outdir, prefix + '.rev.bigWig')
+        bw_log = os.path.join(outdir, prefix + '.rev.deeptools.log')
+        cmd = ' '.join([
+                '{} -b {} -o {}'.format(bamcoverage, bam, bw_rev),
+                '--filterRNAstrand reverse',
+                '--binSize {} --effectiveGenomeSize {}'.format(binsize, genome_size)])
+        run_run(cmd, bw_rev, bw_log)
+
+
+    def run_non():
+        # non strandness
+        bw = os.path.join(outdir, prefix + '.bigWig')
+        bw_log = os.path.join(outdir, prefix + '.deeptools.log')
+        cmd = ' '.join([
+                '{} -b {} -o {}'.format(bamcoverage, bam, bw_rev),
+                '--binSize {} --effectiveGenomeSize {}'.format(binsize, genome_size)])
+        run_run(cmd, bw, bw_log)
+
+
+    if strandness == 0:
+        # non-strandness
+        run_non()
+    elif strandness == 12:
+        # fwd + rev
+        run_fwd()
+        run_rev()
+    elif strandness == 1:
+        # fwd
+        run_fwd()
+    elif strandness == 1:
+        # rev
+        run_rev()
+    else:
+        log.error('unkown strandness: [0|1|2|12], {} got'.format(strandness))
+
+
+def peak_FRiP(inbed, inbam, genome="dm6"):
+    """Calculate FRiP for ChIP-seq/ATAC-seq peaks
+    Fraction of reads in called peak regions
+    input: bam, peak (bed)
+
+    using: bedtools intersect 
+    count reads in peaks
+    """
+    # total map
+    # index
+    Bam(inbam).index()
+    bam = pysam.AlignmentFile(inbam)
+    total = bam.mapped
+
+    gsize = Genome(genome).get_fasize()
+    tmp = os.path.basename(inbed) + '.count.tmp'
+
+    try:
+        # reads in peak
+        cmd = ' '.join([
+            'sort -k1,1 -k2,2n {}'.format(inbed),
+            '| bedtools intersect -c -a - -b {} > {}'.format(inbam, tmp)])
+        run_shell_cmd(cmd)
+
+        x = 0 # init
+        with open(tmp) as r:
+            for line in r:
+                p = line.strip().split('\t').pop()
+                x += eval(p)
+
+        frip = '{:.2f}%'.format(x/total*100)
+
+        os.remove(tmp)
+    except:
+        log.warning('cal_FRiP() failed, skip {}'.format(inbed))
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        frip = x = total = 0 # init
+
+    return (frip, x, total)
+
+
+def frag_length(infile, outfile=None):
+    """
+    Calculate Fragment length from BAM file
+    BAM: column-9
+    """
+    d = {}
+    for read in pysam.AlignmentFile(infile):
+        if not read.is_proper_pair:
+            continue
+        if not read.is_read1:
+            continue
+        size = abs(read.tlen)
+        d[size] = d.get(size, 0) + 1
+    d = sorted(d.items(), key=lambda x: x[0])
+
+    if not outfile is None:
+        with open(outfile, 'wt') as w:
+            for k, v in d:
+                w.write(str(k) + '\t' + str(v) + '\n')
+
+    return d
+
+
+def peak_overlap(peak_list, outdir):
+    """
+    pybedtools.contrib.venn_maker.venn_maker(beds, names, figure_filename, script_filename, run=True)
+
+    make venn plot
+    """
+    assert is_path(outdir)
+
+    names = [os.path.splitext(i)[0] for i in peak_list]
+
+    # name
+    pname = os.path.basename(os.path.splitext(peak_list[0])[0])
+    pname = pname.rstrip('_peaks')
+    pname = pname.rstrip('_rep1')
+
+    # output
+    prefix = os.path.join(outdir, pname)
+    vennR = prefix + '.venn.R'
+    tiffout = prefix + '.venn.tiff'
+
+    # func
+    plt = pybedtools.contrib.venn_maker.venn_maker
+    plt(peak_list, names, figure_filename=tiffout, script_filename=vennR, run=True)
+
+
+def peak_overlap2(peak_list, outdir):
+    """
+    Calculate the overlap between bedA and bedB
+    nameA, nameB, countA, countB, overlap, pctA, pctB
+    make venn plot
+    """
+    if not len(peak_list) == 2:
+        raise ValueError('expect two BED files, but {} received.'.format(len(peak_list)))
+
+    assert is_path(outdir)
+
+    # name
+    pname = os.path.splitext(peak_list[0])[0]
+    pname = pname.rstrip('_peaks')
+    pname = pname.rstrip('_rep1')
+
+    # output
+    prefix = os.path.join(outdir, pname)
+    tiffout = prefix + '.overlap.png'
+
+    # number of overlaps
+    a = pybedtools.BedTool(peak_list[0])
+    b = pybedtools.BedTool(peak_list[1])
+
+    a_in_b = (a+b).count()
+    a_not_b = (a-b).count()
+    b_not_a = (b-a).count()
+
+    names = [os.path.splitext(i)[0] for i in peak_list]
+
+    # out
+    rpt = names + [a.count(), 
+    	b.count(), 
+    	a_in_b, 
+        '{:.2f}'.format(a_in_b/a.count()*100),
+        '{:.2f}'.format(a_in_b/b.count()*100)]
+    rpt = map(str, rpt) # convert to string
+
+    peak_overlap(peak_list, outdir)
+
+    return list(rpt)
+
+
+def peak_idr(peak_list, outdir):
+    """
+    Evaluate the IDR for peaks of MACS2
+    narrowPeak files, require sorted by -log10(p-value) (column-8)
+    ...
+    """
+    # filenames
+    pname = os.path.splitext(peak_list[0])[0]
+    pname = pname.rstrip('_peaks')
+    pname = pname.rstrip('_rep1')
+
+    # output
+    prefix = os.path.join(outdir, pname)
+    txt = prefix + '.idr.txt'
+    png = prefix + '.idr.txt.png'
+    log = prefix + '.idr.log'
+    is_path(outdir) # create dir
+
+    # sort narrowPeak by pvalue
+    def sortPval(infile, outfile):
+        cmd1 = 'sort -k8,8nr -o {} {}'.format(
+            outfile, infile)
+        run_shell_cmd(cmd1)
+
+    peakA = os.path.join(outdir, os.path.basename(peak_list[0]))
+    peakB = os.path.join(outdir, os.path.basename(peak_list[1]))
+    sortPval(peak_list[0], peakA)
+    sortPval(peak_list[1], peakB)
+
+    # cmd
+    idr = which('idr')
+    if idr is None:
+        raise Exception('Command not found: idr')
+
+    cmd = '{} --samples {} {} --input-file-type narrowPeak \
+        --rank p.value --output-file {} --plot \
+        --log-output-file {}'.format(
+            idr,
+            peakA,
+            peakB,
+            txt,
+            log)
+    if os.path.exists(txt) and not overwrite is True:
+        log('file exists, skip idr : {}'.format(pname))
+    else:
+        run_shell_cmd(cmd)
+
+    return txt
 
 
 class Bam2bw(object):
@@ -381,294 +669,404 @@ class Bam2bw(object):
             log.error('unknown strandness')
 
 
-def bam2bigwig(bam, genome, outdir, strandness=0, binsize=1, overwrite=False, **kwargs):
-    """Convert bam to bigWig using deeptools
-    https://deeptools.readthedocs.io/en/develop/content/feature/effectiveGenomeSize.html
-    history:
-    1. Mappable sequence of a genome, see Table 1 in 
-       url: https://www.nature.com/articles/nbt.1518.pdf
-    2. effective genome size:
-        - non-N bases
-        - regions (of some size) uniquely mappable
-    3. UCSC
-    http://genomewiki.ucsc.edu/index.php/Hg19_100way_Genome_size_statistics
-    http://genomewiki.ucsc.edu/index.php/Hg38_7-way_Genome_size_statistics
-
-    !!! strandness
-    default: dUTP-based library (read2 is sense strand, read1 is anti-sense strand)
-    general RNA library: (NSR, small-RNA-library), read1 is sense, read2 is antisense
+class Bam2cor(object):
     """
-    assert os.path.exists(bam)
-    assert isinstance(genome, str)
-    assert is_path(outdir)
-    assert isinstance(strandness, int)
-    assert isinstance(binsize, int)
-    assert isinstance(overwrite, bool)
+    Compute correlation between replicates: 2 or more
 
-    bamcoverage = which('bamCoverage')
-    if bamcoverage is None:
-        raise ValueError('failed | program not found: bamCoverage')
+    input: bam
+    output: count_matrix
+            cor_matrix
+            cor_plot
+            ...
 
-    # genome size
-    effsize = {'dm3': 162367812,
-               'dm6': 142573017,
-               'mm9': 2620345972,
-               'mm10': 2652783500,
-               'hg19': 2451960000,
-               'hg38': 2913022398,
-               'GRCh38': 2913022398}
-    genome_size = effsize.get(genome, 0) 
-
-    # create bam index
-    Bam(bam).index()
-
-    # prepare output
-    prefix = fq_name(bam)
-    bw_log = os.path.join(outdir, prefix + '.deeptools.log')
-    # log.info('create bigWig for: %s' % prefix)
-
+    window = 500bp
     
-    def run_run(cmd, bw, bw_log):
-        if os.path.exists(bw) and not overwrite:
-            log.info('file exists, bigWig skipped ...')
+    eg:
+    multiBamSummary bins --binSize 500 --smartLabels -o *bam.npz \
+        --outRawCounts *counts.tab -b bam
+    """
+    def __init__(self, **kwargs):
+        # update self (obj)
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+        # update, defaults
+        self.init_args()
+        args_logger(self.__dict__, self.config_txt)
+
+
+    def init_args(self):
+        args_init = {
+            'multibamsummary': shutil.which('multiBamSummary'),
+            'plotcorrelation': shutil.which('plotCorrelation'),
+            'plotpca': shutil.which('plotPCA'),
+            'cor_method': 'pearson',
+            'make_plot': True,
+            'bam': None,
+            'bam_list': '',
+            'outdir': str(pathlib.Path.cwd()),
+            'prefix': None,
+            'binsize': 500,
+            'threads': 1,
+            'overwrite': False,
+            'config_txt': os.path.join(self.outdir, 'arguments.txt'),
+            'flag': True # whether run/not
+        }
+        # update
+        for k, v in args_init.items():
+            if hasattr(self, k):
+                continue
+            setattr(self, k, v)
+
+        # cmd
+        if getattr(self, 'multibamsummary', None) is None:
+            self.flag = False # do not run
+        if getattr(self, 'plotcorrelation', None) is None:
+            self.flag = False # do not run
+        if getattr(self, 'plotpca', None) is None:
+            self.flag = False # do not run
+
+        # outname
+        if self.prefix is None:
+            prefix = 'multibam'
+
+        # outdir
+        check_path(self.outdir)
+
+        # bam
+        if self.bam is None:
+            self.flag = False
+        elif isinstance(self.bam, list):
+            if len(self.bam) > 1:
+                pass
+            else:
+                self.flag = False
+                log.warning('bam: >1 bam files required')
         else:
-            with open(bw_log, 'wt') as w:
-                p1 = subprocess.run(shlex.split(cmd), stdout=w, stderr=w)
-        if not os.path.exists(bw):
-            raise ValueError('output file is missing, check log file: %s' % bw_log)
+            self.flag = False
+            log.warning('bam: list expected, {} got'.format(type(self.bam).__name__))
+
+        if not all(file_exists(self.bam)):
+            self.flag = False
+            log.warning('bam file not exists')
+
+        self.bam_list = ' '.join(self.bam) # string
+
+        # index
+        [Bam(b).index() for b in self.bam] # 
+
+        # files
+        self.config_txt = os.path.join(self.outdir, 'arguments.txt')
+        self.bam_npz = os.path.join(self.outdir, prefix + '.npz')        
+        self.log = os.path.join(self.outdir, prefix + '.deeptools.log')
+        # heatmap
+        self.plot_cor_heatmap_png = os.path.join(self.outdir, prefix + '.cor_heatmap.png')
+        self.log_heatmap = os.path.join(self.outdir, prefix + '.cor_heatmap.log')
+        self.cor_counts = os.path.join(self.outdir, prefix + '.cor_counts.tab')        
+        self.cor_matrix = os.path.join(self.outdir, prefix + '.cor.matrix')
+        # PCA plot
+        self.plot_cor_pca_png = os.path.join(self.outdir, prefix + '.cor_PCA.png')
+        self.log_pca = os.path.join(self.outdir, prefix + '.cor_PCA.log')        
 
 
-    def run_fwd():
-        bw_fwd = os.path.join(outdir, prefix + '.fwd.bigWig')
-        bw_log = os.path.join(outdir, prefix + '.fwd.deeptools.log')
+    def bam_summary(self):
         cmd = ' '.join([
-                '{} -b {} -o {}'.format(bamcoverage, bam, bw_fwd),
-                '--filterRNAstrand forward',
-                '--binSize {} --effectiveGenomeSize {}'.format(binsize, genome_size)])
-        run_run(cmd, bw_fwd, bw_log)
+            '{} bins --binSize {}'.format(self.multibamsummary, self.binsize),
+            '-p {}'.format(self.threads),
+            '--smartLabels -o {}'.format(self.bam_npz),
+            '--outRawCounts {}'.format(self.cor_counts),
+            '--bamfiles {}'.format(self.bam_list)
+        ])
+        cmd_txt = os.path.join(self.outdir, 'cmd.sh')
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+
+        if os.path.exists(self.bam_npz) and not self.overwrite:
+            log.warning('file exists: {}'.format(self.bam_npz))
+        else:
+            stdout, stderr = run_shell_cmd(cmd)
+            with open(self.log, 'wt') as w:
+                w.write(stdout + '\n' + stderr + '\n')
+
+        # check
+        if not os.path.exists(self.bam_npz):
+            log.error('Bam2cor() failed, output file not found: {}'.format(self.bam_npz))
 
 
-    def run_rev():
-        bw_fwd = os.path.join(outdir, prefix + '.rev.bigWig')
-        bw_log = os.path.join(outdir, prefix + '.rev.deeptools.log')
+    def cor_heatmap_plot(self):
+        """
+        plotCorrelation()
+        """
         cmd = ' '.join([
-                '{} -b {} -o {}'.format(bamcoverage, bam, bw_rev),
-                '--filterRNAstrand reverse',
-                '--binSize {} --effectiveGenomeSize {}'.format(binsize, genome_size)])
-        run_run(cmd, bw_rev, bw_log)
+            '{} -in {}'.format(self.plotcorrelation, self.bam_npz),
+            '--corMethod {}'.format(self.cor_method),
+            '--plotTitle "{} Correlation"'.format(self.cor_method),
+            '--whatToPlot heatmap --colorMap RdYlBu --plotNumbers',
+            '-o {}'.format(self.plot_cor_heatmap_png),
+            '--outFileCorMatrix {}'.format(self.cor_matrix)
+            ])
+
+        cmd_txt = os.path.join(self.outdir, 'cmd_cor_plot.sh')
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+
+        if os.path.exists(self.plot_cor_heatmap_png) and not self.overwrite:
+            log.warning('file exists: {}'.format(self.plot_cor_heatmap_png))
+        else:
+            stdout, stderr = run_shell_cmd(cmd)
+            with open(self.log_heatmap, 'wt') as w:
+                w.write(stdout + '\n' + stderr + '\n')
+
+        # check
+        if not os.path.exists(self.plot_cor_heatmap_png):
+            log.error('Bam2cor() failed, output file not found: {}'.format(self.plot_cor_heatmap_png))
 
 
-    def run_non():
-        # non strandness
-        bw = os.path.join(outdir, prefix + '.bigWig')
-        bw_log = os.path.join(outdir, prefix + '.deeptools.log')
+    def cor_pca_plot(self):
+        """
+        plotPCA:
+        Make PCA plot, for bam_summary
+        correlation
+        """
         cmd = ' '.join([
-                '{} -b {} -o {}'.format(bamcoverage, bam, bw_rev),
-                '--binSize {} --effectiveGenomeSize {}'.format(binsize, genome_size)])
-        run_run(cmd, bw, bw_log)
+            '{} -in {}'.format(self.plotpca, self.bam_npz),
+            '-o {}'.format(self.plot_cor_pca_png),
+            '-T "PCA for Bam files"'
+            ])
+        cmd_txt = os.path.join(self.outdir, 'cmd.pca.sh')
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+
+        if os.path.exists(self.plot_cor_pca_png) and not self.overwrite:
+            log.warning('file exists: {}'.format(self.bam_npz))
+        else:
+            stdout, stderr = run_shell_cmd(cmd)
+            with open(self.log_pca, 'wt') as w:
+                w.write(stdout + '\n' + stderr + '\n')
+
+        # check
+        if not os.path.exists(self.plot_cor_pca_png):
+            log.error('Bam2cor() failed, output file not found: {}'.format(self.plot_cor_pca_png))
 
 
-    if strandness == 0:
-        # non-strandness
-        run_non()
-    elif strandness == 12:
-        # fwd + rev
-        run_fwd()
-        run_rev()
-    elif strandness == 1:
-        # fwd
-        run_fwd()
-    elif strandness == 1:
-        # rev
-        run_rev()
-    else:
-        log.error('unkown strandness: [0|1|2|12], {} got'.format(strandness))
+    def run(self):
+        # run bam summary
+        self.bam_summary() 
+
+        # plot
+        if self.make_plot is True:
+            self.cor_heatmap_plot()
+            self.cor_pca_plot()
 
 
-def cal_FRiP(inbed, inbam, genome="dm6"):
-    """Calculate FRiP for ChIP-seq/ATAC-seq peaks
-    Fraction of reads in called peak regions
-    input: bam, peak (bed)
-
-    using: bedtools intersect 
-    count reads in peaks
+class PeakIDR(object):
     """
-    # total map
-    # index
-    Bam(inbam).index()
-    bam = pysam.AlignmentFile(inbam)
-    total = bam.mapped
+    peak
+    outdir
 
-    gsize = Genome(genome).get_fasize()
-    tmp = os.path.basename(inbed) + '.count.tmp'
+    Check IDR
+    Irreproducibility Discovery Rate
+    """
+    def __init__(self, **kwargs):
+        # update self (obj)
+        for k, v in kwargs.items():
+            setattr(self, k, v)
 
-    try:
-        # reads in peak
+        # update, defaults
+        self.init_args()
+        args_logger(self.__dict__, self.config_txt)
+
+
+    def init_args(self):
+        args_init = {
+            'peak': None,
+            'idr_cmd': shutil.which('idr'),
+            'outdir': str(pathlib.Path.cwd()),
+            'input_type': 'narrowPeak', # broadPeak, bed, gff
+            'cor_method': 'pearson', # spearman
+            'overwrite': False,
+            'flag': True # run all
+        }
+        # update
+        for k, v in args_init.items():
+            if not hasattr(self, k):
+                setattr(self, k, v)
+
+        # file
+        self.config_txt = os.path.join(self.outdir, 'arguments.txt')
+
+        # outdir
+        check_path(self.outdir)
+
+        # cmd
+        if getattr(self, 'idr_cmd', None) is None:
+            self.flag = False # do not run
+            log.warning('idr: command not found')
+
+        # peak
+        if isinstance(self.peak, list):
+            if len(self.peak) > 1:
+                pass
+            else:
+                self.flag = False
+                log.warning('peak: at least 2 peak files required')
+        else:
+            self.flag = False
+            log.warning('peak: list expected, {} got'.format(type(self.peak).__name__))
+
+        if not all(file_exists(self.peak)):
+            self.flag = False
+            log.warning('peak: file not exists')
+
+
+    def idr(self, peakA=None, peakB=None):
+        """
+        Compute IDR for two group of peaks
+        """
+        if not peakA is None or not peakB is None:
+            pass
+        else:
+            if len(self.peak) >= 2:
+                peakA, peakB = self.peak[:2]
+            else:
+                log.warning('at least 2 peaks required for idr')
+
+        # prefix
+        pA = os.path.splitext(os.path.basename(peakA))[0] #
+        pB = os.path.splitext(os.path.basename(peakB))[0] #
+        prefix = '{}.vs.{}.idr'.format(pA, pB)
+
+        # files
+        cmd_txt = os.path.join(self.outdir, prefix + '.cmd.sh')
+        idr_txt = os.path.join(self.outdir, prefix + '.txt')
+        idr_png = idr_txt + '.png' # os.path.join(self.outdir, prefix + '.png')
+        idr_log = os.path.join(self.outdir, prefix + '.log')
+
         cmd = ' '.join([
-            'sort -k1,1 -k2,2n {}'.format(inbed),
-            '| bedtools intersect -c -a - -b {}'.foramt(inbam),
-            "| awk '{s+=$NF}END{print s}' > {}".format(tmp)])
-        run_shell_cmd(cmd)
+            '{} --samples {} {}'.format(self.idr_cmd, peakA, peakB),
+            '--input-file-type {}'.format(self.input_type),
+            '--plot', #.format(idr_png),
+            '--output-file {}'.format(idr_txt),
+            '--log-output-file {}'.format(idr_log)
+            ])
 
-         # "sort -k1,1 -k2,2n {} | \
-         #    bedtools intersect -c -a - -b {} | \
-         #    {} > {}".format(
-         #    inbed, inbam, "awk '{s+=$NF}END{print s}'", tmp)        
-        # run_shell_cmd(p)
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
 
-        with open(tmp) as r:
-            n = eval(r.readline().strip())
-        frip = '{:.2f}%'.format(n/total*100)
+        if os.path.exists(idr_png) and not self.overwrite:
+            log.warning('file exists: {}'.format(idr_png))
+        else:
+            stdout, stderr = run_shell_cmd(cmd)
+            with open(idr_log, 'wt') as w:
+                w.write(stdout + '\n' + stderr + '\n')
 
-        # clean
-        os.remove(tmp)
-    except:
-        log.warning('cal_FRiP() failed, skip {}'.format(inbed))
-        if os.path.exists(tmp):
-            os.remove(tmp)
-        frip = n = total = 0 # init
-
-    return (frip, n, total)
+        # check
+        if not os.path.exists(idr_png):
+            log.error('Peak().idr() failed, output file not found: {}'.format(idr_png))
 
 
-def frag_length(infile, outfile=None):
+    def run(self):
+        """
+        Run A, B
+        """
+        if self.flag is False:
+            log.error('Peak().idr() argumnets failed')
+        else:
+            for peakA, peakB in combinations(self.peak, 2):
+                self.idr(peakA, peakB)
+    
+
+class BedOverlap(object):
     """
-    Calculate Fragment length from BAM file
-    BAM: column-9
-    """
-    d = {}
-    for read in pysam.AlignmentFile(infile):
-        if not read.is_proper_pair:
-            continue
-        if not read.is_read1:
-            continue
-        size = abs(read.tlen)
-        d[size] = d.get(size, 0) + 1
-    d = sorted(d.items(), key=lambda x: x[0])
+    pybedtools API, to calculate the overlaps between bed files
 
-    if not outfile is None:
-        with open(outfile, 'wt') as w:
-            for k, v in d:
-                w.write(str(k) + '\t' + str(v) + '\n')
-
-    return d
-
-
-def peak_overlap(peak_list, outdir):
-    """
     pybedtools.contrib.venn_maker.venn_maker(beds, names, figure_filename, script_filename, run=True)
 
     make venn plot
     """
-    assert is_path(outdir)
-
-    names = [os.path.splitext(i)[0] for i in peak_list]
-
-    # name
-    pname = os.path.basename(os.path.splitext(peak_list[0])[0])
-    pname = pname.rstrip('_peaks')
-    pname = pname.rstrip('_rep1')
-
-    # output
-    prefix = os.path.join(outdir, pname)
-    vennR = prefix + '.venn.R'
-    tiffout = prefix + '.venn.tiff'
-
-    # func
-    plt = pybedtools.contrib.venn_maker.venn_maker
-    plt(peak_list, names, figure_filename=tiffout, script_filename=vennR, run=True)
+    def __init__(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+        self.init_args()
 
 
-def peak_overlap2(peak_list, outdir):
-    """
-    Calculate the overlap between bedA and bedB
-    nameA, nameB, countA, countB, overlap, pctA, pctB
-    make venn plot
-    """
-    if not len(peak_list) == 2:
-        raise ValueError('expect two BED files, but {} received.'.format(len(peak_list)))
+    def init_args(self):
+        """
+        required: args
+        """
+        args_init = {
+            'peak': None,
+            'outdir': str(pathlib.Path.cwd()),
+            'flag': False,
+            'prefix': None,
+            'overwrite': False
+        }
+        for k, v in args_init.items():
+            if not hasattr(self, k):
+                setattr(self, k, v)
 
-    assert is_path(outdir)
+        # outdir
+        check_path(self.outdir)
 
-    # name
-    pname = os.path.splitext(peak_list[0])[0]
-    pname = pname.rstrip('_peaks')
-    pname = pname.rstrip('_rep1')
+        # peak
+        if isinstance(self.peak, list):
+            if len(self.peak) < 2:
+                self.flag = False
+                log.warning('peak: >1 files required')
+        else:
+            self.flag = False
+            log.warning('peak: list expected, {} got'.format(type(self.peak).__name__))
 
-    # output
-    prefix = os.path.join(outdir, pname)
-    tiffout = prefix + '.overlap.png'
+        if not all(file_exists(self.peak)):
+            self.flag = False
+            log.error('peak: file not exists')
 
-    # number of overlaps
-    a = pybedtools.BedTool(peak_list[0])
-    b = pybedtools.BedTool(peak_list[1])
+        # names
+        self.peak_names = [os.path.splitext(i)[0] for i in fq_name(self.peak)]
+        if self.prefix is None:
+            self.prefix = 'peak_overlap'
 
-    a_in_b = (a+b).count()
-    a_not_b = (a-b).count()
-    b_not_a = (b-a).count()
-
-    names = [os.path.splitext(i)[0] for i in peak_list]
-
-    # out
-    rpt = names + [a.count(), 
-    	b.count(), 
-    	a_in_b, 
-        '{:.2f}'.format(a_in_b/a.count()*100),
-        '{:.2f}'.format(a_in_b/b.count()*100)]
-    rpt = map(str, rpt) # convert to string
-
-    peak_overlap(peak_list, outdir)
-
-    return list(rpt)
+        # files
+        self.tiff = os.path.join(self.outdir, self.prefix + '.tiff')
+        self.png = os.path.join(self.outdir, self.prefix + '.png')
+        self.venn_R = os.path.join(self.outdir, self.prefix + '.venn.R')
 
 
-def peak_idr(peak_list, outdir):
-    """
-    Evaluate the IDR for peaks of MACS2
-    narrowPeak files, require sorted by -log10(p-value) (column-8)
-    ...
-    """
-    # filenames
-    pname = os.path.splitext(peak_list[0])[0]
-    pname = pname.rstrip('_peaks')
-    pname = pname.rstrip('_rep1')
+    def overlap(self):
+        """
+        Overlap between A and B, ...
+        """
+        plt = pybedtools.contrib.venn_maker.venn_maker
+        if os.path.exists(self.tiff) and self.overwrite is False:
+            log.info('overlap file exists, skipped ...')
+        else:
+            log.info('Calculating overlaps between BED files')
+            plt(self.peak, self.peak_names, figure_filename=self.tiff, 
+                script_filename=self.venn_R, run=True)
 
-    # output
-    prefix = os.path.join(outdir, pname)
-    txt = prefix + '.idr.txt'
-    png = prefix + '.idr.txt.png'
-    log = prefix + '.idr.log'
-    is_path(outdir) # create dir
+        if os.path.exists(self.png) and self.overwrite is False:
+            pass
+        else:
+            # convert to png
+            log.info('Coverting Tiff to png')
+            convert_image(self.tiff, 'PNG')
 
-    # sort narrowPeak by pvalue
-    def sortPval(infile, outfile):
-        cmd1 = 'sort -k8,8nr -o {} {}'.format(
-            outfile, infile)
-        run_shell_cmd(cmd1)
+ 
+    def run(self):
+        self.overlap()
 
-    peakA = os.path.join(outdir, os.path.basename(peak_list[0]))
-    peakB = os.path.join(outdir, os.path.basename(peak_list[1]))
-    sortPval(peak_list[0], peakA)
-    sortPval(peak_list[1], peakB)
 
-    # cmd
-    idr = which('idr')
-    if idr is None:
-        raise Exception('Command not found: idr')
+def convert_image(x, out_fmt='PNG'):
+    if not out_fmt in ['PNG', 'JPEG', "TIFF"]:
+        log.error('out_fmt: [PNG|JPEG|TIFF], {} got'.format(out_fmt))
 
-    cmd = '{} --samples {} {} --input-file-type narrowPeak \
-        --rank p.value --output-file {} --plot \
-        --log-output-file {}'.format(
-            idr,
-            peakA,
-            peakB,
-            txt,
-            log)
-    if os.path.exists(txt) and not overwrite is True:
-        log('file exists, skip idr : {}'.format(pname))
+    out_ext = out_fmt.lower()
+    out_img = os.path.splitext(x)[0] + '.' + out_ext
+
+    # read/write
+    if os.path.exists(out_img):
+        log.warning('file exists, skipping ...: {}'.format(out_img))
     else:
-        run_shell_cmd(cmd)
-
-    return txt
-
+        img = Image.open(x)
+        img.save(out_img, out_fmt)
 
