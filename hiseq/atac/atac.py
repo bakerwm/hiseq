@@ -697,6 +697,29 @@ class AtacFromDesign(object):
         AtacS1Rn(**config_local.__dict__).run()
 
 
+    def report(self):
+        """
+        Create report for multiple samples
+        html
+        """
+        pkg_dir = os.path.dirname(hiseq.__file__)
+        qc_reportR = os.path.join(pkg_dir, 'bin', 'atac_report.R')
+        atac_report_html = os.path.join(
+            self.report_dir, 
+            'atac_report.html')
+
+        cmd = 'Rscript {} {} {}'.format(
+            qc_reportR,
+            self.project_dir,
+            self.report_dir)
+
+        cmd_txt = os.path.join(self.report_dir, 'cmd.sh')
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+    
+        run_shell_cmd(cmd) 
+
+
     def run(self):
         """
         Run multiple samples in parallel
@@ -713,6 +736,9 @@ class AtacFromDesign(object):
         # alternative
         for g in group_list:
             self.run_group_single(g)
+
+        # report
+        self.report()
 
 
 class AtacSnRn(object):
