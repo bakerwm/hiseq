@@ -1839,7 +1839,7 @@ class ATACseqFqDesignN(object):
             g_fq = [i for i in f_list if g in os.path.basename(i)]
             # for fq1, fq2
             r1 = re.compile('1.f(ast)?q(.gz)?')
-            r2 = re.compile('1.f(ast)?q(.gz)?')
+            r2 = re.compile('2.f(ast)?q(.gz)?')
             g_fq1 = [i for i in g_fq if r1.search(i)]
             g_fq2 = [i for i in g_fq if r2.search(i)]
             # save to dict
