@@ -710,7 +710,7 @@ class AtacFromDesign(object):
 
         cmd = 'Rscript {} {} {}'.format(
             qc_reportR,
-            self.project_dir,
+            self.outdir,
             self.report_dir)
 
         cmd_txt = os.path.join(self.report_dir, 'cmd.sh')
