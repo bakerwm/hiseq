@@ -125,7 +125,7 @@ class Atac(object):
         args = self.__dict__.copy()
         if self.atacseq_type == 'build_design':
             # RNAseqBuildDesign(**args).run()
-            ATACseqFqDesign(**args)
+            ATACseqFqDesignN(**args)
         elif self.atacseq_type == 'atacseq_from_design':
             AtacFromDesign(**args).run()
         elif self.atacseq_type == 'atacseq_snrn':
@@ -198,8 +198,8 @@ class AtacConfig(object):
 
         # 1st level: create design.json
         if self.build_design:
-            if self.fq1 is None:
-                log.warning('-1, -2 required for build-design')
+            if self.fq_dir is None and self.fq1 is None and self.rep_list is None:
+                log.warning('fq_dir, fq1, rep_list: required for build-design')
 
         # outdir
         self.outdir = file_abspath(self.outdir) # absolute path
@@ -364,7 +364,7 @@ class AtacConfig(object):
         print('!BBBB-1, init_build_design')
         if self.design is None:
             raise ValueError('--design required')
-        if self.fq1 is None and self.rep_list is None:
+        if self.fq_dir is None and self.fq1 is None and self.rep_list is None:
             raise ValueError('fq1 or rep_list, required')
         pass
 
@@ -492,6 +492,11 @@ class AtacConfig(object):
             'peak_dir': os.path.join(self.project_dir, 'peak'),
             'motif_dir': os.path.join(self.project_dir, 'motif'),
             'qc_dir': os.path.join(self.project_dir, 'qc'),
+            'qc_lendist_dir': os.path.join(self.project_dir, 'qc', 'lendist'),
+            'qc_frip_dir': os.path.join(self.project_dir, 'qc', 'FRiP'),
+            'qc_idr_dir': os.path.join(self.project_dir, 'qc', 'IDR'),
+            'qc_cor_dir': os.path.join(self.project_dir, 'qc', 'cor'),
+            'qc_overlap_dir': os.path.join(self.project_dir, 'qc', 'overlap'),
             'report_dir': os.path.join(self.project_dir, 'report'),
             ## files
             'config_txt': os.path.join(self.config_dir, 'arguments.txt'),
@@ -500,14 +505,15 @@ class AtacConfig(object):
             'bam': os.path.join(self.project_dir, 'bam_files', self.project_name + '.bam'),
             'peak': os.path.join(self.project_dir, 'peak', self.project_name + '_peaks.narrowPeak'),
             'bw': os.path.join(self.project_dir, 'bw_files', self.project_name + '.bigWig'),
-            'lendist_txt': os.path.join(self.project_dir, 'qc', 'length_distribution.txt'),
-            'lendist_pdf': os.path.join(self.project_dir, 'qc', 'length_distribution.pdf'),
-            'frip_txt': os.path.join(self.project_dir, 'qc', 'FRiP.txt'),
-            'cor_npz': os.path.join(self.project_dir, 'qc', 'cor.bam.npz'),
-            'cor_counts': os.path.join(self.project_dir, 'qc', 'cor.bam.counts.tab'),
-            'idr_txt': os.path.join(self.project_dir, 'qc', 'dir.txt'),
-            'idr_log': os.path.join(self.project_dir, 'qc', 'dir.log'),
-            'peak_overlap_pdf': os.path.join(self.project_dir, 'qc', 'peak_overlap_pdf')        
+            ## qc files
+            'lendist_txt': os.path.join(self.project_dir, 'qc', 'lendist', 'length_distribution.txt'),
+            'lendist_pdf': os.path.join(self.project_dir, 'qc', 'lendist', 'length_distribution.pdf'),
+            'frip_txt': os.path.join(self.project_dir, 'qc', 'FRiP', 'FRiP.txt'),
+            'cor_npz': os.path.join(self.project_dir, 'qc', 'cor', 'cor.bam.npz'),
+            'cor_counts': os.path.join(self.project_dir, 'qc', 'cor', 'cor.bam.counts.tab'),
+            'idr_txt': os.path.join(self.project_dir, 'qc', 'IDR', 'dir.txt'),
+            'idr_log': os.path.join(self.project_dir, 'qc', 'IDR', 'dir.log'),
+            'peak_overlap_pdf': os.path.join(self.project_dir, 'qc', 'overlap', 'peak_overlap_pdf')        
             }
         self.update(auto_files, force=True) # key
 
@@ -521,7 +527,12 @@ class AtacConfig(object):
                 self.peak_dir, 
                 self.motif_dir,
                 self.qc_dir, 
-                self.report_dir])
+                self.report_dir,
+                os.path.join(self.qc_dir, 'lendist'),
+                os.path.join(self.qc_dir, 'FRiP'),
+                os.path.join(self.qc_dir, 'cor'),
+                os.path.join(self.qc_dir, 'IDR'),
+                os.path.join(self.qc_dir, 'overlap')])
 
 
     def init_atac_s1r1(self, create_dirs=True):
@@ -573,6 +584,8 @@ class AtacConfig(object):
             'peak_dir': os.path.join(self.project_dir, 'peak'),
             'motif_dir': os.path.join(self.project_dir, 'motif'),
             'qc_dir': os.path.join(self.project_dir, 'qc'),
+            'qc_lendist_dir': os.path.join(self.project_dir, 'qc', 'lendist'),
+            'qc_frip_dir': os.path.join(self.project_dir, 'qc', 'FRiP'),
             'report_dir': os.path.join(self.project_dir, 'report'),
             ## files
             'config_txt': os.path.join(self.config_dir, 'arguments.txt'),
@@ -586,9 +599,10 @@ class AtacConfig(object):
             'bed': os.path.join(self.project_dir, 'bam_files', self.project_name + '.bed'),
             'peak': os.path.join(self.project_dir, 'peak', self.project_name + '_peaks.narrowPeak'),
             'bw': os.path.join(self.project_dir, 'bw_files', self.project_name + '.bigWig'),
-            'lendist_txt': os.path.join(self.project_dir, 'qc', 'length_distribution.txt'),
-            'lendist_pdf': os.path.join(self.project_dir, 'qc', 'length_distribution.pdf'),
-            'frip_txt': os.path.join(self.project_dir, 'qc', 'FRiP.txt'),
+            # qc
+            'lendist_txt': os.path.join(self.project_dir, 'qc', 'lendist', 'length_distribution.txt'),
+            'lendist_pdf': os.path.join(self.project_dir, 'qc', 'lendist', 'length_distribution.pdf'),
+            'frip_txt': os.path.join(self.project_dir, 'qc', 'FRiP', 'FRiP.txt'),
             }
         self.update(auto_files, force=True) # key
 
@@ -598,8 +612,8 @@ class AtacConfig(object):
         self.raw_fq_list.append(fq2_raw)
 
         ## clean data
-        self.clean_fq_list = [os.path.join(self.clean_dir, fq_name(self.fq1, pe_fix=True) + '.fq.gz')]
-        fq2_clean = None if self.fq2 is None else os.path.join(self.clean_dir, fq_name(self.fq2, pe_fix=True) + '.fq.gz')
+        self.clean_fq_list = [os.path.join(self.clean_dir, fq_name(self.fq1, pe_fix=False) + '.fq.gz')]
+        fq2_clean = None if self.fq2 is None else os.path.join(self.clean_dir, fq_name(self.fq2, pe_fix=False) + '.fq.gz')
         self.clean_fq_list.append(fq2_clean)
 
         if create_dirs:
@@ -614,7 +628,9 @@ class AtacConfig(object):
                 self.peak_dir, 
                 self.motif_dir,
                 self.qc_dir, 
-                self.report_dir])
+                self.report_dir,
+                os.path.join(self.qc_dir, 'lendist'),
+                os.path.join(self.qc_dir, 'FRiP') ])
 
 
 class AtacFromDesign(object):
@@ -844,33 +860,6 @@ class AtacS1Rn(object):
         chk1 = args_logger(self.__dict__, self.config_txt)
 
 
-    def get_bam_list(self):
-        """
-        get the proper_mapped.bam files
-        """
-        a = []
-        for fq in self.fq1:
-            fq_dir = os.path.join(self.outdir, fq_name(fq, pe_fix=True))
-            a.append(AtacReader(fq_dir).args.get('bam'))
-            # smp_name = fq_name(fq, pe_fix=True)
-            # bam = os.path.join(self.outdir, smp_name, 'bam_files', smp_name + '.proper_pair.bam')
-            # a.append(bam)
-
-        return a
-
-
-    def get_peak_list(self):
-        """
-        get the .narrowPeak files
-        """
-        p = []
-        for fq in self.fq1:
-            fq_dir = os.path.join(self.outdir, fq_name(fq, pe_fix=True))
-            p.append(AtacReader(fq_dir).args.get('peak', None))
-        
-        return p
-
-
     def pick_fq_samples(self, i):
         """
         Pick samples for each group
@@ -925,9 +914,32 @@ class AtacS1Rn(object):
         AtacS1R1(**config_local.__dict__).run()
 
 
-    ##############################################
+    ##############################################    
+    def get_bam_list(self):
+        """
+        get the proper_mapped.bam files
+        """
+        a = []
+        for fq in self.fq1:
+            fq_dir = os.path.join(self.outdir, fq_name(fq, pe_fix=True))
+            a.append(AtacReader(fq_dir).args.get('bam'))
+        return a
+
+
+    def get_peak_list(self):
+        """
+        get the .narrowPeak files
+        """
+        p = []
+        for fq in self.fq1:
+            fq_dir = os.path.join(self.outdir, fq_name(fq, pe_fix=True))
+            p.append(AtacReader(fq_dir).args.get('peak', None))
+        
+        return p
+
+
     ## merge replicates
-    def mergebam(self):
+    def merge_bam(self):
         """
         Merge replicates, BAM
         """
@@ -940,13 +952,13 @@ class AtacS1Rn(object):
             '&& samtools index {}'.format(self.bam)])
 
         if os.path.exists(self.bam):
-            log.info('mergebam() skipped, file exists: {}'.format(
+            log.info('merge_bam() skipped, file exists: {}'.format(
                 self.bam))
         else:
             try:
                 run_shell_cmd(cmd)
             except:
-                log.warning('mergebam() failed.')
+                log.warning('merge_bam() failed.')
 
 
     def bam_to_bw(self, norm=1000000):
@@ -967,7 +979,7 @@ class AtacS1Rn(object):
         Bam2bw(**args_local).run()
 
 
-    def callpeak(self):
+    def call_peak(self):
         """
         Call peaks using MACS2
         """
@@ -982,7 +994,7 @@ class AtacS1Rn(object):
         prefix = args_peak.pop('group', None).pop()
 
         if check_file(self.peak):
-            log.info('callpeak() skipped, file exists: {}'.format(
+            log.info('call_peak() skipped, file exists: {}'.format(
                 self.peak))
         else:
             Macs2(bed, genome, output, prefix, atac=True, **args_peak).callpeak()
@@ -997,78 +1009,102 @@ class AtacS1Rn(object):
         multiBamSummary bins --binSize 500 --smartLabels -o *bam.npz \
             --outRawCounts *counts.tab -b bam
         """
-        multiBamSummary = shutil.which('multiBamSummary')
+        args_local = {
+            'bam': self.get_bam_list(),
+            'outdir': self.qc_cor_dir,
+            'threads': self.threads,
+            'overwrite': self.overwrite,
+            'binsize': self.binsize
+        }
+        Bam2cor(**args_local).run()
 
-        # run
-        cmd = ' '.join([
-            '{} bins --binSize {}'.format(multiBamSummary, window),
-            '--smartLabels -o {}'.format(self.cor_npz),
-            '--outRawCounts {}'.format(self.cor_counts)])
+        # multiBamSummary = shutil.which('multiBamSummary')
 
-        if os.path.exists(self.cor_counts):
-            log.info('bam_cor() skipped, file.exsits: {}'.format(
-                self.cor_counts))
-        else:
-            try:
-                run_shell_cmd(cmd)
-            except:
-                log.warning('bam_cor() failed.')
+        # # run
+        # cmd = ' '.join([
+        #     '{} bins --binSize {}'.format(multiBamSummary, window),
+        #     '--smartLabels -o {}'.format(self.cor_npz),
+        #     '--outRawCounts {}'.format(self.cor_counts)])
+
+        # if os.path.exists(self.cor_counts):
+        #     log.info('bam_cor() skipped, file.exsits: {}'.format(
+        #         self.cor_counts))
+        # else:
+        #     try:
+        #         run_shell_cmd(cmd)
+        #     except:
+        #         log.warning('bam_cor() failed.')
 
 
     def get_peak_overlap(self):
         """
         Compute the overlaps between overlaps
         """
-        self.peak_list = self.get_peak_list()
+        args_local = {
+            'peak': self.get_peak_list(),
+            'outdir': self.qc_overlap_dir,
+            'overwrite': self.overwrite
+        }   
 
-        pkg_dir = os.path.dirname(hiseq.__file__)
-        peak_overlapR = os.path.join(pkg_dir, 'bin', 'atac_peak_overlap.R')
+        BedOverlap(**args_local).run()
+        # self.peak_list = self.get_peak_list()
 
-        # run
-        cmd = ' '.join([
-            'Rscript',
-            peak_overlapR,
-            self.qc_dir] + self.peak_list)
+        # pkg_dir = os.path.dirname(hiseq.__file__)
+        # peak_overlapR = os.path.join(pkg_dir, 'bin', 'atac_peak_overlap.R')
 
-        if os.path.exists(self.peak_overlap_pdf):
-            log.info('get_peak_overlap() skipped, file exists: {}'.format(
-                self.peak_overlap_pdf))
-        else:
-            try:
-                run_shell_cmd(cmd)
-            except:
-                log.warning('get_peak_overlap() failed.')
+        # # run
+        # cmd = ' '.join([
+        #     'Rscript',
+        #     peak_overlapR,
+        #     self.qc_dir] + self.peak_list)
+
+        # if os.path.exists(self.peak_overlap_pdf):
+        #     log.info('get_peak_overlap() skipped, file exists: {}'.format(
+        #         self.peak_overlap_pdf))
+        # else:
+        #     try:
+        #         run_shell_cmd(cmd)
+        #     except:
+        #         log.warning('get_peak_overlap() failed.')
 
 
-    def get_rep_idr(self):
+    def get_peak_idr(self):
         """
         Calculate IDR for replicates
         1 vs 1
         peak files
         """
-        idr = shutil.which('idr') # command
+        args_local = {
+            'peak': self.get_peak_list(),
+            'outdir': self.qc_idr_dir,
+            'overwrite': self.overwrite
+        }
 
-        # run
-        cmd = ' '.join([
-            'sort -k8,8nr -o {} {}'.format(self.peak_list[0], self.peak_list[0]),
-            '&& sort -k8,8nr -o {} {}'.format(self.peak_list[1], self.peak_list[1]),
-            '&& {} --input-file-type narrowPeak --rank p.value --plot'.format(idr),
-            '--output-file {}'.format(self.idr_txt),
-            '--log-output-file {}'.format(self.idr_log),
-            '--samples',
-            ' '.join(self.peak_list)])
+        PeakIDR(**args_local).run()
 
-        if os.path.exists(self.idr_txt):
-            logging.info('rep_idr() skipped, file exists: {}'.format(
-                self.idr_txt))
-        else:
-            try:
-                run_shell_cmd(cmd)
-            except:
-                log.warning('rep_idr() failed.')
+        # idr = shutil.which('idr') # command
+
+        # # run
+        # cmd = ' '.join([
+        #     'sort -k8,8nr -o {} {}'.format(self.peak_list[0], self.peak_list[0]),
+        #     '&& sort -k8,8nr -o {} {}'.format(self.peak_list[1], self.peak_list[1]),
+        #     '&& {} --input-file-type narrowPeak --rank p.value --plot'.format(idr),
+        #     '--output-file {}'.format(self.idr_txt),
+        #     '--log-output-file {}'.format(self.idr_log),
+        #     '--samples',
+        #     ' '.join(self.peak_list)])
+
+        # if os.path.exists(self.idr_txt):
+        #     logging.info('rep_idr() skipped, file exists: {}'.format(
+        #         self.idr_txt))
+        # else:
+        #     try:
+        #         run_shell_cmd(cmd)
+        #     except:
+        #         log.warning('rep_idr() failed.')
 
 
-    def get_frip(self):
+    def get_peak_frip(self):
         """
         Save all FRiP.txt file to one
         """
@@ -1087,6 +1123,27 @@ class AtacS1Rn(object):
                             w.write(line)
 
 
+    def qc_frip(self):
+        """
+        Compute FRiP
+        """
+        if check_file(self.frip_txt):
+            log.info('qc_frip() skipped, file exists: {}'.format(
+                self.frip_txt))
+        else:
+            print("!XXXX " + self.bam)
+            frip, n, total = peak_FRiP(self.peak, 
+                self.bam)
+
+            hd = ['FRiP', "peak_reads", "total_reads", "id"]
+            n = list(map(str, [frip, n, total]))
+            # n.append('self.config.fqname')
+            n.append(self.project_name)
+            with open(self.frip_txt, 'wt') as w:
+                w.write('\t'.join(hd) + '\n')
+                w.write('\t'.join(n) + '\n')
+
+
     def get_align_txt(self):
         """
         Copy align.txt files to align/
@@ -1094,7 +1151,7 @@ class AtacS1Rn(object):
         pass
 
 
-    def tss_enrich(self):
+    def get_tss_enrich(self):
         """
         Calculate the TSS enrichment
         """
@@ -1114,17 +1171,18 @@ class AtacS1Rn(object):
 
         cmd = 'Rscript {} {} {}'.format(
             qc_reportR,
-            self.outdir,
+            self.project_dir,
             self.report_dir)
-        
-        if check_file(atac_report_html):
-            log.info('report() skipped, file exists: {}'.format(
-                atac_report_html))
-        else:
-            try:
-                run_shell_cmd(cmd)
-            except:
-                log.warning('report() failed.')
+
+        cmd_txt = os.path.join(self.report_dir, 'cmd.sh')
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+    
+        run_shell_cmd(cmd) 
+        # try:
+        #     run_shell_cmd(cmd)
+        # except:
+        #     log.warning('report() failed.')
 
 
     def run(self):
@@ -1143,16 +1201,17 @@ class AtacS1Rn(object):
         #     self.run_fq_single(i)
 
         # run
-        self.mergebam()
+        self.merge_bam()
         self.bam_to_bw()
-        self.callpeak()
+        self.call_peak()
         # qc
         self.get_bam_cor()
         self.get_peak_overlap()
-        self.get_rep_idr()
-        self.get_frip()
-        # self.get_align_txt()
-        # self.tss_enrich()
+        self.get_peak_idr()
+        self.get_peak_frip()
+        self.qc_frip()
+        self.get_align_txt()
+        self.get_tss_enrich()
         self.report()
 
 
@@ -1345,7 +1404,7 @@ class AtacS1R1(object):
         Bam2bw(**args_local).run()
 
 
-    def callpeak(self):
+    def call_peak(self):
         """
         Call peaks using MACS2
         """
@@ -1357,7 +1416,7 @@ class AtacS1R1(object):
         args_peak.pop('genome', None)
         args_peak.pop('outdir', None)
         if check_file(self.peak):
-            log.info('callpeak() skipped, file exists: {}'.format(
+            log.info('call_peak() skipped, file exists: {}'.format(
                 self.peak))
         else:
             Macs2(bed, self.genome, self.peak_dir, self.project_name, atac=True, **args_peak).callpeak()
@@ -1365,27 +1424,12 @@ class AtacS1R1(object):
 
     def qc_lendist(self):
         """
-        Create length distribution plot
+        Create length distribution, txt
         """
-        # create plot
-        pkg_dir = os.path.dirname(hiseq.__file__)
-        lendistR = os.path.join(pkg_dir, 'bin', 'atac_qc_lendist.R')
-        cmd = 'Rscript {} {} {}'.format(
-            lendistR,
-            self.lendist_txt,
-            self.lendist_pdf)
-
-        if check_file(self.lendist_txt):
-            log.info('qc_lendist() skipped, file exists: {}'.format(
-                self.lendist_txt))
+        if os.path.exists(self.lendist_txt) and self.overwrite is False:
+            log.warning('lendist: file exists, skipped, : {}'.format(self.lendist_txt))
         else:
-            # compute length distribution
-            frag_length(self.bam, self.lendist_txt)
-            # create plot
-            try:
-                run_shell_cmd(cmd)
-            except:
-                log.warning('qc_lendist() failed.')
+            _ = frag_length(self.bam, self.lendist_txt)
 
 
     def qc_frip(self):
@@ -1397,7 +1441,7 @@ class AtacS1R1(object):
                 self.frip_txt))
         else:
             print("!XXXX " + self.bam)
-            frip, n, total = cal_FRiP(self.peak, 
+            frip, n, total = peak_FRiP(self.peak, 
                 self.bam)
 
             hd = ['FRiP', "peak_reads", "total_reads", "id"]
@@ -1451,17 +1495,18 @@ class AtacS1R1(object):
 
         cmd = 'Rscript {} {} {}'.format(
             qc_reportR,
-            self.outdir,
+            self.project_dir,
             self.report_dir)
-        
-        if check_file(atac_report_html):
-            log.info('report() skipped, file exists: {}'.format(
-                atac_report_html))
-        else:
-            try:
-                run_shell_cmd(cmd)
-            except:
-                log.warning('report() failed.')
+
+        cmd_txt = os.path.join(self.report_dir, 'cmd.sh')
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+    
+        run_shell_cmd(cmd)
+        # try:
+        #     run_shell_cmd(cmd)
+        # except:
+        #     log.warning('report() failed.')
 
 
     def run(self):
@@ -1491,7 +1536,7 @@ class AtacS1R1(object):
         self.bam_to_bw()
 
         # 5. peak 
-        self.callpeak()
+        self.call_peak()
         
         # 6. motif
         # self.motif()
@@ -1585,11 +1630,18 @@ class ATACseqFqDesign(object):
             if not self.rep_list is None:
                 log.info('ignore: rep_list')
             self.rep_list = None
+
+            # info
+            log.info('\n'.join(['Found fq files: fq1'] + self.fq1))
+
             # for paired reads
             if not self.fq2 is None:
                 tags = [self.fq_pair(a, b) for a, b in zip(self.fq1, self.fq2)]
                 if not all(tags):
                     raise ValueError('fq1, fq2 not matched')
+
+                log.info('\n'.join(['Found fq files: fq2'] + self.fq2))
+
 
             # for group
             if self.group is None:
@@ -1600,6 +1652,10 @@ class ATACseqFqDesign(object):
             if not self.fq1 is None:
                 log.info('ignore: fq1, fq2')
             self.fq1 = self.fq2 = None
+
+            # info
+            log.info('\n'.join(['Found rep_list'] +self.rep_list))
+
             tags = [AtacReader(i).is_atac_single() for i in self.rep_list]
             if not all(tags):
                 raise ValueError('rep_list, should be ATAC_single dir')
@@ -1686,4 +1742,100 @@ class ATACseqFqDesign(object):
 
         # save
         Json(args_pre).writer(self.design)
+
+
+class ATACseqFqDesignN(object):
+    """
+    Save multiple groups of files
+    """
+    def __init__(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+        self.init_args()
+        self.save()
+
+
+    def init_args(self):
+        """
+        required: fq_dir
+        """
+        args_init = {
+            'fq_dir': None,
+            'design': None,
+            'fq1': None,
+            'fq2': None,
+            'group': None,
+            'flag': True
+        }
+        for k, v in args_init.items():
+            if not hasattr(self, k):
+                setattr(self, k, v)
+
+        # check
+        if not self.fq_dir is None:
+            self.groups = self.list_fq_files(self.fq_dir)
+            if len(self.groups) < 1:
+                log.warning('fq_dir: fq files not found')
+                self.flag = False
+        else:
+            if self.fq1 is None:
+                log.warning('fq_dir, fq1; required')
+                self.flag = False
+            else:
+                group = fq_name_rmrep(self.fq1).pop()
+                self.groups = {
+                    group: {
+                        'fq1': self.fq1,
+                        'fq2': self.fq2,
+                        'rep_list': None,
+                        'group': group,
+                        'design': self.design
+                    }
+                }
+
+
+    def list_fq_files(self, x):
+        """
+        list all fq fies from path(x)
+        """
+        f1 = listfile(x, "*.fastq.gz")
+        f2 = listfile(x, "*.fq.gz")
+        f3 = listfile(x, "*.fastq")
+        f4 = listfile(x, "*.fq")
+        f_list = f1 + f2 + f3 + f4 # all fastq files
+        g_list = fq_name_rmrep(f_list)
+        g_list = sorted(list(set(g_list))) # unique
+
+        # split into groups
+        d = {} # 
+        for g in g_list:
+            # fq files for one group
+            g_fq = [i for i in f_list if g in os.path.basename(i)]
+            # for fq1, fq2
+            r1 = re.compile('1.f(ast)?q(.gz)?')
+            r2 = re.compile('1.f(ast)?q(.gz)?')
+            g_fq1 = [i for i in g_fq if r1.search(i)]
+            g_fq2 = [i for i in g_fq if r2.search(i)]
+            # save to dict
+            d[g] = {'fq1': g_fq1,
+                    'fq2': g_fq2,
+                    'group': g}
+
+        return d
+                    
+
+    def save(self):
+        if self.flag:
+            for g, d in self.groups.items():
+                args_local = {
+                    'fq1': d.get('fq1', None),
+                    'fq2': d.get('fq2', None),
+                    'rep_list': None,
+                    'group': g,
+                    'design': self.design
+                }
+                log.info('Build design: {}'.format(g))
+                ATACseqFqDesign(**args_local)
+
+
 

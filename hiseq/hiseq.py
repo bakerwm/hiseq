@@ -16,6 +16,7 @@ __version__ = '0.0.1'
 import os
 import sys
 import argparse
+from multiprocessing import Pool
 from .utils.argsParser import *
 from .qc.fastqc import Fastqc
 from .trim.trimmer import Trimmer
@@ -23,8 +24,10 @@ from .align.alignment import Alignment
 from .atac.atac import Atac
 from .rnaseq.rnaseq import RNAseq
 from .rnaseq.rnaseq_pipe import RNAseqPipe
-from .go.go import Go
 from .rnaseq.rnaseq_cmp import RnaseqCmp
+from .go.go import Go
+from .atac.atac_utils import Bam2bw, Bam2cor, PeakIDR, BedOverlap
+
 
 class Hiseq(object):
     """The 1st-level of command, choose which sub-command to use
@@ -53,6 +56,11 @@ class Hiseq(object):
         report    Create a report to the above commands
         go        Run GO analysis on geneset
         rnaseq_cmp   Run RNAseq compare
+
+        bam2cor   Correlation between bam files
+        bam2bw    Convert bam to bigWig 
+        peak2idr  Calculate IDR for multiple Peaks
+        bed2overlap  Calculate the overlap between bed intervals
     """
         )
         parser.add_argument('command', help='Subcommand to run')
@@ -253,6 +261,7 @@ class Hiseq(object):
 
         RNAseq(**args).run()
 
+
     def rnaseq2(self):
         """
         RNA-seq pipeline, simplify version
@@ -262,6 +271,55 @@ class Hiseq(object):
         args = vars(args) # convert to dict
 
         RNAseqPipe(**args).run()
+
+
+    def bam2bw(self):
+        """
+        Convert bam to bw files
+        using: deeptools
+        """
+        parser = add_bam2bw_args()
+        args = parser.parse_args(sys.argv[2:])
+        args = vars(args)
+
+        for bam in args.get('bam', None):
+            args_local = args.copy()
+            args_local['bam'] = bam
+            Bam2bw(**args_local).run()
+
+
+    def bam2cor(self):
+        """
+        Calculate bam correlation
+        using deeptools
+        """
+        parser = add_bam2cor_args()
+        args = parser.parse_args(sys.argv[2:])
+        args = vars(args)
+        args['make_plot'] = not args.get('no_plot', False)
+        Bam2cor(**args).run()
+
+
+    def peak2idr(self):
+        """
+        Calculate IDR for peak files
+        using: idr
+        """
+        parser = add_peak2idr_args()
+        args = parser.parse_args(sys.argv[2:])
+        args = vars(args)
+        PeakIDR(**args).run()
+
+
+    def bed2overlap(self):
+        """
+        Calculate IDR for peak files
+        using: idr
+        """
+        parser = add_bed2overlap_args()
+        args = parser.parse_args(sys.argv[2:])
+        args = vars(args)
+        BedOverlap(**args).run()
 
 
 def main():
