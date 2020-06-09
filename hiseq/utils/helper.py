@@ -384,6 +384,23 @@ def file_exists(file, isfile=True):
         return file
 
 
+def file_row_counter(fn):
+    """
+    count the file rows
+    count '\n' 
+    from @glglgl on stackoverflow, modified
+    https://stackoverflow.com/a/9631635/2530783
+    """
+    def blocks(files, size = 1024 * 1024):
+        while True:
+            b = files.read(size)
+            if not b: break
+            yield b
+    freader = gzip.open if is_gz(fn) else open
+    with freader(fn, 'rt', encoding="utf-8", errors='ignore') as fi:
+        return sum(bl.count('\n') for bl in blocks(fi))
+
+
 def merge_names(x):
     """
     Get the name of replictes

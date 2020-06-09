@@ -217,7 +217,7 @@ class Bed(object):
         return int(self.__getitem__('chromEnd'))
 
     def get_name(self):
-        return elf.__getitem__('name')
+        return self.__getitem__('name')
 
     def get_score(self):
         return self.__getitem__('score')

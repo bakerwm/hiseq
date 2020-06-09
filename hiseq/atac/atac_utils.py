@@ -956,9 +956,15 @@ class PeakIDR(object):
         if os.path.exists(idr_png) and not self.overwrite:
             log.warning('file exists: {}'.format(idr_png))
         else:
-            stdout, stderr = run_shell_cmd(cmd)
-            with open(idr_log, 'wt') as w:
-                w.write(stdout + '\n' + stderr + '\n')
+            # require, peaks > 20
+            peakA_nrow = file_row_counter(peakA)
+            peakB_nrow = file_row_counter(peakB)
+            if peakA_nrow >= 20 and peakB_nrow >= 20:
+                stdout, stderr = run_shell_cmd(cmd)
+                with open(idr_log, 'wt') as w:
+                    w.write(stdout + '\n' + stderr + '\n')
+            else:
+                log.warning('idr: peak files required at least 20 peaks, {} and {} got'.format(peakA_nrow, peakB_nrow))
 
         # check
         if not os.path.exists(idr_png):
@@ -1021,6 +1027,9 @@ class BedOverlap(object):
             self.flag = False
             log.error('peak: file not exists')
 
+        # update peak files
+        self.valid_peak() #
+
         # names
         self.peak_names = [os.path.splitext(i)[0] for i in fq_name(self.peak)]
         if self.prefix is None:
@@ -1032,6 +1041,20 @@ class BedOverlap(object):
         self.venn_R = os.path.join(self.outdir, self.prefix + '.venn.R')
 
 
+    def valid_peak(self):
+        """
+        No more than 4
+        Peak: >0
+        """
+        # file rows > 0
+        self.peak = [i for i in self.peak if file_row_counter(i) > 0]
+
+        # files < 4
+        if len(self.peak) > 4:
+            log.warning('peak: support no more than 4 files, subset to 4')
+            self.peak = self.peak[:4]
+
+
     def overlap(self):
         """
         Overlap between A and B, ...
@@ -1039,17 +1062,23 @@ class BedOverlap(object):
         plt = pybedtools.contrib.venn_maker.venn_maker
         if os.path.exists(self.tiff) and self.overwrite is False:
             log.info('overlap file exists, skipped ...')
-        else:
+        elif len(self.peak) > 1:
             log.info('Calculating overlaps between BED files')
             plt(self.peak, self.peak_names, figure_filename=self.tiff, 
                 script_filename=self.venn_R, run=True)
+        else:
+            log.warning('peak: files more than 1 required, {} got'.format(len(self.peak)))
 
+        # tiff -> png
         if os.path.exists(self.png) and self.overwrite is False:
             pass
         else:
             # convert to png
             log.info('Coverting Tiff to png')
-            convert_image(self.tiff, 'PNG')
+            if os.path.exists(self.tiff):
+                convert_image(self.tiff, 'PNG')
+            else:
+                log.warning('tiff, file not found: {}'.format(self.tiff))
 
  
     def run(self):

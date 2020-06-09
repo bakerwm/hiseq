@@ -412,7 +412,6 @@ def add_rnaseq_args2():
     parser.add_argument('-m', '--mode', default='gtp', 
         choices=['g', 't', 'p', 'gt', 'gp', 'tp', 'gtp'], 
         help='Run for g:gene, t:te, p:piRNA_cluster, default: [gtp]')
-
     return parser
 
 
@@ -427,7 +426,8 @@ def add_atac_args():
         help='Create design for fastq files')
     parser.add_argument('-d', '--design', default=None,
         help='design for RNAseq, json format, ignore fq1, fq2')
-
+    parser.add_argument('--fq-dir', dest='fq_dir', default=None,
+        help='directory of fastq files, for --build-design')
     parser.add_argument('-1', '--fq1', nargs='+', default=None,
         help='read1 files, (or read1 of PE reads)')
     parser.add_argument('-2', '--fq2', nargs='+', default=None,
@@ -483,12 +483,9 @@ def add_atac_args():
     ## extra: para
     parser.add_argument('--extra-para', dest='extra_para', default=None,
         help='Extra parameters for aligner, eg: -X 2000 for bowtie2. default: [None]')
-
     parser.add_argument('--copy-raw-fq', dest='copy_raw_data',
         action='store_true',
         help='whether copy the raw fastq files to output')
-
-
     return parser
 
 
