@@ -217,11 +217,10 @@ class Hiseq(object):
         outdir = args.get('outdir', None)
         chk1 = config is None
         chk2 = design is None
-        chk3 = all([i is None for i in [fq1, fq2, genome, outdir]])
+        chk3 = [i is None for i in [fq1, fq2, genome, outdir]]
 
         # if config is None and not all(chk2):
         if all([chk1, chk2, chk3]):
-            print(chk1, chk2, chk3)
             sys.exit('required: --config, or --design, or --fq1, --fq2, --genome, --outdir')
 
         # a = AtacBatch(**args).run()
