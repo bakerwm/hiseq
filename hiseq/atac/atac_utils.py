@@ -959,12 +959,12 @@ class PeakIDR(object):
             # require, peaks > 20
             peakA_nrow = file_row_counter(peakA)
             peakB_nrow = file_row_counter(peakB)
-            if peakA_nrow >= 20 and peakB_nrow >= 20:
+            if peakA_nrow >= 100 and peakB_nrow >= 100:
                 stdout, stderr = run_shell_cmd(cmd)
                 with open(idr_log, 'wt') as w:
                     w.write(stdout + '\n' + stderr + '\n')
             else:
-                log.warning('idr: peak files required at least 20 peaks, {} and {} got'.format(peakA_nrow, peakB_nrow))
+                log.warning('idr: peak files required at least 100 peaks, {} and {} got'.format(peakA_nrow, peakB_nrow))
 
         # check
         if not os.path.exists(idr_png):
