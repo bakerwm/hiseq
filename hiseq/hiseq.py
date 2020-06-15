@@ -18,6 +18,7 @@ import sys
 import argparse
 from multiprocessing import Pool
 from .utils.argsParser import *
+from .demx.demx import Demx
 from .qc.fastqc import Fastqc
 from .trim.trimmer import Trimmer
 from .align.alignment import Alignment
@@ -47,6 +48,7 @@ class Hiseq(object):
         rnaseq     RNAseq pipeline
         rnaseq2    RNAseq pipeline, simplify version
 
+        demx      Demultiplexing reads (P7, barcode)
         qc        quality control, fastqc
         trim      trim adapters, low-quality bases, ...
         align     Align fastq/a files to reference genome
@@ -74,6 +76,16 @@ class Hiseq(object):
 
         # use dispatch pattern to invoke method with same name
         getattr(self, args.command)()
+
+
+    def demx(self):
+        """
+        Demultiplexing reads: P7, barcode
+        """
+        parser = add_demx_args()
+        args = parser.parse_args(sys.argv[2:])
+        args = vars(args)
+        Demx(**args).run()
 
 
     def qc(self):
