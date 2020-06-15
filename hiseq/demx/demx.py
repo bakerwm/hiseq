@@ -607,7 +607,7 @@ class Demx(object):
         outdir = os.path.join(os.path.dirname(fq), fname)
         with xopen(fq) as r:
             self.barcode_se(r, outdir, index1=fname)
-        return self.wrap_se_dir(outdir, 'barcode')
+        return self.wrap_dir(outdir, 'barcode')
 
 
     def run_pe_barcode_single(self, fq1):
@@ -721,7 +721,7 @@ class Demx(object):
             n = 0 # counter
             for name, seq, qual, comment in self.readfq(fh):
                 n += 1
-                if n%100000 == 0 :
+                if n%1000000 == 0 :
                     log.info('Processed reads: {}'.format(n))
 
                 fq = '\n'.join(['@' + name + ' ' + comment, seq, '+', qual])
@@ -763,7 +763,7 @@ class Demx(object):
             n = 0 # counter
             for r1, r2 in zip(self.readfq(fh1), self.readfq(fh2)):
                 n += 1
-                if n%100000 == 0:
+                if n%1000000 == 0:
                     log.info('Processed reads: {}'.format(n))
 
                 r1_name, r1_seq, r1_qual, r1_comment = r1
@@ -806,7 +806,7 @@ class Demx(object):
             n = 0 # counter
             for name, seq, qual, comment in self.readfq(fh):
                 n += 1
-                if n%100000 == 0 :
+                if n%1000000 == 0 :
                     log.info('Processed reads: {}'.format(n))
                 fq = '\n'.join(['@' + name + ' ' + comment, seq, '+', qual])
                 # fq = '@' + name + ' ' + comment + '\n' + seq + '\n+\n' + qual
@@ -844,7 +844,7 @@ class Demx(object):
             n = 0 # counter
             for r1, r2 in zip(self.readfq(fh1), self.readfq(fh2)):
                 n += 1
-                if n%100000 == 0:
+                if n%1000000 == 0:
                     log.info('Processed reads: {}'.format(n))
 
                 r1_name, r1_seq, r1_qual, r1_comment = r1
