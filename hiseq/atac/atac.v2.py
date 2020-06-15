@@ -61,15 +61,8 @@ class AtacConfig(object):
         create_dirs = kwargs.get('create_dirs', True)
 
         if self.atac_type == 'single':
-            # self.atac_type = self.mission()
-            design = self.args.get('design', None)
-            if design is None:
-                pass
-            elif os.path.exists(design):
-                # for --fq1, --fq2, ...
-                args_in = Json(self.args['design']).dict
-                self.args.update(args_in)
             self.init_atac_single(create_dirs)
+            # self.is_atac_single(self.outdir)
         elif self.atac_type == 'merge':
             self.init_atac_merge(create_dirs)
         elif self.atac_type == 'multiple':
@@ -97,22 +90,19 @@ class AtacConfig(object):
         rep_list = args.get('rep_list', None)
         input_dir = args.get('input_dir', None)
 
-        # atac multiple
-        if isinstance(input_dir, str):
-            flag = 'multiple'
-        # atac merge
-        elif isinstance(rep_list, list):
-            # print('!BBB3')
-            flag = 'merge'
         # atac single
-        elif not design is None:
-            # print('!BBB1')
+        if not design is None:
             args_in = Json(args['design']).dict
             self.args.update(args_in) # update global self. args
             flag = 'single'
         elif all([not i is None for i in [fq1, fq2, genome, outdir]]):
-            # print('!BBB2')
             flag = 'single'
+        # atac merge
+        elif isinstance(rep_list, list):
+            flag = 'merge'
+        # atac multiple
+        elif isinstance(input_dir, str):
+            flag = 'multiple'
         # atac, parse all
         else:
             raise Exception("""unknown ATAC() arguments;
@@ -121,16 +111,6 @@ class AtacConfig(object):
                 ATAC multiple: input_dir=;
                 """)
         return flag
-
-
-    def unique_names(self, name_list):
-        """
-        Get the name of replicates
-        common in left-most
-        """
-        name_list = [os.path.basename(i) for i in name_list]
-        name_list = [re.sub('.rep[0-9].*', '', i) for i in name_list]
-        return list(set(name_list))
 
 
     def init_atac_single(self, create_dirs=True):
@@ -278,16 +258,12 @@ class AtacConfig(object):
         self.outdir = args.get('outdir', None)
         
         if self.smpname is None:
-            self.smpname = self.unique_names(args['rep_list'])[0]
+            self.smpname = merge_names(args['rep_list'])
 
-        ## determine outputdir
         if self.outdir is None:
             self.outdir = os.path.join(
                 os.path.dirname(args['rep_list'][0]), 
                 self.smpname)
-        else:
-            self.outdir = os.path.join(
-                self.outdir, self.smpname)
         
         ## absolute path
         self.outdir = os.path.abspath(self.outdir)
@@ -339,13 +315,9 @@ class AtacConfig(object):
         assert in_dict(args, 'input_dir') # merge
 
         # outdir, input_dir + summary
-        # self.outdir = args.get('outdir', None)
-        # if self.outdir is None:
-        self.outdir = os.path.join(args['input_dir'], 'summary')
-
-        # absolute path
-        self.outdir = os.path.abspath(self.outdir)
-        self.input_dir = os.path.abspath(args['input_dir'])
+        self.outdir = args.get('outdir', None)
+        if self.outdir is None:
+            self.outdir = os.path.join(args['input_dir'], 'summary')
 
         ## outdir
         # print('!xxxx', self.outdir)
@@ -587,7 +559,6 @@ class AtacSingle(object):
         args['fq1'] = args['fq'] = fq1
         args['fq2'] = fq2
         args['outdir'] = self.config.cleandir
-        args['library_type'] = 'Nextera'
         
         if trimmed is True:
             # create symlink from rawdir
@@ -639,10 +610,7 @@ class AtacSingle(object):
         # bamdir = os.path.join(self.config.aligndir, '2.*')
         bamdir = self.config.align_stat.rstrip('.align.txt')
         bamlist = listfiles2('*.bam', bamdir, recursive=True)
-        bamlist = sorted(bamlist)
-        bamlist = [i for i in bamlist if not os.path.basename(i).endswith('.raw.bam')] # remove raw.bam
         # [chrM, genome]
-        print('!AAAA1', bamlist)
         return(bamlist[-1]) # the last one
 
 
@@ -669,34 +637,12 @@ class AtacSingle(object):
             Bam(self.config.bam_proper_pair).index()
 
 
-    def bam2bw(self, norm=1000000):
-        """
-        Create bigWig
-        bam -> bigWig
-        """
-        args = self.config.args.copy()
-        tmp = args.pop('outdir', None)
-        bam = self.config.bam_proper_pair
-        outdir = self.config.bwdir
-        bw = self.config.bw
-        ## read counts BAM
-        ntotal = Bam(bam).getNumberOfAlignments()
-        if Bam(bam).isPaired():
-            ntotal = ntotal / 2
-        scale = norm / ntotal # norm to 1M
-
-        return bam_to_bw(bam, outdir, scale=scale, **args)
-
-
-
     def callpeak(self):
         """
         Call peaks using MACS2
         """
         args = self.config.args.copy()
         bam = self.config.bam_proper_pair
-        bed = os.path.splitext(bam)[0] + '.bed'
-        Bam(bam).to_bed(bed)
         genome = args.pop('genome', None)
         output = args.pop('peakdir', None)
         prefix = args.pop('fqname', None)
@@ -705,8 +651,7 @@ class AtacSingle(object):
             log.info('callpeak() skipped, file exists: {}'.format(
                 self.config.peak))
         else:
-            args['genome_size'] = args.get('genome_size', 0)
-            Macs2(bed, genome, output, prefix, atac=True, **args).callpeak()
+            Macs2(bam, genome, output, prefix, atac=True, **args).callpeak()
 
 
     def qc_lendist(self):
@@ -742,7 +687,6 @@ class AtacSingle(object):
             log.info('qc_frip() skipped, file exists: {}'.format(
                 self.config.frip_txt))
         else:
-            print("!XXXX " + self.config.bam_proper_pair)
             frip, n, total = cal_FRiP(self.config.peak, 
                 self.config.bam_proper_pair)
 
@@ -833,9 +777,6 @@ class AtacSingle(object):
         # 4. rmdup
         self.bam_rmdup(rmdup)
 
-        # 5. bw
-        #self.bam2bw()
-
         # 5. peak 
         self.callpeak()
         
@@ -867,10 +808,8 @@ class AtacMerge(object):
         outdir/config/*json, *pickle, *txt
         """
         self.config = AtacConfig(**self.args) # update, global
-        print('!cccc', self.args)
-
         self.args.update(self.config.args) # update, global
-        # assert in_attr(self., ['rep_list'])
+        # assert in_attr(self., ['rep_list'])        
         assert self.config.atac_type == 'merge'
         self.args['rep_list'] = [os.path.abspath(i) for i in self.args['rep_list']]
 
@@ -929,24 +868,6 @@ class AtacMerge(object):
                 log.warning('mergebam() failed.')
 
 
-    def bam2bw(self, norm=1000000):
-        """
-        Create bigWig
-        bam -> bigWig
-        """
-        args = self.config.args.copy()
-        bam = self.config.bam
-        outdir = self.config.bwdir
-        bw = self.config.bw
-        ## read counts BAM
-        ntotal = Bam(bam).getNumberOfAlignments()
-        if Bam(bam).isPaired():
-            ntotal = ntotal / 2
-        scale = norm / ntotal # norm to 1M
-
-        return bam_to_bw(bam, outdir, scale=scale, **args)
-
-
     def callpeak(self):
         """
         Call peaks using MACS2
@@ -959,9 +880,7 @@ class AtacMerge(object):
             log.info('callpeak() skipped, file exists: {}'.format(
                 self.config.peak))
         else:
-            self.args['genome_size'] = self.args.get('genome_size', 0)
-            m = Macs2(bam, genome, output, prefix, atac=True,
-                genome_size=self.args['genome_size']).callpeak()
+            m = Macs2(bam, genome, output, prefix, atac=True).callpeak()
 
 
     def bam_cor(self, window=500):
@@ -1131,7 +1050,6 @@ class AtacMultiple(object):
         save config files
         outdir/config/*json, *pickle, *txt
         """
-        print('!dddd1', self.args)
         self.config = AtacConfig(**self.args) # update, global
         self.args.update(self.config.args) # update, global
         assert self.config.atac_type == 'multiple'
@@ -1196,6 +1114,8 @@ class AtacMultiple(object):
         self.report()
 
 
+
+
 class Atac(object):
     """
     Main port for ATAC pipeline
@@ -1227,22 +1147,22 @@ class Atac(object):
         genome = args.get('genome', None)
         outdir = args.get('outdir', None)
         
-        # assert is_path(outdir)
+        assert is_path(outdir)
 
         if check_file(config, show_log=False):
             # update config to list
             if isinstance(config, str):
                 self.args['config'] = [config]
-            # print('!aaaa')
+            print('!aaaa')
             self.json_list = self.config_to_json()
         elif check_file(design, show_log=False):
             # udpate design to list
             if isinstance(design, str):
                 self.args['design'] = [design]
-            # print('!bbbb')
+            print('!bbbb')
             self.json_list = self.design_to_json()
         elif all([not i is None for i in [fq1, fq2, genome, outdir]]):
-            # print('!cccc')
+            print('!cccc')
             self.json_list = self.args_to_json()
         else:
             raise Exception('Check arguments: config=, design=, or \
@@ -1254,7 +1174,7 @@ class Atac(object):
         arguments: --config
         convert config to multiple *.json files
         """
-        # print('!AAAA1')
+        print('!AAAA1')
         args = self.args.copy()
         assert in_dict(args, 'config')
 
@@ -1292,7 +1212,7 @@ class Atac(object):
                     Json(d).writer(config_json)
                     dict_to_pickle(d, config_pickle)
                     json_list.append(config_json)
-                    # print('!AAAA2', config_json)
+                    print('!AAAA2', config_json)
 
         self.json_list = json_list
         return json_list
@@ -1303,7 +1223,7 @@ class Atac(object):
         Save design to files in outdir
         for: single fastq file
         """
-        # print('!BBBB1')
+        print('!BBBB1')
         args = self.args.copy()
         assert isinstance(args['design'], list)
 
@@ -1333,7 +1253,7 @@ class Atac(object):
             Json(d).writer(config_json)
             dict_to_pickle(d, config_pickle)
             json_list.append(config_json)
-            # print('!BBBB2', config_json)
+            print('!BBBB2', config_json)
 
         self.json_list = json_list
         return json_list
@@ -1346,15 +1266,11 @@ class Atac(object):
         outdir, str
         ...
         """
-        # print('!CCCC1')
+        print('!CCCC1')
         args = self.args.copy()
         assert in_dict(args, ['fq1', 'fq2', 'genome', 'outdir'])
-        # assert isinstance(args['fq1'], list)
-        # assert isinstance(args['fq2'], list)
-        if isinstance(args['fq1'], str):
-            args['fq1'] = [args['fq1']]
-        if isinstance(args['fq2'], str):
-            args['fq2'] = [args['fq2']]
+        assert isinstance(args['fq1'], list)
+        assert isinstance(args['fq2'], list)
         assert isinstance(args['genome'], str)
         assert isinstance(args['outdir'], str)
         if not len(self.args['fq1']) == len(self.args['fq2']):
@@ -1363,12 +1279,11 @@ class Atac(object):
         ## convert to design (Json file)
         json_list = []
         for fq1, fq2 in zip(args['fq1'], args['fq2']):
-            print('!AAAA1', fq1, fq2)
             fqname = file_prefix(fq1)[0]
             fqname = re.sub('_1$', '', fqname)
 
             # sample dir
-            suboutdir = os.path.join(self.args['outdir'], fqname)
+            suboutdir = os.path.join(args['outdir'], fqname)
             config_json = suboutdir + '.config.json'
             config_pickle = suboutdir + '.config.pickle'
             d = {
@@ -1376,12 +1291,11 @@ class Atac(object):
                 'fq2': fq2, 
                 'genome': args['genome'], 
                 'outdir': suboutdir}
-            # d.update(args) # global config
-            args.update(d)
-            print('!AAAA2', args)
-            Json(args).writer(config_json)
-            dict_to_pickle(args, config_pickle)
+            d.update(args) # global config
+            Json(d).writer(config_json)
+            dict_to_pickle(d, config_pickle)
             json_list.append(config_json)
+            print('!CCCC2', config_json)
 
         self.json_list = json_list
         return json_list
@@ -1411,37 +1325,28 @@ class Atac(object):
         self.args.pop('design', None) # 
         self.args.pop('rep_list', None) # 
 
-        ########################
-        ## for single sample: ##
-        ########################
         for i in self.json_list:
             s = AtacSingle(design=i, **self.args).run()
             smp_dirs.append(re.sub('\.config.json', '', i))
 
-        #######################
-        ## for merge sample: ##
-        #######################
+        # for merge sample:
         smp_names = self.unique_names(smp_dirs)
-        print('!bbbb1', smp_names)
+        print('!aaaa', smp_names)
         for x in smp_names:
+            print('!MMMM1')
             x_list = self.get_samples(smp_dirs, x)
-            print('!bbbb2', x_list)
             if len(x_list) < 2:
                 continue
             else:
-                print('!bbbb3')
-                self.args['rep_list'] = x_list
-                AtacMerge(**self.args).run()
+                print('!MMMM2')
+                AtacMerge(rep_list=x_list, **self.args).run()
 
-        ##########################
-        ## for multiple sample: ##
-        ##########################
+        # for multiple sample:
         # summary report for a project
         # dirname of smp_dirs
         # prj_dir = os.path.dirname(smp_dirs[0])
         self.args['input_dir'] = os.path.dirname(smp_dirs[0])
-        if len(self.json_list) > 1:
-            AtacMultiple(**self.args).run()
+        AtacMultiple(**self.args).run()
 
 
 

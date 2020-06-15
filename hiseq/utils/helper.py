@@ -131,7 +131,7 @@ def listfile(path='.', pattern='*', full_name=True, recursive=False):
     listfile('./', '*.fq')
     """
     fn_list = listdir(path, full_name, recursive, include_dir=False)
-    fn_list = [f for f in fn_list if fnmatch.fnmatch(f, pattern)]
+    fn_list = [f for f in fn_list if fnmatch.fnmatch(os.path.basename(f), pattern)]
     return sorted(fn_list)
 
 
@@ -158,7 +158,7 @@ def list_fq_files(path, pattern='*'):
         hit_list = fq_list
     else:
         p = re.compile(r'(_[12])?.f(ast)?q(.gz)?$')
-        hit_list = [f for f in all_files if p.search(f) and x in f]
+        hit_list = [f for f in fq_list if p.search(os.path.basename(f))]
 
     # chk1
     if len(hit_list) == 0:
