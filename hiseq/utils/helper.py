@@ -243,19 +243,25 @@ def symlink(src, dest, absolute_path=True):
             os.symlink(srcname, dest)
 
 
-def check_file(x, show_log=False):
+def check_file(x, show_log=False, emptycheck=False):
     """
-    if x (file, list) exists or not
+    if x (file, list) exists or not, empty
+
+    Whether the file is empty
+    see: https://stackoverflow.com/a/2507871/2530783
+    os.stat("file").st_size == 0    
     """
     if isinstance(x, str):
         flag = 'ok' if os.path.exists(x) else 'failed'
+        if flag == 'ok' and emptycheck:
+            flag = 'ok' if os.stat(x).st_size > 20 else 'failed' # in case of gzipped empty file (size=20)
         if show_log is True:
             log.info('{:<6s} : {}'.format(flag, x))
-        return os.path.exists(x)
+        return flag == 'ok' # os.path.exists(x)
     elif isinstance(x, list):
-        return all([check_file(i, show_log=show_log) for i in x])
+        return all([check_file(i, show_log, emptycheck) for i in x])
     else:
-        log.warning('expect str and list, not {}'.format(type(x)))
+        log.warning('x, str and list expected, {} got'.format(type(x).__name__))
         return None
 
 

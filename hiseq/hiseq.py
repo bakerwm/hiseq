@@ -27,6 +27,7 @@ from .rnaseq.rnaseq import RNAseq
 from .rnaseq.rnaseq_pipe import RNAseqPipe
 from .rnaseq.rnaseq_cmp import RnaseqCmp
 from .go.go import Go
+from .utils import download as dl # download.main()
 from .atac.atac_utils import Bam2bw, Bam2cor, PeakIDR, BedOverlap
 
 
@@ -44,25 +45,26 @@ class Hiseq(object):
 
     The most commonly used sub-commands are:
 
-        atac       ATACseq pipeline
-        rnaseq     RNAseq pipeline
-        rnaseq2    RNAseq pipeline, simplify version
+        atac         ATACseq pipeline
+        rnaseq       RNAseq pipeline
+        rnaseq2      RNAseq pipeline, simplify version
 
-        demx      Demultiplexing reads (P7, barcode)
-        qc        quality control, fastqc
-        trim      trim adapters, low-quality bases, ...
-        align     Align fastq/a files to reference genome
-        quant     Count genes/features
-        peak      Call peaks using MACS2
-        motif     Check motifs from a BED/fasta file
-        report    Create a report to the above commands
-        go        Run GO analysis on geneset
+        demx         Demultiplexing reads (P7, barcode)
+        qc           quality control, fastqc
+        trim         trim adapters, low-quality bases, ...
+        align        Align fastq/a files to reference genome
+        quant        Count genes/features
+        peak         Call peaks using MACS2
+        motif        Check motifs from a BED/fasta file
+        report       Create a report to the above commands
+        go           Run GO analysis on geneset
         rnaseq_cmp   Run RNAseq compare
 
-        bam2cor   Correlation between bam files
-        bam2bw    Convert bam to bigWig 
-        peak2idr  Calculate IDR for multiple Peaks
+        bam2cor      Correlation between bam files
+        bam2bw       Convert bam to bigWig 
+        peak2idr     Calculate IDR for multiple Peaks
         bed2overlap  Calculate the overlap between bed intervals
+        download     Download files
     """
         )
         parser.add_argument('command', help='Subcommand to run')
@@ -331,6 +333,13 @@ class Hiseq(object):
         args = parser.parse_args(sys.argv[2:])
         args = vars(args)
         BedOverlap(**args).run()
+
+
+    def download(self):
+        """
+        Download files
+        """
+        dl.main(sys.argv[1:])
 
 
 def main():
