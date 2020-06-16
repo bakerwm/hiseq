@@ -26,18 +26,20 @@ def add_demx_args():
         help='directory to save the reulsts')
     parser.add_argument('-s', '--index-csv', dest='index_csv', required=True,
         help='index list in csv format, [filename,index1,NULL,barcode]')
+    parser.add_argument('--demo', action='store_true',
+        help='run demo (1M reads) for demostration, default: off')
     parser.add_argument('-m', '--mismatch', type=int, default=0,
         help='mismatches allowed to search index, default: [0]') 
-    parser.add_argument('-x', '--barcode-in-read', dest='barcode_in_read',
+    parser.add_argument('-x', '--barcode-in-read', type=int, dest='barcode_in_read',
         choices=[1, 2], default=2,
         help='barcode in the 5\' end of, 1:read1 or 2:read2, default: [2]')
-    parser.add_argument('-l', '--barcode-n-left', dest='barcode_n_left',
-        type=int, default=0, help='bases locate on the left of barcode')
-    parser.add_argument('-r', '--barcode-n-right', dest='barcode_n_right',
-        type=int, default=0, help='bases locate on the right of barcode')
+    parser.add_argument('-l', '--barcode-n-left', type=int, dest='barcode_n_left',
+        default=0, help='bases locate on the left of barcode')
+    parser.add_argument('-r', '--barcode-n-right', type=int, dest='barcode_n_right',
+        default=0, help='bases locate on the right of barcode')
     parser.add_argument('-p', '--threads', type=int, default=1,
         help='number of threads, default: [1]')
-    parser.add_argument('-j', '--parallel-jobs', dest='parallel_jobs',
+    parser.add_argument('-j', '--parallel-jobs', type=int, dest='parallel_jobs',
         default=1, help='number of josb run in parallel, default: [1]')
     parser.add_argument('-w', '--overwrite', action='store_true',
         help='Overwrite exists files, default: off')
