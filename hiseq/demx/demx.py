@@ -44,6 +44,7 @@ import os
 import sys
 import shutil
 import argparse
+from xopen import xopen
 from contextlib import ExitStack
 import Levenshtein as lev # distance
 from xopen import xopen
@@ -316,7 +317,7 @@ class Demx(object):
         
         # subsample
         fq1 = os.path.join(self.data_dir, os.path.basename(self.fq1))
-        with gzip.open(self.fq1, 'rt') as r1, gzip.open(fq1, 'wt') as w1:
+        with xopen(self.fq1, 'rt') as r1, xopen(fq1, 'wt') as w1:
             i = 0 # counter
             for line in r1:
                 i += 1
@@ -326,7 +327,7 @@ class Demx(object):
 
         if isinstance(self.fq2, str):
             fq2 = os.path.join(self.data_dir, os.path.basename(self.fq2))
-            with gzip.open(self.fq2, 'rt') as r2, gzip.open(fq2, 'wt') as w2:
+            with xopen(self.fq2, 'rt') as r2, xopen(fq2, 'wt') as w2:
                 i = 0 # counter
                 for line in r2:
                     i += 1
@@ -414,7 +415,7 @@ class Demx(object):
         """
         # step1. index1
         outdir1 = os.path.join(self.outdir, '_tmp')
-        with gzip.open(self.fq1, 'rt') as r:
+        with xopen(self.fq1, 'rt') as r:
             self.index_se(r, outdir1)
         flist1 = self.wrap_dir(outdir1, 'index1') # filenames, not-filenames
 
@@ -440,7 +441,7 @@ class Demx(object):
         """
         # step1. index1
         outdir1 = os.path.join(self.outdir, '_tmp')
-        with gzip.open(self.fq1, 'rt') as r:
+        with xopen(self.fq1, 'rt') as r:
             self.index_se(r, outdir1)
         flist1 = self.wrap_dir(outdir1, 'index1') # filenames, not-filenames
 
@@ -463,7 +464,7 @@ class Demx(object):
         """
         # step1. index1
         outdir1 = os.path.join(self.outdir, '_tmp')
-        with gzip.open(self.fq1, 'rt') as r1, gzip.open(self.fq2, 'rt') as r2:
+        with xopen(self.fq1, 'rt') as r1, xopen(self.fq2, 'rt') as r2:
             self.index_pe(r1, r2, outdir1)
         # rename files in dirs/
         flist1 = self.wrap_dir(outdir1, mode='index1')
@@ -493,7 +494,7 @@ class Demx(object):
         """
         # step1. index1
         outdir1 = os.path.join(self.outdir, '_tmp')
-        with gzip.open(self.fq1, 'rt') as r1, gzip.open(self.fq2, 'rt') as r2:
+        with xopen(self.fq1, 'rt') as r1, xopen(self.fq2, 'rt') as r2:
             self.index_pe(r1, r2, outdir1)
         # rename files in dirs/
         flist1 = self.wrap_dir(outdir1, mode='index1')
@@ -511,9 +512,9 @@ class Demx(object):
         """
         Compress, multiple fastq files into single file
         """
-        with gzip.open(fout, 'wb') as w:
+        with xopen(fout, 'wb') as w:
             for q in qlist:
-                with open(q, 'rb') as r:
+                with xopen(q, 'rb') as r:
                     shutil.copyfileobj(r, w)
 
 
@@ -608,7 +609,6 @@ class Demx(object):
             with xopen(f, 'rb') as r:
                 with xopen(f_out, 'wb') as w:
                     shutil.copyfileobj(r, w)
-            # gzip_cmd(f, f_out, decompress=False, rm=True)
         
         # save undemx
         f_undemx = sorted(f_undemx)
@@ -638,7 +638,6 @@ class Demx(object):
         """
         f_out = os.path.join(self.outdir, os.path.basename(f_in) + '.gz')
         log.info('Saving file: {}'.format(f_out))
-        # gzip_cmd(f_in, f_out, decompress=False, rm=True)
         # pigz faster than gzip
         with xopen(f_in, 'rb') as r:
             with xopen(f_out,'wb') as w:
