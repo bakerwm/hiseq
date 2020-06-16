@@ -44,6 +44,7 @@ import os
 import sys
 import shutil
 import argparse
+from xopen import xopen
 from contextlib import ExitStack
 import Levenshtein as lev # distance
 from xopen import xopen
@@ -203,7 +204,7 @@ class IndexList(object):
         s4 = 'ok' if self.is_compatible(self.index1) else 'failed'
         s5 = 'ok' if self.is_compatible(self.index2) else 'failed'
         s6 = 'ok' if self.is_compatible(self.barcode) else 'failed'
-        s7 = 'ok' if len(self.barcode_width) == 1 else 'failed'
+        s7 = 'ok' if len(self.barcode_width) < 2 else 'failed'
 
         # report
         msg = '\n'.join([
@@ -234,6 +235,15 @@ class Demx(object):
         for k, v in kwargs.items():
             setattr(self, k, v)
         self.init_args()
+        self.save_config()
+
+
+    def save_config(self):
+        """
+        Save config to file
+        """
+        chk0 = args_checker(self.__dict__, self.config_pickle)
+        chk1 = args_logger(self.__dict__, self.config_txt)
 
 
     def init_args(self):
@@ -251,16 +261,27 @@ class Demx(object):
             'mismatch': 0,
             'threads': 1,
             'parallel_jobs': 4,
-            'overwrite': False
+            'overwrite': False,
+            'demo': False
         }
         for k, v in args_init.items():
             if not hasattr(self, k):
                 setattr(self, k, v)
 
+        # config
+        self.config_dir = os.path.join(self.outdir, 'config')
+        self.config_pickle = os.path.join(self.config_dir, 'arguments.pickle')
+        self.config_txt = os.path.join(self.config_dir, 'arguments.txt')
+        check_path(self.config_dir)
+
         # fastq file
         if self.fq1 is None:
             log.error('fq1, file not exists')
             raise ValueError('fq1, fastq file required')
+
+        # subsample reads
+        if self.demo:
+            self.sample_fq()
 
         # sample: csv file
         if self.index_csv is None:
@@ -272,7 +293,7 @@ class Demx(object):
             self.index1 = self.idx.index1
             self.index2 = self.idx.index2
             self.barcode = self.idx.barcode
-            self.barcode_width = self.idx.barcode_width[0] #
+            self.barcode_width = self.idx.barcode_width[0] if len(self.idx.barcode_width) > 0 else 0
             self.idx_main = self.idx.main
             if not self.idx.status:
                 raise ValueError('Check out the index list file')
@@ -282,10 +303,88 @@ class Demx(object):
             log.error('mismatch, [0,1,2,3] expected, {} got'.format(self.mismatch))
             self.mismatch = 0
 
-        # clean outdir
-        tmp = listdir(self.outdir, include_dir=True)
-        if len(tmp) > 0:
-            raise Exception('outdir: empty dir required, files detected in: {}'.format(self.outdir))
+        # check variables: int
+        for i in ['barcode_in_read', 'barcode_n_left', 'barcode_n_right', 'mismatch', 'threads', 'parallel_jobs']:
+            ix = getattr(self, i, None)
+            if not isinstance(ix, int):
+                log.error('{}, int expected, {} got'.format(i, type(i).__name__))
+
+        # resource
+        self.init_cpu() 
+
+        ## clean outdir
+        # tmp = listdir(self.outdir, include_dir=True)
+        # if len(tmp) > 0:
+        #     raise Exception('outdir: empty dir required, files detected in: {}'.format(self.outdir))
+
+
+    def sample_fq(self, smp='demo', sample_size=1000000):
+        """
+        Create a subsample of input fastq files, default: 1M reads
+        Run the whole process for demostration
+        
+        update: fq1, fq2, outdir
+        """
+        log.info('Running demo with subsample: {} reads'.format(sample_size))
+        # update args
+        self.outdir = os.path.join(self.outdir, smp)
+        self.data_dir = os.path.join(self.outdir, 'data')
+        check_path(self.data_dir)
+        
+        # subsample
+        fq1 = os.path.join(self.data_dir, os.path.basename(self.fq1))
+        if os.path.exists(fq1):
+            log.info('file eixsts, {}'.format(fq1))
+        else:
+            with xopen(self.fq1, 'rt') as r1, xopen(fq1, 'wt') as w1:
+                i = 0 # counter
+                for line in r1:
+                    i += 1
+                    if i > sample_size*4: # fastq file: 4 lines per read
+                        break
+                    w1.write(line)
+
+        if isinstance(self.fq2, str):
+            fq2 = os.path.join(self.data_dir, os.path.basename(self.fq2))
+            if os.path.exists(fq2):
+                log.info('file exists, {}'.format(fq2))
+            else:
+                with xopen(self.fq2, 'rt') as r2, xopen(fq2, 'wt') as w2:
+                    i = 0 # counter
+                    for line in r2:
+                        i += 1
+                        if i > sample_size*4: # fastq file: 4 lines per read
+                            break
+                        w2.write(line)
+        else:
+            fq2 = None
+
+        # update fq1, fq2
+        self.fq1 = fq1
+        self.fq2 = fq2
+
+
+    def init_cpu(self):
+        """
+        threads, CPUs
+        """
+        ## check number of threads, parallel_jobs
+        ## parallel jobs * threads
+        n_cpu = os.cpu_count() # alternative: multiprocessing.cpu_count()
+
+        max_jobs = int(n_cpu / 10.0)
+        ## check parallel_jobs (max: 1/10 of n_cpus)
+        if self.parallel_jobs > max_jobs: 
+            log.warning('Too large, change parallel_jobs from {} to {}'.format(
+                self.parallel_jobs, max_jobs))
+            self.parallel_jobs = max_jobs
+
+        ## check threads
+        max_threads = int(0.3 * n_cpu / self.parallel_jobs)
+        if self.threads * self.parallel_jobs > 0.3 * n_cpu:
+            log.warning('Too large, change threads from {} to {}'.format(
+                self.threads, max_threads))
+            self.threads = max_threads       
 
 
     def mission(self):
@@ -338,12 +437,13 @@ class Demx(object):
         """
         # step1. index1
         outdir1 = os.path.join(self.outdir, '_tmp')
-        with gzip.open(self.fq1, 'rt') as r:
+        with xopen(self.fq1, 'rt') as r:
             self.index_se(r, outdir1)
         flist1 = self.wrap_dir(outdir1, 'index1') # filenames, not-filenames
 
         ## parallel-jobs
-        with Pool(processes=self.parallel_jobs) as pool:
+        n_jobs = min(self.parallel_jobs, len(flist1)) # number of jobs
+        with Pool(processes=n_jobs) as pool:
             pool.map(self.run_se_barcode_single, flist1)
         # for fq in flist1:
         #     flist2 = self.run_se_barcode_single(fq)
@@ -363,7 +463,7 @@ class Demx(object):
         """
         # step1. index1
         outdir1 = os.path.join(self.outdir, '_tmp')
-        with gzip.open(self.fq1, 'rt') as r:
+        with xopen(self.fq1, 'rt') as r:
             self.index_se(r, outdir1)
         flist1 = self.wrap_dir(outdir1, 'index1') # filenames, not-filenames
 
@@ -386,7 +486,7 @@ class Demx(object):
         """
         # step1. index1
         outdir1 = os.path.join(self.outdir, '_tmp')
-        with gzip.open(self.fq1, 'rt') as r1, gzip.open(self.fq2, 'rt') as r2:
+        with xopen(self.fq1, 'rt') as r1, xopen(self.fq2, 'rt') as r2:
             self.index_pe(r1, r2, outdir1)
         # rename files in dirs/
         flist1 = self.wrap_dir(outdir1, mode='index1')
@@ -395,7 +495,8 @@ class Demx(object):
         # step2. index2
         # step3. barcode
         # multiple jobs
-        with Pool(processes=self.parallel_jobs) as pool:
+        n_jobs = min(self.parallel_jobs, len(flist1[0::2])) # number of jobs
+        with Pool(processes=n_jobs) as pool:
             pool.map(self.run_pe_barcode_single, flist1[0::2]) # read1
         # for fq1 in flist1[0::2]: # read1
         #     self.run_pe_barcode_single(fq1)
@@ -415,7 +516,7 @@ class Demx(object):
         """
         # step1. index1
         outdir1 = os.path.join(self.outdir, '_tmp')
-        with gzip.open(self.fq1, 'rt') as r1, gzip.open(self.fq2, 'rt') as r2:
+        with xopen(self.fq1, 'rt') as r1, xopen(self.fq2, 'rt') as r2:
             self.index_pe(r1, r2, outdir1)
         # rename files in dirs/
         flist1 = self.wrap_dir(outdir1, mode='index1')
@@ -433,9 +534,9 @@ class Demx(object):
         """
         Compress, multiple fastq files into single file
         """
-        with gzip.open(fout, 'wb') as w:
+        with xopen(fout, 'wb') as w:
             for q in qlist:
-                with open(q, 'rb') as r:
+                with xopen(q, 'rb') as r:
                     shutil.copyfileobj(r, w)
 
 
@@ -451,26 +552,39 @@ class Demx(object):
                 f_new = os.path.join(x, self.sample.get(ix, fname))
                 # check suffix
                 f_new += '_1.fq' if f.endswith('_1.fq') else ('_2.fq' if f.endswith('_2.fq') else '.fq')
-                if not f == f_new:
+                # check, index1 contains barcode or not
+                if f == f_new:
+                    if fname in self.sample.values():
+                        # files already renamed 
+                        log.info('file exists, {}'.format(f))
+                    else:
+                        dirs.append(f)
+                else:
+                    # not in self.sample.keys()
                     if os.path.exists(f_new):
                         log.warning('file exists: {}'.format(f_new))
                     else:
                         os.rename(f, f_new)
-                else:
-                    dirs.append(f)
         elif mode == 'barcode':
             for f in listfile(x, "*.fq"):
                 fname = fq_name(f, pe_fix=True)
                 ix =  fq_name(x) + ',NULL,' + fname
                 f_new = os.path.join(x, self.sample.get(ix, fname))
                 f_new += '_1.fq' if f.endswith('_1.fq') else ('_2.fq' if f.endswith('_2.fq') else '.fq')
-                if not f == f_new:
+                # check, index1 contains barcode or not
+                if f == f_new:
+                    # in self.samples.keys()
+                    if fname in self.sample.values():
+                        # files already renamed
+                        log.info('file exists, {}'.format(f))
+                    else:
+                        dirs.append(f)
+                else:
+                    # not in self.samples.keys()
                     if os.path.exists(f_new):
                         log.warning('file exists: {}'.format(f_new))
                     else:
                         os.rename(f, f_new)
-                else:
-                    dirs.append(f)
         else:
             pass
 
@@ -505,26 +619,55 @@ class Demx(object):
                         pass
             else:
                 pass
-        # save files
+        ## save files
+        # ## multiple threads
+        # n_jobs = 4
+        # with Pool(processes=n_jobs) as pool:
+        #     pool.map(self.compress_output, f_hits) # read1
+
         for f in f_hits:
             f_out = os.path.join(self.outdir, os.path.basename(f) + '.gz')
             log.info('Saving file: {}'.format(f_out))
-            gzip_cmd(f, f_out, decompress=False, rm=True)
+            if os.path.exists(f_out):
+                log.warning('file exists, {}'.format(f_out))
+            else:
+                with xopen(f, 'rb') as r:
+                    with xopen(f_out, 'wb') as w:
+                        shutil.copyfileobj(r, w)
         
         # save undemx
+        log.info('Saving file: undemx')
         f_undemx = sorted(f_undemx)
         if f_undemx[0].endswith('_1.fq'):
             # PE mode
             f_r1_undemx_out = os.path.join(self.outdir, 'undemx_1.fq.gz')
             f_r2_undemx_out = os.path.join(self.outdir, 'undemx_2.fq.gz')
-            self.fq_merge(f_r1_undemx_out, f_undemx[0::2]) # read1
-            self.fq_merge(f_r2_undemx_out, f_undemx[1::2]) # read2
+            if os.path.exists(f_r1_undemx_out) and os.path.exists(f_r2_undemx_out):
+                log.warning('file exists, merging undemx file skipped...')
+            else:
+                self.fq_merge(f_r1_undemx_out, f_undemx[0::2]) # read1
+                self.fq_merge(f_r2_undemx_out, f_undemx[1::2]) # read2
         else:
             # SE mode
             f_undemx_out = os.path.join(self.outdir, 'undemx.fq.gz')
-            self.fq_merge(f_undemx_out, f_undemx)
+            if os.path.exists(f_undemx_out):
+                log.warning('file exists, merging undemx file skipped...')
+            else:            
+                self.fq_merge(f_undemx_out, f_undemx)
 
         # remove temp files "outdir/_tmp"
+
+
+    def compress_output(self, f_in):
+        """
+        Compress f_in, save to self.outdir
+        """
+        f_out = os.path.join(self.outdir, os.path.basename(f_in) + '.gz')
+        log.info('Saving file: {}'.format(f_out))
+        # pigz faster than gzip
+        with xopen(f_in, 'rb') as r:
+            with xopen(f_out,'wb') as w:
+                shutil.copyfileobj(r, w)
 
 
     def wrap_read_count(self):
@@ -708,6 +851,7 @@ class Demx(object):
         1. [ACGTN]{8}
         2. [ACGTN]{8}+[ACGTN]{8} 
         """
+        log.info('Running index_se, {}'.format(outdir))
         check_path(outdir)
 
         # all availabe output files
@@ -715,6 +859,13 @@ class Demx(object):
         fnames = self.index1
         fnames.append('undemx')
         fouts = [os.path.join(outdir, i + '.fq') for i in fnames]
+
+        # check status
+        fn_json = os.path.join(outdir, 'read_number.json')
+        if os.path.exists(fn_json):
+            log.info('Skipped index_se, {}, read_number.json found'.format(outdir))
+            return fouts        
+
         # open multiple files at same time
         with ExitStack() as stack:
             fws = [stack.enter_context(open(f, 'wt')) for f in fouts]
@@ -735,7 +886,6 @@ class Demx(object):
                 fn[fname] = fn.get(fname, 0) + 1
         
         # save dict to json
-        fn_json = os.path.join(outdir, 'read_number.json')
         Json(fn).writer(fn_json)        
 
         return fouts
@@ -747,8 +897,9 @@ class Demx(object):
         Demultiplex Illumina Hiseq fastq file
         single index or dual index
         1. [ACGTN]{8}
-        2. [ACGTN]{8}+[ACGTN]{8} 
+        2. [ACGTN]{8}+[ACGTN]{8}
         """
+        log.info('Running index_pe, {}'.format(outdir))
         check_path(outdir)
 
         # all availabe output files
@@ -757,6 +908,14 @@ class Demx(object):
         fnames.append('undemx')
         r1_fouts = [os.path.join(outdir, i + '_1.fq') for i in fnames]
         r2_fouts = [os.path.join(outdir, i + '_2.fq') for i in fnames]
+
+
+        # check status
+        fn_json = os.path.join(outdir, 'read_number.json')
+        if os.path.exists(fn_json):
+            log.info('Skipped index_pe, {}, read_number.json found'.format(outdir))
+            return (r1_fouts, r2_fouts)
+
         # open multiple files at same time
         with ExitStack() as stack:
             fws = [stack.enter_context(open(f, 'wt')) for f in r1_fouts + r2_fouts]
@@ -783,7 +942,6 @@ class Demx(object):
                 fn[fname] = fn.get(fname, 0) + 1
         
         # save dict to json
-        fn_json = os.path.join(outdir, 'read_number.json')
         Json(fn).writer(fn_json)
 
 
@@ -792,7 +950,8 @@ class Demx(object):
         """
         check barcode
         save as files
-        """   
+        """
+        log.info('Running barcode_se, {}'.format(outdir))
         check_path(outdir)
 
         # add undemx
@@ -800,6 +959,13 @@ class Demx(object):
         bc = self.get_barcode(index1)
         bc.append('undemx')
         fouts = [os.path.join(outdir, i + '.fq') for i in bc]
+
+        # check status
+        fn_json = os.path.join(outdir, 'read_number.json')
+        if os.path.exists(fn_json):
+            log.info('Skipped barcode_se, {}, read_number.json found'.format(outdir))
+            return fouts
+
         # open multiple files at same time
         with ExitStack() as stack:
             fws = [stack.enter_context(open(f, 'wt')) for f in fouts]
@@ -820,8 +986,8 @@ class Demx(object):
                 fn[fname] = fn.get(fname, 0) + 1
         
         # save dict to json
-        fn_json = os.path.join(outdir, 'read_number.json')
         Json(fn).writer(fn_json)
+        return fouts
 
 
     # barcode
@@ -829,7 +995,8 @@ class Demx(object):
         """
         check barcode
         save as files
-        """ 
+        """
+        log.info('Running barcode_pe, {}'.format(outdir))
         check_path(outdir)
 
         # add undemx
@@ -838,6 +1005,13 @@ class Demx(object):
         bc.append('undemx')
         r1_fouts = [os.path.join(outdir, i + '_1.fq') for i in bc]
         r2_fouts = [os.path.join(outdir, i + '_2.fq') for i in bc]
+
+        # check status
+        fn_json = os.path.join(outdir, 'read_number.json')
+        if os.path.exists(fn_json):
+            log.info('Skipped barcode_pe, {}, read_number.json found'.format(outdir))
+            return (r1_fouts, r2_fouts)
+
         # open multiple files at same time
         with ExitStack() as stack:
             fws = [stack.enter_context(open(f, 'wt')) for f in r1_fouts + r2_fouts]
@@ -866,99 +1040,20 @@ class Demx(object):
                 fn[fname] = fn.get(fname, 0) + 1
         
         # save dict to json
-        fn_json = os.path.join(outdir, 'read_number.json')
         Json(fn).writer(fn_json)
+        return (r1_fouts, r2_fouts)
 
 
     def run(self):
         self.mission()
         # report
-        print('RT: {:-^64}'.format('Demx Report'))
-        print('RT: {0:>50} {1:>10}  {2:7}'.format('filename', 'count', 'percent'))
+        print('RT {:-^70}'.format('Demx Report: BEGIN'))
+        print('RT {0:>50} {1:>10}  {2:7}'.format('filename', 'count', 'percent'))
         total = sum(self.demx_report['main'].values())
         for k, v in self.demx_report['main'].items():
-            print('RT: {0:>50} {1:>10} {2:>7.2f}%'.format(k, v, v / total * 100))
+            print('RT {0:>50} {1:>10} {2:>7.2f}%'.format(k, v, v / total * 100))
 
-        print('RT: {0:>50} {1:>10}  {2:7}'.format('sum', total, '100.00%'))
-
-
-
-
-
-
-
-    # def wrap_se_dir(self, x, mode):
-    #     """
-    #     rename fq files in dir
-    #     """
-    #     dirs = []
-    #     if mode == 'index1':
-    #         for f in listfile(x, "*.fq"):
-    #             fname = fq_name(f, pe_fix=True)
-    #             ix = fname + ',NULL,NULL'
-    #             f_new = os.path.join(x, self.sample.get(ix, fname) + '.fq')
-    #             if not f == f_new:
-    #                 if os.path.exists(f_new):
-    #                     log.warning('file exists: {}'.format(f_new))
-    #                 else:
-    #                     os.rename(f, f_new)
-    #             else:
-    #                 dirs.append(f)
-    #     elif mode == 'barcode':
-    #         for f in listfile(x, "*.fq"):
-    #             fname = fq_name(f, pe_fix=True)
-    #             ix =  fq_name(x) + ',NULL,' + fname
-    #             f_new = os.path.join(x, self.sample.get(ix, fname) + '.fq')
-    #             if not f == f_new:
-    #                 if os.path.exists(f_new):
-    #                     log.warning('file exists: {}'.format(f_new))
-    #                 else:
-    #                     os.rename(f, f_new)
-    #             else:
-    #                 dirs.append(f)
-    #     else:
-    #         pass
-
-    #     return dirs
-
-
-    # def wrap_se_file(self):
-    #     """
-    #     move "_tmp/" files to "outdir", 
-    #     combine undemx file
-    #     """
-    #     f_undemx = []
-    #     f_hits = []
-    #     # level-1: index-1
-    #     dv1 = os.path.join(self.outdir, '_tmp')
-    #     for d1 in listdir(dv1, include_dir=True):
-    #         d1_name = fq_name(d1)
-    #         # for exists files
-    #         if d1_name in self.sample.values():
-    #             f_hits.append(d1)
-    #         elif d1_name == 'undemx':
-    #             f_undemx.append(d1)
-    #         elif os.path.isdir(d1): # barcode level
-    #             # level-2: barcode
-    #             for d2 in listfile(d1, "*.fq"):
-    #                 d2_name = fq_name(d2)
-    #                 if d2_name in self.sample.values():
-    #                     f_hits.append(d2)
-    #                 elif d2_name == "undemx":
-    #                     f_undemx.append(d2)
-    #                 else:
-    #                     pass
-    #         else:
-    #             pass
-    #     # save files
-    #     for f in f_hits:
-    #         f_out = os.path.join(self.outdir, os.path.basename(f) + '.gz')
-    #         log.info('Saving file: {}'.format(f_out))
-    #         gzip_cmd(f, f_out, decompress=False, rm=True)
-        
-    #     # save undemx
-    #     f_undemx_out = os.path.join(self.outdir, 'undemx.fq.gz')
-    #     self.fq_merge(f_undemx_out, f_undemx)
-
-    #     # remove temp files "outdir/_tmp"
+        print('RT {0:>50} {1:>10}  {2:7}'.format('sum', total, '100.00%'))
+        print('RT {:-^70}'.format('Demx Report: END'))
+        log.info('Demultiplexing finished!')
 

@@ -471,7 +471,7 @@ def gzip_cmd(src, dest, decompress=True, rm=True):
                 log.warning('input is gzipped file, no need gzip')
                 shutil.copy(src, dest)
             else:
-                with open(src, 'rb') as r, gzip.open(dest, 'wb') as w:
+                with open(src, 'rb') as r, gzip.open(dest, 'wb', compresslevel=1) as w:
                     shutil.copyfileobj(r, w)
 
     # output
