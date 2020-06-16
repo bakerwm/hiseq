@@ -204,7 +204,7 @@ class IndexList(object):
         s4 = 'ok' if self.is_compatible(self.index1) else 'failed'
         s5 = 'ok' if self.is_compatible(self.index2) else 'failed'
         s6 = 'ok' if self.is_compatible(self.barcode) else 'failed'
-        s7 = 'ok' if len(self.barcode_width) == 1 else 'failed'
+        s7 = 'ok' if len(self.barcode_width) < 2 else 'failed'
 
         # report
         msg = '\n'.join([
@@ -235,6 +235,15 @@ class Demx(object):
         for k, v in kwargs.items():
             setattr(self, k, v)
         self.init_args()
+        self.save_config()
+
+
+    def save_config(self):
+        """
+        Save config to file
+        """
+        chk0 = args_checker(self.__dict__, self.config_pickle)
+        chk1 = args_logger(self.__dict__, self.config_txt)
 
 
     def init_args(self):
@@ -259,6 +268,12 @@ class Demx(object):
             if not hasattr(self, k):
                 setattr(self, k, v)
 
+        # config
+        self.config_dir = os.path.join(self.outdir, 'config')
+        self.config_pickle = os.path.join(self.config_dir, 'arguments.pickle')
+        self.config_txt = os.path.join(self.config_dir, 'arguments.txt')
+        check_path(self.config_dir)
+
         # fastq file
         if self.fq1 is None:
             log.error('fq1, file not exists')
@@ -278,7 +293,7 @@ class Demx(object):
             self.index1 = self.idx.index1
             self.index2 = self.idx.index2
             self.barcode = self.idx.barcode
-            self.barcode_width = self.idx.barcode_width[0] #
+            self.barcode_width = self.idx.barcode_width[0] if len(self.idx.barcode_width) > 0 else 0
             self.idx_main = self.idx.main
             if not self.idx.status:
                 raise ValueError('Check out the index list file')
@@ -314,26 +329,33 @@ class Demx(object):
         # update args
         self.outdir = os.path.join(self.outdir, smp)
         self.data_dir = os.path.join(self.outdir, 'data')
+        check_path(self.data_dir)
         
         # subsample
         fq1 = os.path.join(self.data_dir, os.path.basename(self.fq1))
-        with xopen(self.fq1, 'rt') as r1, xopen(fq1, 'wt') as w1:
-            i = 0 # counter
-            for line in r1:
-                i += 1
-                if i > sample_size:
-                    break
-                w1.write(line)
+        if os.path.exists(fq1):
+            log.info('file eixsts, {}'.format(fq1))
+        else:
+            with xopen(self.fq1, 'rt') as r1, xopen(fq1, 'wt') as w1:
+                i = 0 # counter
+                for line in r1:
+                    i += 1
+                    if i > sample_size*4: # fastq file: 4 lines per read
+                        break
+                    w1.write(line)
 
         if isinstance(self.fq2, str):
             fq2 = os.path.join(self.data_dir, os.path.basename(self.fq2))
-            with xopen(self.fq2, 'rt') as r2, xopen(fq2, 'wt') as w2:
-                i = 0 # counter
-                for line in r2:
-                    i += 1
-                    if i > sample_size:
-                        break
-                    w2.write(line)
+            if os.path.exists(fq2):
+                log.info('file exists, {}'.format(fq2))
+            else:
+                with xopen(self.fq2, 'rt') as r2, xopen(fq2, 'wt') as w2:
+                    i = 0 # counter
+                    for line in r2:
+                        i += 1
+                        if i > sample_size*4: # fastq file: 4 lines per read
+                            break
+                        w2.write(line)
         else:
             fq2 = None
 
@@ -606,11 +628,15 @@ class Demx(object):
         for f in f_hits:
             f_out = os.path.join(self.outdir, os.path.basename(f) + '.gz')
             log.info('Saving file: {}'.format(f_out))
-            with xopen(f, 'rb') as r:
-                with xopen(f_out, 'wb') as w:
-                    shutil.copyfileobj(r, w)
+            if os.path.exists(f_out):
+                log.warning('file exists, {}'.format(f_out))
+            else:
+                with xopen(f, 'rb') as r:
+                    with xopen(f_out, 'wb') as w:
+                        shutil.copyfileobj(r, w)
         
         # save undemx
+        log.info('Saving file: undemx')
         f_undemx = sorted(f_undemx)
         if f_undemx[0].endswith('_1.fq'):
             # PE mode
