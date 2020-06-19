@@ -581,6 +581,11 @@ def add_bam2bw_args():
         help='set binSize for bigWig, default: [50]')
     parser.add_argument('-g', '--genome', default=None,
         help='choose genome for the bam file, default: [None]')
+    parser.add_argument('--normalizeUsing', default='None',
+        choices=['RPKM', 'CPM', 'BPM', 'RPGC', 'None'],
+        help='Possible choices: RPKM, CPM, BPM, RPGC, None, default: [None] \
+        see https://deeptools.readthedocs.io/en/latest/content/tools/bamCoverage.html, \
+        for details from deeptools documentation.')
     parser.add_argument('-gs', '--genome-size', dest='genome_size', default=None,
         help='set the genome size for input genome, default: [None]' )
     parser.add_argument('-r', '--reference', default=None,
