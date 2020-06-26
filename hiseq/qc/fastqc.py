@@ -110,26 +110,32 @@ class Fastqc(object):
         tag = None
         if isinstance(self.fq, str):
             # file exists
-            if file_exists(self.fq) and Fastx(self.fq).is_fastq():
-                tag = 'single'
-                self.fastqc_single(self.fq)
+            if check_file(self.fq, emptycheck=True):
+                if Fastx(self.fq).is_fastq():
+                    tag = 'single'
+                    self.fastqc_single(self.fq)
+                else:
+                    log.warning('not fastq format, {}'.format(x))
             else:
-                log.warning('file not exists, or not a fastq file: {}'.format(self.fq))
+                log.warning('file not exists, or is empty, {}'.format(x))
         elif isinstance(self.fq, list):
-            f1 = [i for i in self.fq if file_exists(i) and Fastx(i).is_fastq()]
-            if len(f1) >= 1:
+            f_out = []
+            for fq in self.fq:
+                if check_file(fq, emptycheck=True):
+                    if Fastx(fq).is_fastq():
+                        f_out.append(fq)
+                    else:
+                        log.warning('not fastq format, {}'.format(fq))
+                else:
+                    log.warning('file not exists, or is empty, {}'.format(fq))
+            # check
+            if len(f_out) >= 1:
                 tag = 'multiple'
-                self.fastqc_multiple(self.fq)
-            # elif len(f1) == 1:
-            #     tag = 'single'
-            #     self.fastqc_single(self.fq[0])
+                self.fastqc_multiple(f_out)
             else:
-                ## not in f1
-                f0 = [i for i in self.fq if i not in f1]
-                log.warning('files not exists, or not fastq files: \n{}'.format('\n'.join(f0)))
+                log.warning('no fq files found')
         else:
             log.warning('str, list expected, {} found'.format(type(self.fq).__name__))
-
 
         return tag
 

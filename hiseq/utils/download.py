@@ -69,7 +69,7 @@ def run_shell_cmd(cmd):
     return (stdout.strip('\n'), stderr.strip('\n'))
 
 
-def get_lnd_args():
+def get_lnd_args(argv):
     parser = argparse.ArgumentParser(description='download files')
     parser.add_argument('-i', '--config', required=True,
         help='config file for download, save id/passwd/path/...')
@@ -77,7 +77,7 @@ def get_lnd_args():
         help='path to save the files')
     parser.add_argument('-y', '--yes', action='store_true',
         help='Do not ask for confirmation')
-    args = parser.parse_args(sys.argv[2:])
+    args = parser.parse_args(argv) # sys.argv[2:]
     return vars(args)
 
 
@@ -204,7 +204,7 @@ class Linuxnd(object):
             log.info('Downloading skipped!')
 
 
-def main():
+def main(argv):
     parser = argparse.ArgumentParser(
         prog = 'download',
         description = 'A collection of tools for HiSeq data',
@@ -216,10 +216,10 @@ def main():
         geo        Download GEO supp data
     """)
     parser.add_argument('command', help='Subcommand to run')
-    args = parser.parse_args(sys.argv[1:2])
+    args = parser.parse_args(argv[1:2])
     
     if args.command == 'lnd':
-        args = get_lnd_args()
+        args = get_lnd_args(argv[2:])
         Linuxnd(**args).download()
     elif args.command == 'sra':
         pass
@@ -232,4 +232,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    main(sys.argv)

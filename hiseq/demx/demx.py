@@ -1046,14 +1046,25 @@ class Demx(object):
 
     def run(self):
         self.mission()
-        # report
-        print('RT {:-^70}'.format('Demx Report: BEGIN'))
-        print('RT {0:>50} {1:>10}  {2:7}'.format('filename', 'count', 'percent'))
         total = sum(self.demx_report['main'].values())
+        # report
+        msg = ['RT {:-^74}'.format('Demx Report: BEGIN')]
+        msg.append('RT {0:>3} {1:<50} {2:>10}  {3:>7}'.format('num', 'filename', 'count', 'percent'))
+        i = 0
         for k, v in self.demx_report['main'].items():
-            print('RT {0:>50} {1:>10} {2:>7.2f}%'.format(k, v, v / total * 100))
+            i += 1
+            msg.append('RT {0:>3} {1:<50} {2:>10} {3:>7.2f}%'.format(i, k, v, v / total * 100))
+        # end
+        msg.append('RT {0:>3} {1:<50} {2:>10} {3:>7}%'.format('', 'sum', total, '100.00'))
+        msg.append('RT {:-^74}'.format('Demx Report: END'))
 
-        print('RT {0:>50} {1:>10}  {2:7}'.format('sum', total, '100.00%'))
-        print('RT {:-^70}'.format('Demx Report: END'))
+        msg_log = '\n'.join(msg) #
+
+        # save report to file
+        report_txt = os.path.join(self.outdir, 'report.txt')
+        with open(report_txt, 'wt') as w:
+            w.write(msg_log + '\n')
+
+        print(msg_log)
         log.info('Demultiplexing finished!')
 
