@@ -542,7 +542,9 @@ class Bam2bw(object):
             'reference': None,
             'genome': None,
             'genome_size': None,
-            'normalizeusing': 'RPKM',
+            'scaleFactor': 1.0,
+            'normalizeUsing': 'RPKM',
+            'threads': 4,
             'config_txt': os.path.join(self.outdir, 'arguments.txt'),
             'flag': True # whether run/not
         }
@@ -616,9 +618,12 @@ class Bam2bw(object):
         # bedtools cmd
         cmd = ' '.join([
             '{} -b {} -o {}'.format(self.bamcoverage, self.bam, self.bw_fwd),
+            '--binSize {}'.format(self.binsize), 
+            '--effectiveGenomeSize {}'.format(self.genome_size),
             '--filterRNAstrand forward',
-            '--normalizeUsing {}'.format(self.normalizeusing),
-            '--binSize {} --effectiveGenomeSize {}'.format(self.binsize, self.genome_size)])
+            '--numberOfProcessors {}'.format(self.threads), 
+            '--scaleFactor {}'.format(self.scaleFactor),
+            '--normalizeUsing {}'.format(self.normalizeUsing)])
         cmd_txt = os.path.join(self.outdir, 'cmd_fwd.txt')
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + '\n')
@@ -630,9 +635,12 @@ class Bam2bw(object):
         # bedtools cmd
         cmd = ' '.join([
             '{} -b {} -o {}'.format(self.bamcoverage, self.bam, self.bw_rev),
+            '--binSize {}'.format(self.binsize), 
+            '--effectiveGenomeSize {}'.format(self.genome_size),
             '--filterRNAstrand reverse',
-            '--normalizeUsing {}'.format(self.normalizeusing),
-            '--binSize {} --effectiveGenomeSize {}'.format(self.binsize, self.genome_size)])
+            '--numberOfProcessors {}'.format(self.threads), 
+            '--scaleFactor {}'.format(self.scaleFactor),
+            '--normalizeUsing {}'.format(self.normalizeUsing)])
         cmd_txt = os.path.join(self.outdir, 'cmd_rev.txt')
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + 'n')
@@ -644,9 +652,12 @@ class Bam2bw(object):
         # bedtools cmd
         cmd = ' '.join([
             '{} -b {} -o {}'.format(self.bamcoverage, self.bam, self.bw),
-            '--normalizeUsing  {}'.format(self.normalizeusing),
             '--binSize {}'.format(self.binsize),
-            '--effectiveGenomeSize {}'.format(self.genome_size)])
+            '--effectiveGenomeSize {}'.format(self.genome_size),
+            '--numberOfProcessors {}'.format(self.threads), 
+            '--scaleFactor {}'.format(self.scaleFactor),
+            '--normalizeUsing  {}'.format(self.normalizeUsing)])
+
         cmd_txt = os.path.join(self.outdir, 'cmd.txt')
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + '\n')

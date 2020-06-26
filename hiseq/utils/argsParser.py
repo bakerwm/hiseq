@@ -581,6 +581,8 @@ def add_bam2bw_args():
         help='set binSize for bigWig, default: [50]')
     parser.add_argument('-g', '--genome', default=None,
         help='choose genome for the bam file, default: [None]')
+    parser.add_argument('--scaleFactor', nargs='+', type=float, default=1.0,
+        help='The scaling factor, default: [1.0]')
     parser.add_argument('--normalizeUsing', default='None',
         choices=['RPKM', 'CPM', 'BPM', 'RPGC', 'None'],
         help='Possible choices: RPKM, CPM, BPM, RPGC, None, default: [None] \
@@ -592,6 +594,8 @@ def add_bam2bw_args():
         help='the reference genome in fasta format, default: [None]')
     parser.add_argument('-w', '--overwrite', action='store_true',
         help='Whether overwrite exists files')
+    parser.add_argument('-p', '--threads', type=int, default=4,
+        help='Number of threads, default: [4]')
     return parser
 
 
@@ -662,3 +666,19 @@ def add_bed2overlap_args():
     return parser
 
 
+def add_sample_args():
+    """
+    required:
+        'input': 
+        'outdir': 
+        'sample_size':
+    """
+    parser = argparse.ArgumentParser(description='hiseq sample')
+    parser.add_argument('-i', '--input', nargs='+', required=True,
+        help='fastq files, or path contains fastq files')
+    parser.add_argument('-o', '--outdir', default=None,
+        help='output directory to save results')
+    parser.add_argument('-n', '--sample-size', dest='sample_size',
+        default=100,type=int, 
+        help='Number of fq records, default: 100')
+    return parser

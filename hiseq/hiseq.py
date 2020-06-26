@@ -28,7 +28,9 @@ from .rnaseq.rnaseq_pipe import RNAseqPipe
 from .rnaseq.rnaseq_cmp import RnaseqCmp
 from .go.go import Go
 from .utils import download as dl # download.main()
+from .utils.seq import Fastx
 from .atac.atac_utils import Bam2bw, Bam2cor, PeakIDR, BedOverlap
+from .utils.helper import *
 
 
 class Hiseq(object):
@@ -64,6 +66,7 @@ class Hiseq(object):
         bam2bw       Convert bam to bigWig 
         peak2idr     Calculate IDR for multiple Peaks
         bed2overlap  Calculate the overlap between bed intervals
+        sample       Sample fastq file
         download     Download files
     """
         )
@@ -294,10 +297,23 @@ class Hiseq(object):
         parser = add_bam2bw_args()
         args = parser.parse_args(sys.argv[2:])
         args = vars(args)
+        # update scaleFactors
+        bam_list = args.get('bam', None)
+        sf = args.get('scaleFactor', 1.0)
+        if len(sf) == 1:
+            sf_list = sf * len(bam_list)
+        elif not len(sf) == len(bam_list):
+            print('!AAAA-1', sf)
+            print('!AAAA-2', bam_list)
+            raise ValueError('--scaleFactor not match bam files')
+        else:
+            sf_list = sf
 
-        for bam in args.get('bam', None):
+        # for bam in args.get('bam', None):
+        for i, bam in enumerate(bam_list):
             args_local = args.copy()
             args_local['bam'] = bam
+            args_local['scaleFactor'] = sf_list[i]
             Bam2bw(**args_local).run()
 
 
@@ -333,6 +349,49 @@ class Hiseq(object):
         args = parser.parse_args(sys.argv[2:])
         args = vars(args)
         BedOverlap(**args).run()
+
+
+    def sample(self):
+        """
+        Sub-sample fastq files
+        head
+        """
+        parser = add_sample_args()
+        args = parser.parse_args(sys.argv[2:])
+        args = vars(args)
+        input = args.get('input', None)
+        outdir = args.get('outdir', None) # os.getcwd())
+        nsize = args.get('sample_size', 100)
+        if outdir is None:
+            outdir = os.getcwd()
+
+        # get list
+        def get_fq(x):
+            if os.path.isdir(x):
+                # f_list = list_fq_files(x)
+                p = re.compile('\.f(ast)?(a|q)(.gz)?')
+                f_list = [i for i in listfile(x, "*") if p.search(i)]
+            elif os.path.isfile(x):
+                f_list = [x]
+            else:
+                raise ValueError('str,list expected, {} got'.format(type(input).__name__))
+
+            return f_list
+
+        # output
+        fq_list = []
+        if isinstance(input, list):
+            for i in input:
+                fq_list.extend(get_fq(i))
+        elif isinstance(input, str):
+            fq_list.extend(get_fq(input))
+        else:
+            raise ValueError('str,list expected, {} got'.format(type(input).__name__))
+
+        # run 
+        for i in fq_list:
+            log.info('sample fastq: {} {}'.format(i, nsize))
+            Fastx(i).sample(outdir, nsize)
 
 
     def download(self):
