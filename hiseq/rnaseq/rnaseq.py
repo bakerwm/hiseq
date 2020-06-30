@@ -941,6 +941,7 @@ class RNAseqSingle(object):
             log.info('align() skipped, file exists: {}'.format(
                 args_local.get('bam_raw', None)))
         else:
+            print("!AAAA-1", args_local)
             Alignment(**args_local).run()
 
 
