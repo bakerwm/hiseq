@@ -106,13 +106,14 @@ class RNAseqPipe(object):
         genome = args_local.get('genome', None)
 
         # get index
-        te_index = AlignIndex(aligner='bowtie2').search(genome=genome, group='te')
+        te_index = AlignIndex(aligner='STAR').search(genome=genome, group='te')
         te_gtf = Genome(genome).te('gtf')
 
         ## default
         args_init = {
-            'aligner': 'bowtie2',
+            'aligner': 'STAR',
             'feature': 'te',
+            'unique_only': True,
             'index_list': te_index,
             'gtf': te_gtf
         }
@@ -132,12 +133,13 @@ class RNAseqPipe(object):
         genome = args_local.get('genome', None)
 
         # get index
-        pi_index = AlignIndex(aligner='bowtie2').search(genome=genome, group='piRNA_cluster')
+        pi_index = AlignIndex(aligner='STAR').search(genome=genome, group='piRNA_cluster')
         pi_gtf = Genome(genome).piRNA_cluster('gtf')
 
         ## default
         args_init = {
-            'aligner': 'bowtie2',
+            'aligner': 'STAR',
+            'unique_only': True,
             'feature': 'piRNA_cluster', 
             'index_list': pi_index,
             'gtf': pi_gtf
