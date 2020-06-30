@@ -19,3 +19,17 @@ This is a package for High-throughput sequencing data analysis. including pipeli
 + ATACseq   
 + smRNAseq   
 
+
+## to-do
+
+1. `hiseq demx`
+
+  - Check fq, MD5 from the same dir   
+  - Record the working lines    
+  - Re-run the program, skip-n lines,   
+  - Exception, 
+
+2. `hiseq align`   
+
+  - Align with `--para-extra`
+
