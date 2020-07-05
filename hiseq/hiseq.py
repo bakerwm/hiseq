@@ -25,7 +25,7 @@ from .align.alignment import Alignment
 from .atac.atac import Atac
 from .rnaseq.rnaseq import RNAseq
 from .rnaseq.rnaseq_pipe import RNAseqPipe
-from .rnaseq.rnaseq_cmp import RnaseqCmp
+from .rnaseq.deseq_pair import DeseqPair
 from .go.go import Go
 from .utils import download as dl # download.main()
 from .utils.seq import Fastx
@@ -60,7 +60,7 @@ class Hiseq(object):
         motif        Check motifs from a BED/fasta file
         report       Create a report to the above commands
         go           Run GO analysis on geneset
-        rnaseq_cmp   Run RNAseq compare
+        deseq_pair   Run RNAseq compare
 
         bam2cor      Correlation between bam files
         bam2bw       Convert bam to bigWig 
@@ -204,14 +204,14 @@ class Hiseq(object):
         Go(**args).run()
 
 
-    def rnaseq_cmp(self):
+    def deseq_pair(self):
         """
         Run RNAseq cmp
         """
-        parser = add_rnaseq_cmp_args()
+        parser = add_deseq_pair_args()
         args = parser.parse_args(sys.argv[2:])
         args = vars(args) # convert to dict
-        RnaseqCmp(**args).run()
+        DeseqPair(**args).run()
 
 
     def atac(self):

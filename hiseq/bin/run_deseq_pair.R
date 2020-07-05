@@ -20,7 +20,7 @@ Example:
 
 "
 
-if (length(args) < 4) {
+if (length(args) < 3) {
 	cat(err_msg)
   stop("arguments failed")
 }
@@ -28,8 +28,7 @@ if (length(args) < 4) {
 # args
 dirA    <- args[1]
 dirB    <- args[2]
-feature <- args[3]
-outdir  <- args[4]
+outdir  <- args[3]
 
 library(hiseqr)
 library(dplyr)
@@ -37,8 +36,7 @@ library(ggplot2)
 
 
 # run pipe, Rmarkdown
-
-hiseqr::compare_deseq_report(dirA, dirB, feature, outdir)
+hiseqr::deseq_pair_report(dirA, dirB, outdir)
 
 
 # END

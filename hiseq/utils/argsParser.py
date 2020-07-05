@@ -211,7 +211,7 @@ def add_align_args():
     parser.add_argument('--unique-only', action='store_true',
         dest='unique_only',
         help='if specified, keep unique mapped reads only')
-    parser.add_argument('--extra-para', dest='extra_para', default=None,
+    parser.add_argument('--extra-para', dest='extra_para', default=None, type=str,
         help='Extra parameters for aligner, eg: -X 2000 for bowtie2. default: [None]')
     parser.add_argument('--n-map', dest='n_map', type=int, default=0,
         help='Report up to N alignments per read. use -k for bowtie and \
@@ -306,7 +306,7 @@ def add_rnaseq_args():
     """
     parser = argparse.ArgumentParser(
         description='RNA-seq pipeline')
-    parser.add_argument('--build-design', dest='build_design', 
+    parser.add_argument('-b', '--build-design', dest='build_design', 
         action='store_true',
         help='Create design for fastq files')
 
@@ -524,11 +524,11 @@ def add_atac_args():
 
 ##################################
 ## Utils
-def add_rnaseq_cmp_args():
+def add_deseq_pair_args():
     """
     Run RNAseq compare
     """
-    parser = argparse.ArgumentParser(description='hiseq rnaseq_cmp -a dirA -b dirB -f gene -o outdir')
+    parser = argparse.ArgumentParser(description='hiseq deseq_pair -a dirA -b dirB -f gene -o outdir')
     parser.add_argument('-a', '--dirA', required=True,
         help='deseq_dir (a.vs.b) for groupA')
     parser.add_argument('-b', '--dirB', required=True,
