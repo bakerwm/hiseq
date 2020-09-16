@@ -581,7 +581,7 @@ def add_bam2bw_args():
         help='set binSize for bigWig, default: [50]')
     parser.add_argument('-g', '--genome', default=None,
         help='choose genome for the bam file, default: [None]')
-    parser.add_argument('--scaleFactor', nargs='+', type=float, default=1.0,
+    parser.add_argument('--scaleFactor', nargs='+', type=float, default=[1.0],
         help='The scaling factor, default: [1.0]')
     parser.add_argument('--normalizeUsing', default='None',
         choices=['RPKM', 'CPM', 'BPM', 'RPGC', 'None'],
