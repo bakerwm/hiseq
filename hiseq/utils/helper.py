@@ -19,6 +19,7 @@ import tempfile
 import logging
 import functools
 import subprocess
+import numpy
 import pysam
 import pybedtools
 import pathlib
@@ -131,7 +132,7 @@ def listfile(path='.', pattern='*', full_name=True, recursive=False):
     listfile('./', '*.fq')
     """
     fn_list = listdir(path, full_name, recursive, include_dir=False)
-    fn_list = [f for f in fn_list if fnmatch.fnmatch(f, pattern)]
+    fn_list = [f for f in fn_list if fnmatch.fnmatch(os.path.basename(f), pattern)]
     return sorted(fn_list)
 
 
@@ -158,7 +159,7 @@ def list_fq_files(path, pattern='*'):
         hit_list = fq_list
     else:
         p = re.compile(r'(_[12])?.f(ast)?q(.gz)?$')
-        hit_list = [f for f in all_files if p.search(f) and x in f]
+        hit_list = [f for f in fq_list if p.search(os.path.basename(f))]
 
     # chk1
     if len(hit_list) == 0:
@@ -243,19 +244,25 @@ def symlink(src, dest, absolute_path=True):
             os.symlink(srcname, dest)
 
 
-def check_file(x, show_log=False):
+def check_file(x, show_log=False, emptycheck=False):
     """
-    if x (file, list) exists or not
+    if x (file, list) exists or not, empty
+
+    Whether the file is empty
+    see: https://stackoverflow.com/a/2507871/2530783
+    os.stat("file").st_size == 0    
     """
     if isinstance(x, str):
         flag = 'ok' if os.path.exists(x) else 'failed'
+        if flag == 'ok' and emptycheck:
+            flag = 'ok' if os.stat(x).st_size > 20 else 'failed' # in case of gzipped empty file (size=20)
         if show_log is True:
             log.info('{:<6s} : {}'.format(flag, x))
-        return os.path.exists(x)
+        return flag == 'ok' # os.path.exists(x)
     elif isinstance(x, list):
-        return all([check_file(i, show_log=show_log) for i in x])
+        return all([check_file(i, show_log, emptycheck) for i in x])
     else:
-        log.warning('expect str and list, not {}'.format(type(x)))
+        log.warning('x, str and list expected, {} got'.format(type(x).__name__))
         return None
 
 
@@ -384,6 +391,23 @@ def file_exists(file, isfile=True):
         return file
 
 
+def file_row_counter(fn):
+    """
+    count the file rows
+    count '\n' 
+    from @glglgl on stackoverflow, modified
+    https://stackoverflow.com/a/9631635/2530783
+    """
+    def blocks(files, size = 1024 * 1024):
+        while True:
+            b = files.read(size)
+            if not b: break
+            yield b
+    freader = gzip.open if is_gz(fn) else open
+    with freader(fn, 'rt', encoding="utf-8", errors='ignore') as fi:
+        return sum(bl.count('\n') for bl in blocks(fi))
+
+
 def merge_names(x):
     """
     Get the name of replictes
@@ -454,7 +478,7 @@ def gzip_cmd(src, dest, decompress=True, rm=True):
                 log.warning('input is gzipped file, no need gzip')
                 shutil.copy(src, dest)
             else:
-                with open(src, 'rb') as r, gzip.open(dest, 'wb') as w:
+                with open(src, 'rb') as r, gzip.open(dest, 'wb', compresslevel=1) as w:
                     shutil.copyfileobj(r, w)
 
     # output
@@ -1291,6 +1315,7 @@ class Bam(object):
     def estimateInsertSizeDistribution(self, topn=10000, n=10,
         method="picard", similarity_threshold=1.0, max_chunks=1000):
         """
+        from pysam
         Estimate insert size from a subset of alignments in a bam file.
 
         Several methods are implemented.

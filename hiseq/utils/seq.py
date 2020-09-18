@@ -11,6 +11,7 @@ import sys
 import re
 from xopen import xopen
 import collections # Fastx().collapse()
+from .helper import *
 
 
 class Fastx(object):
@@ -30,10 +31,9 @@ class Fastx(object):
         """
         read fastq/a file
         """
-
         self.input = input
         self.format = self.fx_type(input)
-        self.count = self.fq_counter(input) if self.format is 'fastq' else self.fa_counter(input)
+        self.count = self.fq_counter(input) if self.format == 'fastq' else self.fa_counter(input)
         self.cat = 'zcat' if input.endswith('.gz') else 'cat'
 
 
@@ -74,9 +74,9 @@ class Fastx(object):
         x_top1_pct = x[0][1] / sum(d.values())
 
         ## check
-        if x_top1 is '@':
+        if x_top1 == '@':
             fx_type = 'fastq'
-        elif x_top1 is '>':
+        elif x_top1 == '>':
             fx_type = 'fasta'
         else:
             fx_type = None
@@ -146,7 +146,7 @@ class Fastx(object):
                     w.write('\n'.join('@'+name, seq, '+', qual))
         
 
-    def sample(self, out, n=1000, p=0.01):
+    def sample_random(self, out, n=1000, p=0.01):
         """
         Extract subset of fastx file using seqkit
         fx_reader()
@@ -174,6 +174,37 @@ class Fastx(object):
         run_shell_cmd(cmd)
 
         return self.output
+
+
+    def sample(self, outdir, sample_size=1000000, gzipped=True):
+        """
+        Create a subsample of input fastq files, default: 1M reads
+        Run the whole process for demostration
+        """
+        s = 4 if self.format == 'fastq' else 2
+        nsize = s * sample_size
+
+        # update args
+        check_path(outdir)
+        
+        # subsample
+        fx_out = os.path.join(outdir, os.path.basename(self.input))
+        
+        # gzip output
+        if not self.input.endswith('.gz') and gzipped:
+            fx_out += '.gz'
+
+        # run
+        if os.path.exists(fx_out):
+            log.info('file eixsts, {}'.format(fx_out))
+        else:
+            with xopen(self.input, 'rt') as r, xopen(fx_out, 'wt') as w:
+                i = 0 # counter
+                for line in r:
+                    i += 1
+                    if i > nsize: # fastq file: 4 lines per read
+                        break
+                    w.write(line)
 
 
     def fa2fq(self, out):

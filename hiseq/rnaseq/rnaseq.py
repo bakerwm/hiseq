@@ -92,6 +92,7 @@ from hiseq.utils.helper import *
 from hiseq.trim.trimmer import Trimmer
 from hiseq.align.alignment import Alignment
 from hiseq.rnaseq.rnaseq_builder import RNAseqFqDesign
+from hiseq.atac.atac_utils import Bam2bw
 
 
 def print_df(x):
@@ -219,31 +220,32 @@ class RNAseqConfig(object):
         ## PE mode get low pct unique mapped reads, but SE mode not.
         ## so force to SE mode
         args_default = {
-            # 'pickle': None,
-            'build_design': False, # boolean
-            'design': None, # json file
-            'ctl': None,
-            'exp': None,
-            'ctl_read2': None,
-            'exp_read2': None,
-            'genome': 'dm6',
-            'outdir': str(pathlib.Path.cwd()),
-            'fq1': None, 
-            'fq2': None,
-            'dirs_ctl': None,
-            'dirs_exp': None,
-            'smp_path': None,
-            'smp_name': None,
-            'feature': 'gene',
-            'group': None,
-            'gtf': None,
             'align_to_rRNA': True, # default
             'aligner': 'STAR', # default
+            'binsize': 10,
+            'build_design': False, # boolean
+            'ctl': None,
+            'ctl_read2': None,
+            'design': None, # json file
+            'dirs_ctl': None,
+            'dirs_exp': None,
+            'exp': None,
+            'exp_read2': None,
+            'feature': 'gene',
+            'fq1': None, 
+            'fq2': None,
+            'genome': 'dm6',
             'genomeLoad': 'LoadAndRemove',
-            'read1_only': False,
-            'parallel_jobs': 1,
-            'threads': 1,
+            'genome_size': None,
+            'group': None,
+            'gtf': None,
+            'outdir': str(pathlib.Path.cwd()),
             'overwrite': False,
+            'parallel_jobs': 1,
+            'read1_only': False,
+            'smp_name': None,
+            'smp_path': None,
+            'threads': 1,
             'unique_only': True,
         }
         self.update(args_default, force=False) # update missing attrs
@@ -939,6 +941,7 @@ class RNAseqSingle(object):
             log.info('align() skipped, file exists: {}'.format(
                 args_local.get('bam_raw', None)))
         else:
+            print("!AAAA-1", args_local)
             Alignment(**args_local).run()
 
 
@@ -960,8 +963,9 @@ class RNAseqSingle(object):
         from: self.bam_raw, align/smp_name/2.dm6/smp_name.bam
         to: self.bam_out, bam_files/smp_name.bam
         """
+        bam_in = self.get_raw_bam() # to genome
         if not os.path.exists(self.bam_out):
-            symlink(self.bam_raw, self.bam_out, absolute_path=True)
+            symlink(bam_in, self.bam_out, absolute_path=True)
 
 
     def fc_count(self):
@@ -1006,11 +1010,22 @@ class RNAseqSingle(object):
         _, _, assign_rev = FeatureCounts(**args_rev).run()
 
 
-    def bam2bw(self):
+    def bam_to_bw(self, norm=1000000):
         """
-        Create bigWig files
+        Create bigWig
+        bam -> bigWig
         """
-        pass
+        args_local = {
+            'bam': self.bam_out,
+            'outdir': self.bw_dir,
+            'genome': self.genome,
+            'strandness': 12,
+            'binsize': self.binsize,
+            'overwrite': self.overwrite,
+            'genome_size': self.genome_size
+        }
+
+        Bam2bw(**args_local).run()
 
 
     def report(self):
@@ -1053,6 +1068,7 @@ class RNAseqSingle(object):
         Run pipeline for RNAseq,
         process
         """
+        # sys.exit('!BBBB-4  exit RNAseqSingle()')
         # init dir
         copy_raw_fq = getattr(self, 'copy_raw_fq', False)
         trimmed = getattr(self, 'trimmed', False)        
@@ -1065,13 +1081,13 @@ class RNAseqSingle(object):
 
         # 3. align
         self.align()
-        # self.save_bam() 
+        self.save_bam() 
 
         # 4. quant
         self.fc_count()
 
         # 5. bam2bw
-        self.bam2bw()
+        self.bam_to_bw()
 
         # 6.report
         self.report()
