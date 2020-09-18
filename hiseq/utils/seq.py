@@ -33,7 +33,7 @@ class Fastx(object):
         """
         self.input = input
         self.format = self.fx_type(input)
-        self.count = self.fq_counter(input) if self.format is 'fastq' else self.fa_counter(input)
+        self.count = self.fq_counter(input) if self.format == 'fastq' else self.fa_counter(input)
         self.cat = 'zcat' if input.endswith('.gz') else 'cat'
 
 
@@ -74,9 +74,9 @@ class Fastx(object):
         x_top1_pct = x[0][1] / sum(d.values())
 
         ## check
-        if x_top1 is '@':
+        if x_top1 == '@':
             fx_type = 'fastq'
-        elif x_top1 is '>':
+        elif x_top1 == '>':
             fx_type = 'fasta'
         else:
             fx_type = None

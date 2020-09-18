@@ -1961,7 +1961,7 @@ class STAR(object):
             with open(chrLength) as r:
                 for line in r:
                     chrSize += int(line.strip())
-        self.small_genome = True if chrSize < 1000000 else False # 1M genome
+        self.small_genome = True if chrSize < 10000000 else False # 10M genome
 
         ## genomeLoad
         gl = ['NoSharedMemory', 'LoadAndKeep', 'LoadAndRemove', 'LoadAndExit', 'Remove', 'NoSharedMemory']
@@ -1991,7 +1991,7 @@ class STAR(object):
         ## https://github.com/alexdobin/STAR/issues/329
         ## https://groups.google.com/d/msg/rna-star/hJL_DUtliCY/HtpiePlMBtYJ
         if self.small_genome:
-            log.warning('STAR on small genome (<1 Mb): {}'.format(self.index_list))
+            log.warning('STAR on small genome (<10 Mb): {}'.format(self.index_list))
             seed_max = 5 # even smaller
         else:
             seed_max = 50 # default

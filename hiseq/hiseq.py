@@ -25,12 +25,13 @@ from .align.alignment import Alignment
 from .atac.atac import Atac
 from .rnaseq.rnaseq import RNAseq
 from .rnaseq.rnaseq_pipe import RNAseqPipe
-from .rnaseq.rnaseq_cmp import RnaseqCmp
+from .rnaseq.deseq_pair import DeseqPair
 from .go.go import Go
 from .utils import download as dl # download.main()
 from .utils.seq import Fastx
 from .atac.atac_utils import Bam2bw, Bam2cor, PeakIDR, BedOverlap
 from .utils.helper import *
+from .fragsize.fragsize import BamPEFragSize2
 
 
 class Hiseq(object):
@@ -60,8 +61,9 @@ class Hiseq(object):
         motif        Check motifs from a BED/fasta file
         report       Create a report to the above commands
         go           Run GO analysis on geneset
-        rnaseq_cmp   Run RNAseq compare
+        deseq_pair   Run RNAseq compare
 
+        fragsize     Fragment size of PE alignments
         bam2cor      Correlation between bam files
         bam2bw       Convert bam to bigWig 
         peak2idr     Calculate IDR for multiple Peaks
@@ -204,14 +206,14 @@ class Hiseq(object):
         Go(**args).run()
 
 
-    def rnaseq_cmp(self):
+    def deseq_pair(self):
         """
         Run RNAseq cmp
         """
-        parser = add_rnaseq_cmp_args()
+        parser = add_deseq_pair_args()
         args = parser.parse_args(sys.argv[2:])
         args = vars(args) # convert to dict
-        RnaseqCmp(**args).run()
+        DeseqPair(**args).run()
 
 
     def atac(self):
@@ -287,6 +289,16 @@ class Hiseq(object):
         args = vars(args) # convert to dict
 
         RNAseqPipe(**args).run()
+
+
+    def fragsize(self):
+        """
+        Calculate the fragment size of PE alignment
+        """
+        parser = add_fragsize_args()
+        args = parser.parse_args(sys.argv[2:])
+        args = vars(args)
+        BamPEFragSize2(**args).run()
 
 
     def bam2bw(self):
