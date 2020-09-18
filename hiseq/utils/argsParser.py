@@ -561,6 +561,26 @@ def add_go_args():
         choices=['1', '2'],
         help='1=exp/ctl, 2=ctl/exp; default:1')
     return parser
+
+
+def add_fragsize_args():
+    """
+    required:
+    bam
+    outdir
+    labels
+    threads
+    """
+    parser = argparse.ArgumentParser(description='hiseq fragsize -i bam -o outdir')
+    parser.add_argument('-i', '--bam', nargs='+', required=True,
+        help='BAM files')
+    parser.add_argument('-o', '--outdir', default=None,
+        help='output directory to save results')
+    parser.add_argument('-l', '--labels', nargs='+', default=None,
+        help='label of the bam files')
+    parser.add_argument('-p', '--threads', default=4, type=int,
+        help='number of processes, default: [4]')
+    return parser
     
 
 def add_bam2bw_args():

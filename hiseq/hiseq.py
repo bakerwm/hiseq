@@ -31,6 +31,7 @@ from .utils import download as dl # download.main()
 from .utils.seq import Fastx
 from .atac.atac_utils import Bam2bw, Bam2cor, PeakIDR, BedOverlap
 from .utils.helper import *
+from .fragsize.fragsize import BamPEFragSize2
 
 
 class Hiseq(object):
@@ -62,6 +63,7 @@ class Hiseq(object):
         go           Run GO analysis on geneset
         deseq_pair   Run RNAseq compare
 
+        fragsize     Fragment size of PE alignments
         bam2cor      Correlation between bam files
         bam2bw       Convert bam to bigWig 
         peak2idr     Calculate IDR for multiple Peaks
@@ -287,6 +289,16 @@ class Hiseq(object):
         args = vars(args) # convert to dict
 
         RNAseqPipe(**args).run()
+
+
+    def fragsize(self):
+        """
+        Calculate the fragment size of PE alignment
+        """
+        parser = add_fragsize_args()
+        args = parser.parse_args(sys.argv[2:])
+        args = vars(args)
+        BamPEFragSize2(**args).run()
 
 
     def bam2bw(self):

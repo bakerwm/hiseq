@@ -19,6 +19,7 @@ import tempfile
 import logging
 import functools
 import subprocess
+import numpy
 import pysam
 import pybedtools
 import pathlib
@@ -1314,6 +1315,7 @@ class Bam(object):
     def estimateInsertSizeDistribution(self, topn=10000, n=10,
         method="picard", similarity_threshold=1.0, max_chunks=1000):
         """
+        from pysam
         Estimate insert size from a subset of alignments in a bam file.
 
         Several methods are implemented.
