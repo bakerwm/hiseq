@@ -82,6 +82,8 @@ def get_args():
         default=None,
         help='The config for http, open access, including host, root_dir, \
         default [None]')
+    parser.add_argument('-m', '--mirror', default='http://genome.ucsc.edu',
+        help='The mirror of UCSC, default: [http://genome.ucsc.edu]')
     parser.add_argument('--dry-run', dest='dry_run', action='store_true',
         help='Do not copy the files')
     args=parser.parse_args()
