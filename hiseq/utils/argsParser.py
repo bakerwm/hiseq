@@ -273,9 +273,22 @@ def add_peak_args():
     """
     parser = argparse.ArgumentParser(
         description='call peaks')
-    parser.add_argument('-i', '--fq1', nargs='+', required=True,
-        help='BAM files, support multiple files separated by \
-        white spaces')
+    parser.add_argument('-i', '--bam', nargs='+', required=True,
+        help='BAM files, from IP sample')
+    parser.add_argument('-c', '--control', nargs='+', required=False,
+        help='BAM files for control sample, optional')
+    parser.add_argument('-o', '--outdir', default=None,
+        help='The directory to save results, default, \
+        current working directory.')
+    parser.add_argument('-n', '--name', default=None,
+        help='The prefix of output files, default: None')
+    parser.add_argument('-g', '--genome', required=False, default='dm6',
+        choices=[None, 'dm6', 'dm3', 'hg38', 'hg19', 'mm10', 'mm9'],
+        help='Reference genome : dm6, dm3, hg38, hg19, mm10, mm9, default: dm6')
+    parser.add_argument('-gs', '--genome-size', required=False, type=int, default=0,
+        help='The effective genome size, auto get from --genome, default')
+    parser.add_argument('--is-atac', action='store_true',
+        help='Change parameters for ATACseq alignment')
     parser.add_argument('--overwrite', action='store_true',
         help='if spcified, overwrite exists file')
     parser.add_argument('--threads', default=8, type=int,

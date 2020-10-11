@@ -758,6 +758,7 @@ class Subgroup(object):
         self.group_list = list(self.groups.keys())
         self.subgroup = self.get_subgroup() # after load_group()
         self.subgroup_keys = list(self.subgroup.keys())
+        print('!A-1', self.subgroup, self.subgroup_keys)
         self.dimensions = 'dimX={} dimY={} dimA={}'.format(
             self.subgroup_keys[0],
             self.subgroup_keys[1],
@@ -787,36 +788,34 @@ class Subgroup(object):
     def default(self):
         #  rep strand kind
         df = {
-            "default": {
-                "rep": {
-                    "name": "rep",
-                    "label": "Replicate",
-                    "mapping": {
-                        "0": "merged",
-                        "1": "rep1",
-                        "2": "rep2",
-                        "3": "rep3",
-                        "4": "rep4",
-                        "5": "rep5",
-                        "6": "rep6"
-                    }
-                },
-                "strand": {
-                    "name": "strand",
-                    "label": "Strand",
-                    "mapping": {
-                        "f": "fwd",
-                        "r": "rev",
-                        "other": "non"
-                    }
-                },
-                "kind": {
-                    "name": "kind",
-                    "label": "kind",
-                    "mapping": {
-                        "signal": "signal",
-                        "peak": "peak"
-                    }
+            "rep": {
+                "name": "rep",
+                "label": "Replicate",
+                "mapping": {
+                    "0": "merged",
+                    "1": "rep1",
+                    "2": "rep2",
+                    "3": "rep3",
+                    "4": "rep4",
+                    "5": "rep5",
+                    "6": "rep6"
+                }
+            },
+            "strand": {
+                "name": "strand",
+                "label": "Strand",
+                "mapping": {
+                    "f": "fwd",
+                    "r": "rev",
+                    "other": "non"
+                }
+            },
+            "kind": {
+                "name": "kind",
+                "label": "kind",
+                "mapping": {
+                    "signal": "signal",
+                    "peak": "peak"
                 }
             }
         }
