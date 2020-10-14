@@ -6,7 +6,7 @@
 args <- commandArgs(trailingOnly = TRUE)
 
 if (length(args) < 2){
-  print("Usage: Rscript atac_report.R <sample.dir> <out.dir>")
+  print("Usage: Rscript atacseq_report.R <sample.dir> <out.dir>")
   print("")
   print("Option:")
   print("  sample.dir     The directory of ATACseq output")
