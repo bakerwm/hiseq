@@ -573,11 +573,7 @@ def add_chipseq_args():
         action='store_true',
         help='whether copy the raw fastq files to output')
     return parser
-  
-  
-  
-  
-  
+
 
 ##################################
 ## Utils
