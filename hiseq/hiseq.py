@@ -26,6 +26,7 @@ from .atac.atac import Atac
 from .rnaseq.rnaseq import RNAseq
 from .rnaseq.rnaseq_pipe import RNAseqPipe
 from .rnaseq.deseq_pair import DeseqPair
+from .chipseq.chipseq import ChIPseq
 from .go.go import Go
 from .utils import download as dl # download.main()
 from .utils.seq import Fastx
@@ -51,6 +52,7 @@ class Hiseq(object):
         atac         ATACseq pipeline
         rnaseq       RNAseq pipeline
         rnaseq2      RNAseq pipeline, simplify version
+        chipseq      ChIPseq pipeline
 
         demx         Demultiplexing reads (P7, barcode)
         qc           quality control, fastqc
@@ -289,6 +291,35 @@ class Hiseq(object):
         args = vars(args) # convert to dict
 
         RNAseqPipe(**args).run()
+
+
+    def chipseq(self):
+        """
+        ChIPseq pipeline
+        """
+        parser = add_chipseq_args()
+        args = parser.parse_args(sys.argv[2:])
+        # help
+        if len(sys.argv) < 3:
+            parser.parse_args(['-h'])
+        # main
+        args = vars(args) # convert to dict
+        # # check config or --fq1,--fq2,--genome,--outdir
+        # config = args.get('config', None)
+        # design = args.get('design', None)
+        # fq1 = args.get('fq1', None)
+        # fq2 = args.get('fq2', None)
+        # genome = args.get('genome', None)
+        # outdir = args.get('outdir', None)
+        # chk1 = config is None
+        # chk2 = design is None
+        # chk3 = [i is None for i in [fq1, fq2, genome, outdir]]
+        # 
+        # # if config is None and not all(chk2):
+        # if all([chk1, chk2, chk3]):
+        #     sys.exit('required: --config, or --design, or --fq1, --fq2, --genome, --outdir')
+
+        ChIPseq(**args).run()
 
 
     def fragsize(self):

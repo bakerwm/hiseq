@@ -11,7 +11,7 @@ Parse arguments from command line
 """
 
 import argparse
-
+import pathlib
 
 def add_demx_args():
     """
@@ -521,6 +521,63 @@ def add_atac_args():
         help='whether copy the raw fastq files to output')
     return parser
 
+
+def add_chipseq_args():
+    """
+    Arguments for ChIP-seq pipeline
+    """
+    parser = argparse.ArgumentParser(
+        description='ChIPseq pipeline')
+    parser.add_argument('-b', '--build-design', dest='build_design', 
+        action='store_true',
+        help='Create design for fastq files')
+    parser.add_argument('-d', '--design', default=None,
+        help='design for RNAseq, json format, ignore fq1, fq2')
+    parser.add_argument('--ip', nargs='+', default=None,
+        help='fastq for IP of ChIPseq, read1 of PE')
+    parser.add_argument('--input', nargs='+', default=None,
+        help='fastq for Input of ChIPseq, read1 of PE')
+    parser.add_argument('--ip-fq2', nargs='+', dest='ip_fq2', default=None,
+        help='fastq for IP of ChIPseq, read2 of PE, optional')
+    parser.add_argument('--input-fq2', nargs='+', dest='input_fq2', default=None,
+        help='fastq for Input of ChIPseq, read2 of PE, optional')
+
+    parser.add_argument('-o', '--outdir', default=str(pathlib.Path.cwd()),
+        help='The directory to save results, default, \
+        current working directory.')
+    parser.add_argument('-g', '--genome', default='dm6',
+        choices=['dm3', 'dm6', 'hg19', 'hg38', 'mm9', 'mm10'],
+        help='Reference genome : dm3, dm6, hg19, hg39, mm9, mm10, default: hg19')
+
+    parser.add_argument('--trimmed', action='store_true',
+        help='specify if input files are trimmed')
+
+    # optional arguments - 1
+    parser.add_argument('-p', '--threads', default=1, type=int,
+        help='Number of threads to launch, default [1]')
+    parser.add_argument('-j', '--parallel-jobs', default=1, type=int, 
+        dest='parallel_jobs',
+        help='Number of jobs run in parallel, default: [1]')
+    parser.add_argument('--overwrite', action='store_true',
+        help='if spcified, overwrite exists file')
+
+    ## extra: index
+    parser.add_argument('-x', '--ext-index', nargs='+', dest="ext_index",
+        help='Provide alignment index(es) for alignment, support multiple\
+        indexes. if specified, ignore -g, -k')
+
+    ## extra: para
+    parser.add_argument('--extra-para', dest='extra_para', default=None,
+        help='Extra parameters for aligner, eg: -X 2000 for bowtie2. default: [None]')
+    parser.add_argument('--copy-raw-fq', dest='copy_raw_data',
+        action='store_true',
+        help='whether copy the raw fastq files to output')
+    return parser
+  
+  
+  
+  
+  
 
 ##################################
 ## Utils

@@ -20,6 +20,7 @@ import pybedtools
 from collections import OrderedDict
 from hiseq.utils.helper import *
 from hiseq.utils.seq import Fastx
+import deeptools.countReadsPerBin as crpb
 
 
 def fasize(x, sum_all=False):
@@ -36,20 +37,42 @@ def fasize(x, sum_all=False):
     return sum(k.values()) if sum_all else k
 
 
+# def symlink(src, dest, absolute_path=True):
+#     """
+#     Create symlinks within output dir
+#     ../src
+#     """
+#     if absolute_path:
+#         # support: ~, $HOME,
+#         srcname = os.path.abspath(os.path.expanduser(os.path.expandvars(src)))
+#     else:
+#         # only for directories within the same folder
+#         srcname = os.path.join('..', os.path.basename(src))
+
+#     if not os.path.exists(dest):
+#         os.symlink(srcname, dest)
+
+
 def symlink(src, dest, absolute_path=True):
     """
     Create symlinks within output dir
     ../src
     """
-    if absolute_path:
-        # support: ~, $HOME,
-        srcname = os.path.abspath(os.path.expanduser(os.path.expandvars(src)))
+    if src is None or dest is None:
+        log.warning('symlink skipped: {}, to: {}'.format(src, dest))
+    elif file_exists(dest):
+        log.warning('symlink skipped, target exists...'.format(dest))
     else:
-        # only for directories within the same folder
-        srcname = os.path.join('..', os.path.basename(src))
+        if absolute_path:
+            # support: ~, $HOME,
+            srcname = os.path.abspath(os.path.expanduser(os.path.expandvars(src)))
+        else:
+            # only for directories within the same folder
+            srcname = os.path.join('..', os.path.basename(src))
 
-    if not os.path.exists(dest):
-        os.symlink(srcname, dest)
+        if not os.path.exists(dest):
+            os.symlink(srcname, dest)
+
 
 
 def in_dict(d, k):
@@ -294,46 +317,69 @@ def bam2bigwig(bam, genome, outdir, strandness=0, binsize=1, overwrite=False, **
         log.error('unkown strandness: [0|1|2|12], {} got'.format(strandness))
 
 
-def peak_FRiP(inbed, inbam, genome="dm6"):
+def peak_FRiP(inbed, inbam, threads=4):
     """Calculate FRiP for ChIP-seq/ATAC-seq peaks
     Fraction of reads in called peak regions
     input: bam, peak (bed)
 
     using: bedtools intersect 
     count reads in peaks
+
+    Using: Deeptools
     """
-    # total map
-    # index
-    Bam(inbam).index()
+    # reads in peak
+    cr = crpb.CountReadsPerBin([inbam], bedFile=inbed, numberOfProcessors=threads)
+    crn = cr.run()
+    rip = crn.sum(axis=0)[0]
+    # fraction
     bam = pysam.AlignmentFile(inbam)
     total = bam.mapped
+    frip = float(rip) / total
 
-    gsize = Genome(genome).get_fasize()
-    tmp = os.path.basename(inbed) + '.count.tmp'
+    # output
+    return (frip, rip, total)
 
-    try:
-        # reads in peak
-        cmd = ' '.join([
-            'sort -k1,1 -k2,2n {}'.format(inbed),
-            '| bedtools intersect -c -a - -b {} > {}'.format(inbam, tmp)])
-        run_shell_cmd(cmd)
 
-        x = 0 # init
-        with open(tmp) as r:
-            for line in r:
-                p = line.strip().split('\t').pop()
-                x += eval(p)
+# def peak_FRiP(inbed, inbam, genome="dm6"):
+#     """Calculate FRiP for ChIP-seq/ATAC-seq peaks
+#     Fraction of reads in called peak regions
+#     input: bam, peak (bed)
 
-        frip = '{:.2f}%'.format(x/total*100)
+#     using: bedtools intersect 
+#     count reads in peaks
+#     """
+#     # total map
+#     # index
+#     Bam(inbam).index()
+#     bam = pysam.AlignmentFile(inbam)
+#     total = bam.mapped
 
-        os.remove(tmp)
-    except:
-        log.warning('cal_FRiP() failed, skip {}'.format(inbed))
-        if os.path.exists(tmp):
-            os.remove(tmp)
-        frip = x = total = 0 # init
+#     gsize = Genome(genome).get_fasize()
+#     tmp = os.path.basename(inbed) + '.count.tmp'
 
-    return (frip, x, total)
+#     try:
+#         # reads in peak
+#         cmd = ' '.join([
+#             'sort -k1,1 -k2,2n {}'.format(inbed),
+#             '| bedtools intersect -c -a - -b {} > {}'.format(inbam, tmp)])
+#         run_shell_cmd(cmd)
+
+#         x = 0 # init
+#         with open(tmp) as r:
+#             for line in r:
+#                 p = line.strip().split('\t').pop()
+#                 x += eval(p)
+
+#         frip = '{:.2f}%'.format(x/total*100)
+
+#         os.remove(tmp)
+#     except:
+#         log.warning('cal_FRiP() failed, skip {}'.format(inbed))
+#         if os.path.exists(tmp):
+#             os.remove(tmp)
+#         frip = x = total = 0 # init
+
+#     return (frip, x, total)
 
 
 def frag_length(infile, outfile=None):
@@ -1115,3 +1161,40 @@ def convert_image(x, out_fmt='PNG'):
         img = Image.open(x)
         img.save(out_img, out_fmt)
 
+
+def bwCompare(bw1, bw2, bw_out, operation='log2', **kwargs):
+    """
+    Compare two bigWig files: ip over input
+
+    example:
+    bigwigCompare -b1 bw1 -b2 bw2 --operation 
+    {log2, ratio, subtract, add, mean, reciprocal_ratio, 
+    first, second}
+    -o out.bw
+    """
+    binsize = kwargs.get('binsize', 50)
+    threads = kwargs.get('threads', 1)
+    overwrite = kwargs.get('overwrite', False)
+
+    cmd = ' '.join([
+        '{}'.format(shutil.which('bigwigCompare')),
+        '--bigwig1 {} --bigwig2 {}'.format(bw1, bw2),
+        '--operation {}'.format(operation),
+        '--skipZeroOverZero',
+        '--skipNAs',
+        '--binSize {}'.format(binsize),
+        '-p {}'.format(threads),
+        '-o {}'.format(bw_out)])
+
+    # savd cmd 
+    bw_out_dir = os.path.dirname(bw_out)
+    check_path(bw_out_dir)
+    cmd_txt = os.path.join(bw_out_dir, 'cmd.txt')
+    with open(cmd_txt, 'wt') as w:
+        w.write(cmd + '\n')
+
+    # run
+    if os.path.exists(bw_out) and not overwrite:
+        log.info('bwCompare() skipped, file exists: {}'.format(bw_out))
+    else:
+        run_shell_cmd(cmd)
