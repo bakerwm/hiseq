@@ -90,7 +90,7 @@ class Macs2(object):
         else:
             # ChIP-seq
             macs2_cmd = 'macs2 callpeak -t {} -g {} --outdir {} -n {} \
-                --keep-dump auto -B --SPMR'.format(
+                --keep-dup auto -B --SPMR'.format(
                     self.ip, 
                     self.gsize,
                     self.output,
@@ -101,6 +101,10 @@ class Macs2(object):
             macs2_cmd += ' 2> {}'.format(log)
             # peak file
             peak = os.path.join(self.output, self.prefix + '_peaks.narrowPeak')
+            # save cmd
+            cmd_txt = os.path.join(self.output, 'cmd.sh')
+            with open(cmd_txt, 'wt') as w:
+                w.write(macs2_cmd + '\n')
 
        # output file
         # macs2_out = os.path.join(self.output, self.prefix + '_peaks.xls')

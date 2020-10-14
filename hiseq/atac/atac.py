@@ -1158,8 +1158,7 @@ class AtacS1Rn(object):
                 self.frip_txt))
         else:
             print("!XXXX " + self.bam)
-            frip, n, total = peak_FRiP(self.peak, 
-                self.bam)
+            frip, n, total = peak_FRiP(self.peak, self.bam)
 
             hd = ['FRiP', "peak_reads", "total_reads", "id"]
             n = list(map(str, [frip, n, total]))
@@ -1467,8 +1466,7 @@ class AtacS1R1(object):
                 self.frip_txt))
         else:
             print("!XXXX " + self.bam)
-            frip, n, total = peak_FRiP(self.peak, 
-                self.bam)
+            frip, n, total = peak_FRiP(self.peak, self.bam)
 
             hd = ['FRiP', "peak_reads", "total_reads", "id"]
             n = list(map(str, [frip, n, total]))

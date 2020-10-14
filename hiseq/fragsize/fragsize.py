@@ -104,7 +104,9 @@ class BamPEFragSize(object):
             bam = self.bam
 
         if not self.isBamPE():
-            raise ValueError('PE bam expected, failed')
+            # raise ValueError('PE bam expected, failed')
+            log.warning('not a PE bam, calFragSize() skipped ...')
+            return pd.DataFrame(columns = ['length', 'count'])
 
         sam = pysam.AlignmentFile(bam)
 
