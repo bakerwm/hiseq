@@ -568,7 +568,7 @@ class ChIPseqConfig(object):
             # check
             q_tag = 0
             for q1, q2 in zip(fq1, fq2):
-                if not distance(fq1, fq2) == 1:
+                if not distance(q1, q2) == 1:
                     log.error('PE fq files failed, {}, {}'.format(q1, q2))
                     q_tag += 1
 
@@ -611,7 +611,7 @@ class ChIPseqConfig(object):
         elif file_exists(self.design):
             self.chipseq_type = 'chipseq_rx_from_design'
         elif isinstance(self.ip_dir, str) and isinstance(self.input_dir, str):
-            self.chipseq_tyep = 'chipseq_rx'
+            self.chipseq_type = 'chipseq_rx'
         # elif isinstance(self.ip, list) and isinstance(self.input, list):
         elif all([not i is None for i in [self.ip, self.input]]):
             self.chipseq_type = 'chipseq_rx'
@@ -1145,7 +1145,7 @@ class ChIPseqRn(object):
         qc_reportR = os.path.join(pkg_dir, 'bin', 'chipseq_report.R')
         atac_report_html = os.path.join(
             self.report_dir, 
-            'chipseq_report.html')
+            'ChIPseq_report.html')
 
         cmd = 'Rscript {} {} {}'.format(
             qc_reportR,
@@ -1339,7 +1339,7 @@ class ChIPseqRx(object):
         qc_reportR = os.path.join(pkg_dir, 'bin', 'chipseq_report.R')
         atac_report_html = os.path.join(
             self.report_dir, 
-            'atac_report.html')
+            'ChIPseq_report.html')
 
         cmd = 'Rscript {} {} {}'.format(
             qc_reportR,
@@ -1482,9 +1482,9 @@ class ChIPseq(object):
         elif self.chipseq_type == 'chipseq_rx_from_design':
             self.run_chipseq_rx_from_design()
         elif self.chipseq_type == 'chipseq_r1':
-            ChIPseqR1(self.__dict__).run()
+            ChIPseqR1(**self.__dict__).run()
         elif self.chipseq_type == 'chipseq_rn':
-            ChIPseqRn(self.__dict__).run()
+            ChIPseqRn(**self.__dict__).run()
         elif self.chipseq_type == 'chipseq_rx':
             self.run_chipseq_rx()
         else:
