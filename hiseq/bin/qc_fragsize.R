@@ -19,7 +19,8 @@ suppressPackageStartupMessages(library(hiseqr))
 
 df_list <- lapply(lendist, function(f){
   readr::read_csv(f, comment = '#') %>%
-    dplyr::filter(length < 1000)
+    dplyr::filter(length < 1000) %>%
+    dplyr::mutate(count = ifelse(length < 50, 0, count))
 })
 
 df <- dplyr::bind_rows(df_list)
