@@ -153,24 +153,24 @@ def init_cpu(threads=1, parallel_jobs=1):
 
 
 def update_obj(obj, d, force=True, remove=False):
-        """
-        d: dict
-        force: bool, update exists attributes
-        remove: bool, remove exists attributes
-        Update attributes from dict
-        force exists attr
-        """
-        # fresh start
-        if remove is True:
-            for k in obj.__dict__:
-                delattr(obj, k)
-        # add attributes
-        if isinstance(d, dict):
-            for k, v in d.items():
-                if not hasattr(obj, k) or force:
-                    setattr(obj, k, v)
+    """
+    d: dict
+    force: bool, update exists attributes
+    remove: bool, remove exists attributes
+    Update attributes from dict
+    force exists attr
+    """
+    # fresh start
+    if remove is True:
+        for k in obj.__dict__:
+            delattr(obj, k)
+    # add attributes
+    if isinstance(d, dict):
+        for k, v in d.items():
+            if not hasattr(obj, k) or force:
+                setattr(obj, k, v)
 
-        return obj
+    return obj
 
 
 class AtacR1Config(object):
@@ -629,6 +629,7 @@ class AtacConfig(object):
         # 3rd level
         # update group
         if file_exists(self.design):
+            self.design = file_abspath(self.design)
             self.fq_groups = Json(self.design).reader()
         else:
             self.fq_groups = self.group_fq()

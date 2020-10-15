@@ -70,9 +70,9 @@ def symlink(src, dest, absolute_path=True):
             # only for directories within the same folder
             srcname = os.path.join('..', os.path.basename(src))
 
-        if not os.path.exists(dest):
+        # if not os.path.exists(dest):
+        if not file_exists(dest):
             os.symlink(srcname, dest)
-
 
 
 def in_dict(d, k):
