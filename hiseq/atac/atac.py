@@ -173,588 +173,103 @@ def update_obj(obj, d, force=True, remove=False):
     return obj
 
 
-class AtacR1Config(object):
+class AtacReader(object):
     """
-    Prepare directories for R1 single replicate
+    Read config.txt/pickle
+    """
+    def __init__(self, x):
+        self.x = x
+        self.get_config() # update
+        self.atacseq_type = self.args.get('atacseq_type', None)
 
-    require: fq1/fq2, outdir, ...
+        # auto
+        self.is_atac_s1r1 = self.atacseq_type == 'atacseq_s1r1'
+        self.is_atac_s1rn = self.atacseq_type == 'atacseq_s1rn'
+        self.is_atac_snrn = self.atacseq_type == 'atacseq_snrn'
+
+
+    def get_config(self):
+        """
+        locate config.pickle file
+        """
+        config_pickle = os.path.join(self.x, 'config', 'arguments.pickle')
+        if file_exists(config_pickle):
+            with open(config_pickle, 'rb') as fh:
+                self.args = pickle.load(fh)
+        else:
+            self.args = None
+
+
+class Atac(object):
+    """
+    Main port for ATACseq analysis
     """
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
-        self.init_dirs()
 
 
     def init_args(self):
+        obj_local = AtacConfig(**self.__dict__)
+        self = update_obj(self, obj_local.__dict__, force=True)
+        # self.atacseq_type = 'atacseq_rx' # force update
+
+
+    def run_atacseq_design(self):
         """
-        required arguments for ATACseq analysis
+        Create design
         """
-        args_init = {
-            'trimmed': False,
-            'smp_name': None,
-            'fq1': None,
-            'fq2': None,
-            'genome': None,
-            'outdir': None,
-            'aligner': 'bowtie2',
-            'align_to_chrM': True,
-            'threads': 1,
-            'parallel_jobs': 1,
-            'overwrite': False,
-            'binsize': 50,
-            'genome_size': 0
+        AtacDesign(**self.__dict__).save()
+
+
+    def run(self):
+        """
+        Run all
+        """
+        func = {
+            'build_design': AtacRd,
+            'atacseq_r1': AtacR1,
+            'atacseq_rn': AtacRn,
+            'atacseq_rx': AtacRx
         }
-        self = update_obj(self, args_init, force=False)
-        self.atacseq_type = 'atacseq_r1' #
-
-        # output
-        if self.outdir is None:
-            self.outdir = str(pathlib.Path.cwd())
-        self.outdir = file_abspath(self.outdir)
-
-        # check fastq files
-        if not isinstance(self.fq1, str):
-            raise ValueError('AtacR1Config failed, fq1 str expected, got {}'.format(type(self.fq1).__name__))
-
-        if not isinstance(self.fq2, str):
-            raise ValueError('AtacR1Config failed, fq2 str expected, got {}'.format(type(self.fq1).__name__))
-
-        if not fq_paired(self.fq1, self.fq2):
-            raise ValueError('fq1, fq2 not paired properly: {}, {}'.format(self.fq1, self.fq2))
-
-        # smp_name
-        self.smp_name = getattr(self, 'smp_name', None)
-        if self.smp_name is None:
-            self.smp_name = fq_name(self.fq1, pe_fix=True) # the first one
-
-        # threads
-        self.threads, self.parallel_jobs = init_cpu(self.threads, self.parallel_jobs)
-
-
-
-    def init_dirs(self, create_dirs=True):
-        """
-        for single fastq file
-        prepare directories
-        """
-        # path, files
-        self.project_name = self.smp_name
-        self.project_dir = os.path.join(self.outdir, self.project_name)
-        self.config_dir = os.path.join(self.project_dir, 'config')
-
-        auto_files = {
-            ## dirs
-            'raw_dir': os.path.join(self.project_dir, 'raw_data'),
-            'clean_dir': os.path.join(self.project_dir, 'clean_data'),
-            'align_dir': os.path.join(self.project_dir, 'align'),
-            'bam_dir': os.path.join(self.project_dir, 'bam_files'),
-            'bw_dir': os.path.join(self.project_dir, 'bw_files'),
-            'peak_dir': os.path.join(self.project_dir, 'peak'),
-            'motif_dir': os.path.join(self.project_dir, 'motif'),
-            'qc_dir': os.path.join(self.project_dir, 'qc'),
-            'qc_lendist_dir': os.path.join(self.project_dir, 'qc', 'lendist'),
-            'qc_frip_dir': os.path.join(self.project_dir, 'qc', 'FRiP'),
-            'report_dir': os.path.join(self.project_dir, 'report'),
-            ## files
-            'config_txt': os.path.join(self.config_dir, 'arguments.txt'),
-            'config_pickle': os.path.join(self.config_dir, 'arguments.pickle'),
-            'config_json': os.path.join(self.config_dir, 'arguments.json'),
-            'align_stat': os.path.join(self.project_dir, 'align', self.smp_name + '.align.txt'),
-            # 'bam_raw': from align_dir, to-do
-            'bam_rmdup': os.path.join(self.project_dir, 'bam_files', self.smp_name + '.rmdup.bam'),
-            'bam_proper_pair': os.path.join(self.project_dir, 'bam_files', self.smp_name + '.proper_pair.bam'),
-            'bam': os.path.join(self.project_dir, 'bam_files', self.project_name + '.bam'),
-            'bed': os.path.join(self.project_dir, 'bam_files', self.project_name + '.bed'),
-            'peak': os.path.join(self.project_dir, 'peak', self.project_name + '_peaks.narrowPeak'),
-            'bw': os.path.join(self.project_dir, 'bw_files', self.project_name + '.bigWig'),
-            # qc
-            'lendist_txt': os.path.join(self.project_dir, 'qc', 'lendist', 'length_distribution.txt'),
-            'lendist_pdf': os.path.join(self.project_dir, 'qc', 'lendist', 'length_distribution.pdf'),
-            'frip_txt': os.path.join(self.project_dir, 'qc', 'FRiP', 'FRiP.txt'),
-            }
-        self = update_obj(self, auto_files, force=True) # key
-
-        ## raw data
-        self.raw_fq_list = [os.path.join(self.raw_dir, os.path.basename(self.fq1))]
-        fq2_raw = None if self.fq2 is None else os.path.join(self.raw_dir, os.path.basename(self.fq2))
-        self.raw_fq_list.append(fq2_raw)
-
-        ## clean data
-        self.clean_fq_list = [os.path.join(self.clean_dir, fq_name(self.fq1, pe_fix=False) + '.fq.gz')]
-        fq2_clean = None if self.fq2 is None else os.path.join(self.clean_dir, fq_name(self.fq2, pe_fix=False) + '.fq.gz')
-        self.clean_fq_list.append(fq2_clean)
-
-        if create_dirs:
-            check_path([
-                self.project_dir, 
-                self.config_dir, 
-                self.raw_dir,
-                self.clean_dir,
-                self.align_dir,
-                self.bam_dir, 
-                self.bw_dir, 
-                self.peak_dir, 
-                self.motif_dir,
-                self.qc_dir, 
-                self.report_dir,
-                os.path.join(self.qc_dir, 'lendist'),
-                os.path.join(self.qc_dir, 'FRiP') ])
-
-
-class AtacRnConfig(object):
-    """
-    Prepare directories/args for n replicates
-
-    require: rep_list/fq1-list, outdir, ...
-    """
-    def __init__(self, **kwargs):
-        self = update_obj(self, kwargs, force=True)
-        self.init_args()
-        self.init_dirs()
-
-
-    def init_args(self):
-        """
-        required arguments for ATACseq analysis
-        """
-        args_init = {
-            'smp_name': None,
-            'rep_list': None,
-            'fq1': None,
-            'fq2': None,
-            'genome': None,
-            'outdir': None,
-            'aligner': 'bowtie2',
-            'align_to_chrM': True,
-            'threads': 1,
-            'parallel_jobs': 1,
-            'overwrite': False,
-            'binsize': 50,
-            'genome_size': 0
-        }
-        self = update_obj(self, args_init, force=False)
-        self.atacseq_type = 'atacseq_rn'
-
-        # outdir
-        if self.outdir is None:
-            self.outdir = str(pathlib.Path.cwd())            
-        self.outdir = file_abspath(self.outdir)
-
-        # check fastq files/build rep_list
-        if isinstance(self.fq1, str):
-            self.fq1 = [self.fq1]
-
-        if isinstance(self.fq1, list):
-            self.rep_list = [os.path.join(self.outdir, fq_name(i, pe_fix=True)) for i in self.fq1]
-
-        if isinstance(self.rep_list, list):
-            self.smp_name = fq_name_rmrep(self.rep_list)
-            self.smp_name = self.smp_name.pop() # to str !!! to-do, check unique
-        else:
-            raise ValueError('AtacRnConfig failed, fq1/rep_list expect list, got {}'.format(type(self.rep_list).__name__))
-
-        # threads
-        self.threads, self.parallel_jobs = init_cpu(self.threads, self.parallel_jobs)
-
-
-
-    def init_dirs(self, create_dirs=True):
-        """
-        for n replicate fastq file
-        prepare directories
-        """
-        self.rep_list = file_abspath(self.rep_list)
-
-        # path, files
-        self.project_name = self.smp_name #
-        self.project_dir = os.path.join(self.outdir, self.project_name)
-        self.config_dir = os.path.join(self.project_dir, 'config')
-        auto_files = {
-            ## dirs
-            'align_dir': os.path.join(self.project_dir, 'align'),
-            'bam_dir': os.path.join(self.project_dir, 'bam_files'),
-            'bw_dir': os.path.join(self.project_dir, 'bw_files'),
-            'peak_dir': os.path.join(self.project_dir, 'peak'),
-            'motif_dir': os.path.join(self.project_dir, 'motif'),
-            'qc_dir': os.path.join(self.project_dir, 'qc'),
-            'qc_lendist_dir': os.path.join(self.project_dir, 'qc', 'lendist'),
-            'qc_frip_dir': os.path.join(self.project_dir, 'qc', 'FRiP'),
-            'qc_idr_dir': os.path.join(self.project_dir, 'qc', 'IDR'),
-            'qc_cor_dir': os.path.join(self.project_dir, 'qc', 'cor'),
-            'qc_overlap_dir': os.path.join(self.project_dir, 'qc', 'overlap'),
-            'report_dir': os.path.join(self.project_dir, 'report'),
-            ## files
-            'config_txt': os.path.join(self.config_dir, 'arguments.txt'),
-            'config_pickle': os.path.join(self.config_dir, 'arguments.pickle'),
-            'config_json': os.path.join(self.config_dir, 'arguments.json'),
-            'bam': os.path.join(self.project_dir, 'bam_files', self.project_name + '.bam'),
-            'peak': os.path.join(self.project_dir, 'peak', self.project_name + '_peaks.narrowPeak'),
-            'bw': os.path.join(self.project_dir, 'bw_files', self.project_name + '.bigWig'),
-            ## qc files
-            'lendist_txt': os.path.join(self.project_dir, 'qc', 'lendist', 'length_distribution.txt'),
-            'lendist_pdf': os.path.join(self.project_dir, 'qc', 'lendist', 'length_distribution.pdf'),
-            'frip_txt': os.path.join(self.project_dir, 'qc', 'FRiP', 'FRiP.txt'),
-            'cor_npz': os.path.join(self.project_dir, 'qc', 'cor', 'cor.bam.npz'),
-            'cor_counts': os.path.join(self.project_dir, 'qc', 'cor', 'cor.bam.counts.tab'),
-            'idr_txt': os.path.join(self.project_dir, 'qc', 'IDR', 'dir.txt'),
-            'idr_log': os.path.join(self.project_dir, 'qc', 'IDR', 'dir.log'),
-            'peak_overlap_pdf': os.path.join(self.project_dir, 'qc', 'overlap', 'peak_overlap_pdf')        
-            }
-        self = update_obj(self, auto_files, force=True) # key
-
-        if create_dirs:
-            check_path([
-                self.project_dir, 
-                self.config_dir, 
-                self.align_dir,
-                self.bam_dir, 
-                self.bw_dir, 
-                self.peak_dir, 
-                self.qc_dir, 
-                self.report_dir,
-                os.path.join(self.qc_dir, 'lendist'),
-                os.path.join(self.qc_dir, 'FRiP'),
-                os.path.join(self.qc_dir, 'cor'),
-                os.path.join(self.qc_dir, 'IDR'),
-                os.path.join(self.qc_dir, 'overlap')])
-
-
-class AtacRxConfig(object):
-    """
-    Run ATACseq for n groups
-    """
-    def __init__(self, **kwargs):
-        self = update_obj(self, kwargs, force=True)
-        self.init_args()
-
-
-    def init_args(self):
-        """
-        required arguments for ATACseq analysis
-        """
-        args_init = {
-            'outdir': None}
-        self = update_obj(self, args_init, force=False)
-        self.atacseq_type = 'atacseq_rx'
-
-        # outdir
-        if self.outdir is None:
-            self.outdir = str(pathlib.Path.cwd())
-        self.outdir = file_abspath(self.outdir)
-
-        # groups
-        if not isinstance(self.group, list):
-            raise ValueError('group, list expected, got {}'.format(
-                type(self.group).__name__))
-
-
-class AtacRtConfig(object):
-    """
-    Give report for ATACseq directories
-
-    output: config, report
-    """
-    def __init__(self, **kwargs):
-        self = update_obj(self, kwargs, force=True)
-        self.init_args()
-        self.init_dirs()
-
-
-    def init_args(self):
-        """
-        required arguments for ATACseq analysis
-        """
-        args_init = {
-            'project_dir': None}
-        self = update_obj(self, args_init, force=False)
-        self.atacseq_type = 'atacseq_rt'
-
-
-        # get sample list from project_dir !!!!
-        if not isinstance(self.project_dir, str):
-            raise ValueError('project_dir, str expected, got {}'.format(
-                type(self.project_dir).__name__))
-
-
-    def init_dirs(self, create_dirs=True):
-        """
-        for single fastq file
-        prepare directories
-        """
-        # path, files
-        self.report_dir = os.path.join(self.project_dir, 'report')
-
-        if create_dirs:
-            check_path(self.report_dir)
-
-
-class AtacRdConfig(object):
-    """
-    Generate ATACseq design.json
-
-    output: fq_dir/fq1,fq2
-    """
-    def __init__(self, **kwargs):
-        self = update_obj(self, kwargs, force=True)
-        self.init_args()
-        self.init_dirs()
-
-
-    def init_args(self):
-        """
-        required arguments for ATACseq design
-        """
-        args_init = {
-          'fq_dir': None,
-          'fq1': None,
-          'fq2': None,
-          'design': None,
-          'append': True}
-        self = update_obj(self, args_init, force=False)
+        atac = func.get(self.atacseq_type, None)
         
-        # fastq files
-        self.fq_groups = self.group_fq()
+        if atac is None:
+           raise ValueError('unknown: {}'.format(self.atacseq_type))
 
+        # print('!AAAA-2')
+        # print_dict(self.__dict__)
+        # sys.exit()
 
-    def init_dirs(self, create_dirs=True):
-        """
-        for single fastq file
-        prepare directories
-        """
-        pass
-            
+        # run analysis
+        atac(**self.__dict__).run()
 
-    def group_fq(self):
-        """
-        separate fastq files into groups, based on filename
-        """
-        if isinstance(self.fq_dir, str):
-            f1 = listfile(self.fq_dir, "*.fastq.gz")
-            f2 = listfile(self.fq_dir, "*.fq.gz")
-            f3 = listfile(self.fq_dir, "*.fastq")
-            f4 = listfile(self.fq_dir, "*.fq")
-            f_list = f1 + f2 + f3 + f4 # all fastq files
-        elif isinstance(self.fq1, list):
-            f_list = self.fq1 + self.fq2
-        elif isinstance(self.fq1, str):
-            f_list = [self.fq1, self.fq2]
-        else:
-            f_list = []
-            
-        # check fastq files
-        if len(f_list) < 1:
-            raise ValueError('fq_dir, fq1,fq2, fq files not found')
-            
-        g_list = fq_name_rmrep(f_list)
-        g_list = sorted(list(set(g_list))) # unique
-
-        # split into groups
-        d = {} # 
-        for g in g_list:
-            g_fq = [i for i in f_list if g in os.path.basename(i)]
-            # for fq1, fq2
-            r1 = re.compile('1.f(ast)?q(.gz)?')
-            r2 = re.compile('2.f(ast)?q(.gz)?')
-            g_fq1 = [i for i in g_fq if r1.search(i)]
-            g_fq2 = [i for i in g_fq if r2.search(i)]
-            ## pairing
-            if len(g_fq2) > 0: # PE reads
-                if not all(fq_paired(g_fq1, g_fq2)):
-                    raise ValueError('fq not paired')
-            # save to dict
-            d[g] = {'fq1': g_fq1,
-                    'fq2': g_fq2,
-                    'group': g}
-
-        return d
-
-
-class AtacConfig(object):
-    """
-    Global config for ATACseq analysis
-
-    input:
-
-    {design|fq1,fq2|rep_list} -> {R1|Rn} -> {Rx}
-    """
-    def __init__(self, **kwargs):
-        self = update_obj(self, kwargs, force=True)
-        self.init_args()
-        self.init_dirs()
-        self.init_mission()
-
-
-    def init_args(self):
-        """
-        required arguments for ATACseq analysis
-        """
-        args_init = {
-            'build_design': False,
-            'design': None,
-            'fq_dir': None,
-            'fq1': None,
-            'fq2': None,
-            'rep_list': None,
-            'smp_name': None,
-            'group': None,
-            'genome': None,
-            'outdir': None,
-            'aligner': 'bowtie2',
-            'align_to_chrM': True,
-            'threads': 1,
-            'parallel_jobs': 1,
-            'overwrite': False,
-            'binsize': 50,
-            'genome_size': 0
-        }
-        self = update_obj(self, args_init, force=False)
+        ## run report
+        if not self.atacseq_type in ['build_design']:
+            ## save arguments
+            self.atacseq_type = 'atacseq_rx' # force
+            chk0 = args_checker(self.__dict__, self.config_pickle)
+            chk1 = args_logger(self.__dict__, self.config_txt)
+    
+            ## report
+            args_local = self.__dict__
+            args_local.update({
+                'atacseq_type': 'atacseq_rx',
+                'project_dir': self.outdir})
+            AtacRt(**args_local).run()
         
-        # outdir
-        if self.outdir is None:
-            self.outdir = str(pathlib.Path.cwd())
-        self.outdir = file_abspath(self.outdir)
-        
-        # 1st level
-        if not self.fq1 is None:
-            self.fq1, self.fq2 = self.check_fq_paired(self.fq1, self.fq2)
-
-        # 2nd level
-        if isinstance(self.rep_list, list):
-            self.rep_list = file_abspath(self.rep_list)
-        elif isinstance(self.rep_list, str):
-            self.rep_list = [file_abspath(self.rep_list)]
-        else:
-            pass
-
-        # 3rd level
-        # update group
-        if file_exists(self.design):
-            self.design = file_abspath(self.design)
-            self.fq_groups = Json(self.design).reader()
-        else:
-            self.fq_groups = self.group_fq()
-
-        self.group = list(self.fq_groups.keys())
-
-
-    def group_fq(self):
-        """
-        separate fastq files into groups, based on filename
-        """
-        if isinstance(self.fq_dir, str):
-            f1 = listfile(self.fq_dir, "*.fastq.gz")
-            f2 = listfile(self.fq_dir, "*.fq.gz")
-            f3 = listfile(self.fq_dir, "*.fastq")
-            f4 = listfile(self.fq_dir, "*.fq")
-            f_list = f1 + f2 + f3 + f4 # all fastq files
-        elif isinstance(self.fq1, list):
-            f_list = self.fq1 + self.fq2
-        elif isinstance(self.fq1, str):
-            f_list = [self.fq1, self.fq2]
-        else:
-            f_list = []
-        g_list = fq_name_rmrep(f_list)
-        g_list = sorted(list(set(g_list))) # unique
-
-        # split into groups
-        d = {} # 
-        for g in g_list:
-            # fq files for one group
-            g_fq = [i for i in f_list if g in os.path.basename(i)]
-            # for fq1, fq2
-            r1 = re.compile('1.f(ast)?q(.gz)?')
-            r2 = re.compile('2.f(ast)?q(.gz)?')
-            g_fq1 = [i for i in g_fq if r1.search(i)]
-            g_fq2 = [i for i in g_fq if r2.search(i)]
-            # save to dict
-            d[g] = {'fq1': g_fq1,
-                    'fq2': g_fq2,
-                    'group': g}
-
-        return d
-
-
-    def check_fq(self, fq):
-        """
-        Make sure
-        fq: str or list, or None
-        """
-        if fq is None:
-            # raise ValueError('fq1 required, got None')
-            pass
-        elif isinstance(fq, list):
-            fq = file_abspath(fq)
-        elif isinstance(fq, str):
-            fq = [file_abspath(fq)]
-        else:
-            log.error('fq failed, Nont, str, list expected, got {}'.format(type(fq).__name__))
-
-        return fq
-
-
-    def check_fq_paired(self, fq1, fq2=None):
-        """
-        Make sure fq1 and fq2, proper paired
-        """
-        fq1 = self.check_fq(fq1)
-        fq2 = self.check_fq(fq2)
-
-        # fq1 = fq2
-        if isinstance(fq2, list):
-            if not len(fq1) == len(fq2):
-                raise ValueError('fq1, fq2, files not paired correctly.')
-
-            # check
-            q_tag = 0
-            for q1, q2 in zip(fq1, fq2):
-                if not distance(q1, q2) == 1:
-                    log.error('PE fq files failed, {}, {}'.format(q1, q2))
-                    q_tag += 1
-
-            if q_tag:
-                raise ValueError('fastq files not paired correctly.')
-
-        return (fq1, fq2)
-
-
-    def init_dirs(self, create_dirs=True):
-        """
-        prepare directories
-        """
-        self.project_dir = os.path.join(self.outdir)
-        self.config_dir = os.path.join(self.project_dir, 'config')
-        self.config_txt = os.path.join(self.config_dir, 'arguments.txt')
-        self.config_pickle = os.path.join(self.config_dir, 'arguments.pickle')
-        self.config_json = os.path.join(self.config_dir, 'arguments.json')
-
-        if create_dirs:
-            check_path(self.config_dir)
-
-
-    def init_mission(self):
-        """
-        Determine the type of ATACseq analysis
-        1. build_design
-        2. Single: single replicate
-        3. Merge: n replicates
-        4. Multiple: multiple samples/groups
-        """
-        self.atacseq_type = None
-        # 1st level
-        if self.build_design:
-            self.atacseq_type = 'build_design'
-        elif len(self.group) > 1: # !!!!
-            self.atacseq_type = 'atacseq_rx'
-        elif len(self.group) == 1:
-            self.atacseq_type = 'atacseq_rn'
-        elif isinstance(self.fq1, str):
-            self.atacseq_type = 'atacseq_r1'
-        else:
-            raise ValueError('unknown atacseq type')
-
-        # check
-        if self.atacseq_type is None:
-            raise ValueError('unknown atacseq_type')
+        # print('!BBBB-1', self.atacseq_type)
+        # if self.atacseq_type == 'build_design':
+        #     self.run_atacseq_design()
+        #     AtacRd(**self__dict__).run()
+        # elif self.atacseq_type == 'atacseq_r1':
+        #     AtacR1(**self.__dict__).run()
+        # elif self.atacseq_type == 'atacseq_rn':
+        #     AtacRn(**self.__dict__).run()
+        # elif self.atacseq_type == 'atacseq_rx':
+        #     AtacRx(**self.__dict__).run()
+        # else:
+        #     raise ValueError('unknown: {}'.format(self.atacseq_type))
 
 
 class AtacR1(object):
@@ -1570,9 +1085,443 @@ class AtacRd(object):
         Json(self.fq_groups).writer(self.design)
 
 
-class Atac(object):
+class AtacConfig(object):
     """
-    Main port for ATACseq analysis
+    Global config for ATACseq analysis
+
+    input:
+
+    {design|fq1,fq2|rep_list} -> {R1|Rn} -> {Rx}
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+        self.init_dirs()
+        self.init_mission()
+
+
+    def init_args(self):
+        """
+        required arguments for ATACseq analysis
+        """
+        args_init = {
+            'build_design': False,
+            'design': None,
+            'fq_dir': None,
+            'fq1': None,
+            'fq2': None,
+            'rep_list': None,
+            'smp_name': None,
+            'group': None,
+            'genome': None,
+            'outdir': None,
+            'aligner': 'bowtie2',
+            'align_to_chrM': True,
+            'threads': 1,
+            'parallel_jobs': 1,
+            'overwrite': False,
+            'binsize': 50,
+            'genome_size': 0
+        }
+        self = update_obj(self, args_init, force=False)
+        
+        # outdir
+        if self.outdir is None:
+            self.outdir = str(pathlib.Path.cwd())
+        self.outdir = file_abspath(self.outdir)
+        
+        # 1st level
+        if not self.fq1 is None:
+            self.fq1, self.fq2 = self.check_fq_paired(self.fq1, self.fq2)
+
+        # 2nd level
+        if isinstance(self.rep_list, list):
+            self.rep_list = file_abspath(self.rep_list)
+        elif isinstance(self.rep_list, str):
+            self.rep_list = [file_abspath(self.rep_list)]
+        else:
+            pass
+
+        # 3rd level
+        # update group
+        if file_exists(self.design):
+            self.design = file_abspath(self.design)
+            self.fq_groups = Json(self.design).reader()
+        else:
+            self.fq_groups = self.group_fq()
+
+        self.group = list(self.fq_groups.keys())
+
+
+    def group_fq(self):
+        """
+        separate fastq files into groups, based on filename
+        """
+        if isinstance(self.fq_dir, str):
+            f1 = listfile(self.fq_dir, "*.fastq.gz")
+            f2 = listfile(self.fq_dir, "*.fq.gz")
+            f3 = listfile(self.fq_dir, "*.fastq")
+            f4 = listfile(self.fq_dir, "*.fq")
+            f_list = f1 + f2 + f3 + f4 # all fastq files
+        elif isinstance(self.fq1, list):
+            f_list = self.fq1 + self.fq2
+        elif isinstance(self.fq1, str):
+            f_list = [self.fq1, self.fq2]
+        else:
+            f_list = []
+        g_list = fq_name_rmrep(f_list)
+        g_list = sorted(list(set(g_list))) # unique
+
+        # split into groups
+        d = {} # 
+        for g in g_list:
+            # fq files for one group
+            g_fq = [i for i in f_list if g in os.path.basename(i)]
+            # for fq1, fq2
+            r1 = re.compile('1.f(ast)?q(.gz)?')
+            r2 = re.compile('2.f(ast)?q(.gz)?')
+            g_fq1 = [i for i in g_fq if r1.search(i)]
+            g_fq2 = [i for i in g_fq if r2.search(i)]
+            # save to dict
+            d[g] = {'fq1': g_fq1,
+                    'fq2': g_fq2,
+                    'group': g}
+
+        return d
+
+
+    def check_fq(self, fq):
+        """
+        Make sure
+        fq: str or list, or None
+        """
+        if fq is None:
+            # raise ValueError('fq1 required, got None')
+            pass
+        elif isinstance(fq, list):
+            fq = file_abspath(fq)
+        elif isinstance(fq, str):
+            fq = [file_abspath(fq)]
+        else:
+            log.error('fq failed, Nont, str, list expected, got {}'.format(type(fq).__name__))
+
+        return fq
+
+
+    def check_fq_paired(self, fq1, fq2=None):
+        """
+        Make sure fq1 and fq2, proper paired
+        """
+        fq1 = self.check_fq(fq1)
+        fq2 = self.check_fq(fq2)
+
+        # fq1 = fq2
+        if isinstance(fq2, list):
+            if not len(fq1) == len(fq2):
+                raise ValueError('fq1, fq2, files not paired correctly.')
+
+            # check
+            q_tag = 0
+            for q1, q2 in zip(fq1, fq2):
+                if not distance(q1, q2) == 1:
+                    log.error('PE fq files failed, {}, {}'.format(q1, q2))
+                    q_tag += 1
+
+            if q_tag:
+                raise ValueError('fastq files not paired correctly.')
+
+        return (fq1, fq2)
+
+
+    def init_dirs(self, create_dirs=True):
+        """
+        prepare directories
+        """
+        self.project_dir = os.path.join(self.outdir)
+        self.config_dir = os.path.join(self.project_dir, 'config')
+        self.config_txt = os.path.join(self.config_dir, 'arguments.txt')
+        self.config_pickle = os.path.join(self.config_dir, 'arguments.pickle')
+        self.config_json = os.path.join(self.config_dir, 'arguments.json')
+
+        if create_dirs:
+            check_path(self.config_dir)
+
+
+    def init_mission(self):
+        """
+        Determine the type of ATACseq analysis
+        1. build_design
+        2. Single: single replicate
+        3. Merge: n replicates
+        4. Multiple: multiple samples/groups
+        """
+        self.atacseq_type = None
+        # 1st level
+        if self.build_design:
+            self.atacseq_type = 'build_design'
+        elif len(self.group) > 1: # !!!!
+            self.atacseq_type = 'atacseq_rx'
+        elif len(self.group) == 1:
+            self.atacseq_type = 'atacseq_rn'
+        elif isinstance(self.fq1, str):
+            self.atacseq_type = 'atacseq_r1'
+        else:
+            raise ValueError('unknown atacseq type')
+
+        # check
+        if self.atacseq_type is None:
+            raise ValueError('unknown atacseq_type')
+
+
+class AtacR1Config(object):
+    """
+    Prepare directories for R1 single replicate
+
+    require: fq1/fq2, outdir, ...
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+        self.init_dirs()
+
+
+    def init_args(self):
+        """
+        required arguments for ATACseq analysis
+        """
+        args_init = {
+            'trimmed': False,
+            'smp_name': None,
+            'fq1': None,
+            'fq2': None,
+            'genome': None,
+            'outdir': None,
+            'aligner': 'bowtie2',
+            'align_to_chrM': True,
+            'threads': 1,
+            'parallel_jobs': 1,
+            'overwrite': False,
+            'binsize': 50,
+            'genome_size': 0
+        }
+        self = update_obj(self, args_init, force=False)
+        self.atacseq_type = 'atacseq_r1' #
+
+        # output
+        if self.outdir is None:
+            self.outdir = str(pathlib.Path.cwd())
+        self.outdir = file_abspath(self.outdir)
+
+        # check fastq files
+        if not isinstance(self.fq1, str):
+            raise ValueError('AtacR1Config failed, fq1 str expected, got {}'.format(type(self.fq1).__name__))
+
+        if not isinstance(self.fq2, str):
+            raise ValueError('AtacR1Config failed, fq2 str expected, got {}'.format(type(self.fq1).__name__))
+
+        if not fq_paired(self.fq1, self.fq2):
+            raise ValueError('fq1, fq2 not paired properly: {}, {}'.format(self.fq1, self.fq2))
+
+        # smp_name
+        self.smp_name = getattr(self, 'smp_name', None)
+        if self.smp_name is None:
+            self.smp_name = fq_name(self.fq1, pe_fix=True) # the first one
+
+        # threads
+        self.threads, self.parallel_jobs = init_cpu(self.threads, self.parallel_jobs)
+
+
+
+    def init_dirs(self, create_dirs=True):
+        """
+        for single fastq file
+        prepare directories
+        """
+        # path, files
+        self.project_name = self.smp_name
+        self.project_dir = os.path.join(self.outdir, self.project_name)
+        self.config_dir = os.path.join(self.project_dir, 'config')
+
+        auto_files = {
+            ## dirs
+            'raw_dir': os.path.join(self.project_dir, 'raw_data'),
+            'clean_dir': os.path.join(self.project_dir, 'clean_data'),
+            'align_dir': os.path.join(self.project_dir, 'align'),
+            'bam_dir': os.path.join(self.project_dir, 'bam_files'),
+            'bw_dir': os.path.join(self.project_dir, 'bw_files'),
+            'peak_dir': os.path.join(self.project_dir, 'peak'),
+            'motif_dir': os.path.join(self.project_dir, 'motif'),
+            'qc_dir': os.path.join(self.project_dir, 'qc'),
+            'qc_lendist_dir': os.path.join(self.project_dir, 'qc', 'lendist'),
+            'qc_frip_dir': os.path.join(self.project_dir, 'qc', 'FRiP'),
+            'report_dir': os.path.join(self.project_dir, 'report'),
+            ## files
+            'config_txt': os.path.join(self.config_dir, 'arguments.txt'),
+            'config_pickle': os.path.join(self.config_dir, 'arguments.pickle'),
+            'config_json': os.path.join(self.config_dir, 'arguments.json'),
+            'align_stat': os.path.join(self.project_dir, 'align', self.smp_name + '.align.txt'),
+            # 'bam_raw': from align_dir, to-do
+            'bam_rmdup': os.path.join(self.project_dir, 'bam_files', self.smp_name + '.rmdup.bam'),
+            'bam_proper_pair': os.path.join(self.project_dir, 'bam_files', self.smp_name + '.proper_pair.bam'),
+            'bam': os.path.join(self.project_dir, 'bam_files', self.project_name + '.bam'),
+            'bed': os.path.join(self.project_dir, 'bam_files', self.project_name + '.bed'),
+            'peak': os.path.join(self.project_dir, 'peak', self.project_name + '_peaks.narrowPeak'),
+            'bw': os.path.join(self.project_dir, 'bw_files', self.project_name + '.bigWig'),
+            # qc
+            'lendist_txt': os.path.join(self.project_dir, 'qc', 'lendist', 'length_distribution.txt'),
+            'lendist_pdf': os.path.join(self.project_dir, 'qc', 'lendist', 'length_distribution.pdf'),
+            'frip_txt': os.path.join(self.project_dir, 'qc', 'FRiP', 'FRiP.txt'),
+            }
+        self = update_obj(self, auto_files, force=True) # key
+
+        ## raw data
+        self.raw_fq_list = [os.path.join(self.raw_dir, os.path.basename(self.fq1))]
+        fq2_raw = None if self.fq2 is None else os.path.join(self.raw_dir, os.path.basename(self.fq2))
+        self.raw_fq_list.append(fq2_raw)
+
+        ## clean data
+        self.clean_fq_list = [os.path.join(self.clean_dir, fq_name(self.fq1, pe_fix=False) + '.fq.gz')]
+        fq2_clean = None if self.fq2 is None else os.path.join(self.clean_dir, fq_name(self.fq2, pe_fix=False) + '.fq.gz')
+        self.clean_fq_list.append(fq2_clean)
+
+        if create_dirs:
+            check_path([
+                self.project_dir, 
+                self.config_dir, 
+                self.raw_dir,
+                self.clean_dir,
+                self.align_dir,
+                self.bam_dir, 
+                self.bw_dir, 
+                self.peak_dir, 
+                self.motif_dir,
+                self.qc_dir, 
+                self.report_dir,
+                os.path.join(self.qc_dir, 'lendist'),
+                os.path.join(self.qc_dir, 'FRiP') ])
+
+
+class AtacRnConfig(object):
+    """
+    Prepare directories/args for n replicates
+
+    require: rep_list/fq1-list, outdir, ...
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+        self.init_dirs()
+
+
+    def init_args(self):
+        """
+        required arguments for ATACseq analysis
+        """
+        args_init = {
+            'smp_name': None,
+            'rep_list': None,
+            'fq1': None,
+            'fq2': None,
+            'genome': None,
+            'outdir': None,
+            'aligner': 'bowtie2',
+            'align_to_chrM': True,
+            'threads': 1,
+            'parallel_jobs': 1,
+            'overwrite': False,
+            'binsize': 50,
+            'genome_size': 0
+        }
+        self = update_obj(self, args_init, force=False)
+        self.atacseq_type = 'atacseq_rn'
+
+        # outdir
+        if self.outdir is None:
+            self.outdir = str(pathlib.Path.cwd())            
+        self.outdir = file_abspath(self.outdir)
+
+        # check fastq files/build rep_list
+        if isinstance(self.fq1, str):
+            self.fq1 = [self.fq1]
+
+        if isinstance(self.fq1, list):
+            self.rep_list = [os.path.join(self.outdir, fq_name(i, pe_fix=True)) for i in self.fq1]
+
+        if isinstance(self.rep_list, list):
+            self.smp_name = fq_name_rmrep(self.rep_list)
+            self.smp_name = self.smp_name.pop() # to str !!! to-do, check unique
+        else:
+            raise ValueError('AtacRnConfig failed, fq1/rep_list expect list, got {}'.format(type(self.rep_list).__name__))
+
+        # threads
+        self.threads, self.parallel_jobs = init_cpu(self.threads, self.parallel_jobs)
+
+
+
+    def init_dirs(self, create_dirs=True):
+        """
+        for n replicate fastq file
+        prepare directories
+        """
+        self.rep_list = file_abspath(self.rep_list)
+
+        # path, files
+        self.project_name = self.smp_name #
+        self.project_dir = os.path.join(self.outdir, self.project_name)
+        self.config_dir = os.path.join(self.project_dir, 'config')
+        auto_files = {
+            ## dirs
+            'align_dir': os.path.join(self.project_dir, 'align'),
+            'bam_dir': os.path.join(self.project_dir, 'bam_files'),
+            'bw_dir': os.path.join(self.project_dir, 'bw_files'),
+            'peak_dir': os.path.join(self.project_dir, 'peak'),
+            'motif_dir': os.path.join(self.project_dir, 'motif'),
+            'qc_dir': os.path.join(self.project_dir, 'qc'),
+            'qc_lendist_dir': os.path.join(self.project_dir, 'qc', 'lendist'),
+            'qc_frip_dir': os.path.join(self.project_dir, 'qc', 'FRiP'),
+            'qc_idr_dir': os.path.join(self.project_dir, 'qc', 'IDR'),
+            'qc_cor_dir': os.path.join(self.project_dir, 'qc', 'cor'),
+            'qc_overlap_dir': os.path.join(self.project_dir, 'qc', 'overlap'),
+            'report_dir': os.path.join(self.project_dir, 'report'),
+            ## files
+            'config_txt': os.path.join(self.config_dir, 'arguments.txt'),
+            'config_pickle': os.path.join(self.config_dir, 'arguments.pickle'),
+            'config_json': os.path.join(self.config_dir, 'arguments.json'),
+            'bam': os.path.join(self.project_dir, 'bam_files', self.project_name + '.bam'),
+            'peak': os.path.join(self.project_dir, 'peak', self.project_name + '_peaks.narrowPeak'),
+            'bw': os.path.join(self.project_dir, 'bw_files', self.project_name + '.bigWig'),
+            ## qc files
+            'lendist_txt': os.path.join(self.project_dir, 'qc', 'lendist', 'length_distribution.txt'),
+            'lendist_pdf': os.path.join(self.project_dir, 'qc', 'lendist', 'length_distribution.pdf'),
+            'frip_txt': os.path.join(self.project_dir, 'qc', 'FRiP', 'FRiP.txt'),
+            'cor_npz': os.path.join(self.project_dir, 'qc', 'cor', 'cor.bam.npz'),
+            'cor_counts': os.path.join(self.project_dir, 'qc', 'cor', 'cor.bam.counts.tab'),
+            'idr_txt': os.path.join(self.project_dir, 'qc', 'IDR', 'dir.txt'),
+            'idr_log': os.path.join(self.project_dir, 'qc', 'IDR', 'dir.log'),
+            'peak_overlap_pdf': os.path.join(self.project_dir, 'qc', 'overlap', 'peak_overlap_pdf')        
+            }
+        self = update_obj(self, auto_files, force=True) # key
+
+        if create_dirs:
+            check_path([
+                self.project_dir, 
+                self.config_dir, 
+                self.align_dir,
+                self.bam_dir, 
+                self.bw_dir, 
+                self.peak_dir, 
+                self.qc_dir, 
+                self.report_dir,
+                os.path.join(self.qc_dir, 'lendist'),
+                os.path.join(self.qc_dir, 'FRiP'),
+                os.path.join(self.qc_dir, 'cor'),
+                os.path.join(self.qc_dir, 'IDR'),
+                os.path.join(self.qc_dir, 'overlap')])
+
+
+class AtacRxConfig(object):
+    """
+    Run ATACseq for n groups
     """
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
@@ -1580,94 +1529,144 @@ class Atac(object):
 
 
     def init_args(self):
-        obj_local = AtacConfig(**self.__dict__)
-        self = update_obj(self, obj_local.__dict__, force=True)
-        # self.atacseq_type = 'atacseq_rx' # force update
-
-
-    def run_atacseq_design(self):
         """
-        Create design
+        required arguments for ATACseq analysis
         """
-        AtacDesign(**self.__dict__).save()
+        args_init = {
+            'outdir': None}
+        self = update_obj(self, args_init, force=False)
+        self.atacseq_type = 'atacseq_rx'
+
+        # outdir
+        if self.outdir is None:
+            self.outdir = str(pathlib.Path.cwd())
+        self.outdir = file_abspath(self.outdir)
+
+        # groups
+        if not isinstance(self.group, list):
+            raise ValueError('group, list expected, got {}'.format(
+                type(self.group).__name__))
 
 
-    def run(self):
-        """
-        Run all
-        """
-        func = {
-            'build_design': AtacRd,
-            'atacseq_r1': AtacR1,
-            'atacseq_rn': AtacRn,
-            'atacseq_rx': AtacRx
-        }
-        atac = func.get(self.atacseq_type, None)
-        
-        if atac is None:
-           raise ValueError('unknown: {}'.format(self.atacseq_type))
-
-        # print('!AAAA-2')
-        # print_dict(self.__dict__)
-        # sys.exit()
-
-        # run analysis
-        atac(**self.__dict__).run()
-
-        ## run report
-        if not self.atacseq_type in ['build_design']:
-            ## save arguments
-            self.atacseq_type = 'atacseq_rx' # force
-            chk0 = args_checker(self.__dict__, self.config_pickle)
-            chk1 = args_logger(self.__dict__, self.config_txt)
-    
-            ## report
-            args_local = self.__dict__
-            args_local.update({
-                'atacseq_type': 'atacseq_rx',
-                'project_dir': self.outdir})
-            AtacRt(**args_local).run()
-        
-        # print('!BBBB-1', self.atacseq_type)
-        # if self.atacseq_type == 'build_design':
-        #     self.run_atacseq_design()
-        #     AtacRd(**self__dict__).run()
-        # elif self.atacseq_type == 'atacseq_r1':
-        #     AtacR1(**self.__dict__).run()
-        # elif self.atacseq_type == 'atacseq_rn':
-        #     AtacRn(**self.__dict__).run()
-        # elif self.atacseq_type == 'atacseq_rx':
-        #     AtacRx(**self.__dict__).run()
-        # else:
-        #     raise ValueError('unknown: {}'.format(self.atacseq_type))
-
-
-class AtacReader(object):
+class AtacRtConfig(object):
     """
-    Read config.txt/pickle
+    Give report for ATACseq directories
+
+    output: config, report
     """
-    def __init__(self, x):
-        self.x = x
-        self.get_config() # update
-        self.atacseq_type = self.args.get('atacseq_type', None)
-
-        # auto
-        self.is_atac_s1r1 = self.atacseq_type == 'atacseq_s1r1'
-        self.is_atac_s1rn = self.atacseq_type == 'atacseq_s1rn'
-        self.is_atac_snrn = self.atacseq_type == 'atacseq_snrn'
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+        self.init_dirs()
 
 
-    def get_config(self):
+    def init_args(self):
         """
-        locate config.pickle file
+        required arguments for ATACseq analysis
         """
-        config_pickle = os.path.join(self.x, 'config', 'arguments.pickle')
-        if file_exists(config_pickle):
-            with open(config_pickle, 'rb') as fh:
-                self.args = pickle.load(fh)
+        args_init = {
+            'project_dir': None}
+        self = update_obj(self, args_init, force=False)
+        self.atacseq_type = 'atacseq_rt'
+
+
+        # get sample list from project_dir !!!!
+        if not isinstance(self.project_dir, str):
+            raise ValueError('project_dir, str expected, got {}'.format(
+                type(self.project_dir).__name__))
+
+
+    def init_dirs(self, create_dirs=True):
+        """
+        for single fastq file
+        prepare directories
+        """
+        # path, files
+        self.report_dir = os.path.join(self.project_dir, 'report')
+
+        if create_dirs:
+            check_path(self.report_dir)
+
+
+class AtacRdConfig(object):
+    """
+    Generate ATACseq design.json
+
+    output: fq_dir/fq1,fq2
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+        self.init_dirs()
+
+
+    def init_args(self):
+        """
+        required arguments for ATACseq design
+        """
+        args_init = {
+          'fq_dir': None,
+          'fq1': None,
+          'fq2': None,
+          'design': None,
+          'append': True}
+        self = update_obj(self, args_init, force=False)
+        
+        # fastq files
+        self.fq_groups = self.group_fq()
+
+
+    def init_dirs(self, create_dirs=True):
+        """
+        for single fastq file
+        prepare directories
+        """
+        pass
+            
+
+    def group_fq(self):
+        """
+        separate fastq files into groups, based on filename
+        """
+        if isinstance(self.fq_dir, str):
+            f1 = listfile(self.fq_dir, "*.fastq.gz")
+            f2 = listfile(self.fq_dir, "*.fq.gz")
+            f3 = listfile(self.fq_dir, "*.fastq")
+            f4 = listfile(self.fq_dir, "*.fq")
+            f_list = f1 + f2 + f3 + f4 # all fastq files
+        elif isinstance(self.fq1, list):
+            f_list = self.fq1 + self.fq2
+        elif isinstance(self.fq1, str):
+            f_list = [self.fq1, self.fq2]
         else:
-            self.args = None
+            f_list = []
+            
+        # check fastq files
+        if len(f_list) < 1:
+            raise ValueError('fq_dir, fq1,fq2, fq files not found')
+            
+        g_list = fq_name_rmrep(f_list)
+        g_list = sorted(list(set(g_list))) # unique
 
+        # split into groups
+        d = {} # 
+        for g in g_list:
+            g_fq = [i for i in f_list if g in os.path.basename(i)]
+            # for fq1, fq2
+            r1 = re.compile('1.f(ast)?q(.gz)?')
+            r2 = re.compile('2.f(ast)?q(.gz)?')
+            g_fq1 = [i for i in g_fq if r1.search(i)]
+            g_fq2 = [i for i in g_fq if r2.search(i)]
+            ## pairing
+            if len(g_fq2) > 0: # PE reads
+                if not all(fq_paired(g_fq1, g_fq2)):
+                    raise ValueError('fq not paired')
+            # save to dict
+            d[g] = {'fq1': g_fq1,
+                    'fq2': g_fq2,
+                    'group': g}
+
+        return d
 
 
 # ###################################
