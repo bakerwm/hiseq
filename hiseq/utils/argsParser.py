@@ -623,7 +623,7 @@ def add_trackhub_args():
     parser.add_argument('-m', '--mirror', default='usa',
         help='The mirror of UCSC, [usa|asia|euro], or custome mirror, input \
         url of your UCSC_mirror: default: [usa]')
-    parser.add_argument('-s', '--subgroups-config', dest='subgroups_config',
+    parser.add_argument('-s', '--subgroup-config', dest='subgroup_config',
         default=None,
         help='The config for subgroups, default: [None]')
     parser.add_argument('-t', '--http-config', dest='http_config',

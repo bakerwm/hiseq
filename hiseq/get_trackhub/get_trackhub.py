@@ -90,7 +90,7 @@ def get_args():
     parser.add_argument('-m', '--mirror', default='usa',
         help='The mirror of UCSC, [usa|asia|euro], or custome mirror, input \
         url of your UCSC_mirror: default: [usa]')
-    parser.add_argument('-s', '--subgroups-config', dest='subgroups_config',
+    parser.add_argument('-s', '--subgroup-config', dest='subgroup_config',
         default=None,
         help='The config for subgroups, default: [None]')
     parser.add_argument('-t', '--http-config', dest='http_config',
@@ -952,6 +952,7 @@ class TrackHubConfig(object):
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
+        self.init_files()
         self.init_http()
 
 
@@ -1018,6 +1019,8 @@ class TrackHubConfig(object):
         if not isinstance(self.descriptionUrl, str):
             self.descriptionUrl = '' # empty
 
+
+    def init_files(self):
         # available files in data_dir
         self.file_list = self.get_files()
         if len(self.file_list) < 1:
@@ -1031,6 +1034,9 @@ class TrackHubConfig(object):
         # bw files(>0)
         if len(self.bw_files) < 1:
             raise ValueError('bigWig not detected: {}'.format(self.data_dir))
+
+        if len(self.bb_files) < 1 and len(self.peak_files) > 0:
+            [self.bed2bigbed(i) for i in self.peak_files]
 
 
     def init_http(self):
@@ -1131,6 +1137,25 @@ class TrackHubConfig(object):
             os.path.splitext(i)[1] in ['.narrowPeak']]
 
 
+    def bed2bigbed(self, i):
+        """
+        Convert peak to bigBed
+        """
+        i_bb = os.path.splitext(i)[0] + '.bigBed'
+        chrom_size = '/home/wangming/data/genome/dm6/bigZips/dm6.chrom.sizes'
+        # cmd = 'bedToBigBed {} {} {}'.format(i, chrom_size, i_bb)
+        cmd = ' '.join([
+            'bedClip {} {} {}'.format(i, chrom_size, i+'.tmp'),
+            '&& {}'.format(shutil.which('bedToBigBed')),
+            '-type=bed4+6 {} {} {}'.format(i+'.tmp', chrom_size, i_bb),
+            '&& rm {}'.format(i+'.tmp')])
+
+        if not os.path.exists(i_bb):
+            log.info('Convert to bigBed: {}'.format(i_bb))
+            print(cmd)
+            run_shell_cmd(cmd)
+
+
 class TrackHub(object):
     """
     Generate tracks for specific files
@@ -1188,7 +1213,7 @@ class TrackHub(object):
             short_label=self.short_label,
             long_label=self.long_label,
             dimensions=subgroup.dimensions,
-            filterComposite='dimA',
+            # filterComposite='dimA',
             tracktype='bigWig',
             visibility='full'
         )
