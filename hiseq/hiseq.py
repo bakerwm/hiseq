@@ -32,7 +32,7 @@ from .utils.seq import Fastx
 from .atac.atac_utils import Bam2bw, Bam2cor, PeakIDR, BedOverlap
 from .utils.helper import *
 from .fragsize.fragsize import BamPEFragSize2
-from .get_trackhub.get_trackhub import list_local_hub, HubUrl, TrackHubPort
+from .get_trackhub.get_trackhub import TrackHub 
 from .peak.call_peak import Macs2
 
 
@@ -460,35 +460,7 @@ class Hiseq(object):
         parser = add_trackhub_args()
         args = parser.parse_args(sys.argv[2:])
         args = vars(args)
-
-        ## list hub
-        if args.get('list_hub', False):
-            http_config = args.get('http_config', None)
-            if http_config is None:
-                raise ValueError('--http-config is required')
-
-            x = args.get('data_dir', None)
-            hub_url = list_local_hub(x, 
-                config=args.get('http_config', None), 
-                recursive=args.get('recursive', False))
-            mirror = args.get('mirror', 'http://genome.ucsc.edu')
-            trackhub_url = [HubUrl(i).to_trackhub(mirror=mirror) for i in hub_url]
-            
-            print('!A-1', x, hub_url, trackhub_url)
-
-            # save to file
-            trackhub_file = os.path.join(x, 'trackhub_urls.txt')
-            with open(trackhub_file, 'wt') as w:
-                w.write('\n'.join(trackhub_url) + '\n')
-
-            # to stdout
-            for j, k in enumerate(trackhub_url):
-                print('{}. Trackhub: {}'.format(j + 1, k))
-
-            # print('!A-2', trackhub_url)
-        else:
-            TrackHubPort(**args).run()
-
+        TrackHub(**args).run()
 
 
 def main():

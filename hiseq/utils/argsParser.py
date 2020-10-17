@@ -544,41 +544,41 @@ def add_trackhub_args():
         description='Generate trackhub for bigWig and bigBed files',
         epilog='Example: \n\
                python get_trackhub.py -i bigWig -n ChIPseq -g dm6')
-    parser.add_argument('--list-hub', action='store_true', 
-        dest='list_hub',
-        help='list local hub.txt, return url')
-    parser.add_argument('--recursive', action='store_true',
-        help='list hub files, recursively')
     parser.add_argument('-i', '--data-dir', required=True, dest='data_dir',
         help='The directory of bigWig and bigBed files')
+    parser.add_argument('-o', '--remote-dir', required=True, dest='remote_dir',
+        help='The directory to save the track files')
+    parser.add_argument('-r', '--recursive', action='store_true',
+        help='search files in data_dir Recursively')
     parser.add_argument('-n', '--hub-name', metavar='hub_name', required=False,
         default=None, help='hub name')
     parser.add_argument('-g', '--genome', metavar='GENOME', required=False,
         default='dm6', help='genome for the trackhub, UCSC genome build, \
         [hg19, hg38, mm9, mm10, dm3, dm6]')
-    parser.add_argument('-s', '--short-label', default=None, dest='short_label',
+    parser.add_argument('-l', '--short-label', default=None, dest='short_label',
         help='short label for the hub, default: [--hub-name]')
-    parser.add_argument('-l', '--long-label', default=None, dest='long_label',
+    parser.add_argument('-L', '--long-label', default=None, dest='long_label',
         help='long label for the hub, default: [--hub]')
     parser.add_argument('-u', '--user', default='UCSC',
         help='Who maintain the trackhub')
     parser.add_argument('-e', '--email', default='abc@abc.com',
         help='email of the maintainer')
-    parser.add_argument('-I', '--remote-dir', dest='remote_dir', 
-        default='ucsc_trackhub',
-        help='Name of directory under http/ftp root, default: [ucsc_trackhub]')
-    parser.add_argument('-c', '--subgroups-config', dest='subgroups_config',
+    parser.add_argument('-m', '--mirror', default='usa',
+        help='The mirror of UCSC, [usa|asia|euro], or custome mirror, input \
+        url of your UCSC_mirror: default: [usa]')
+    parser.add_argument('-s', '--subgroups-config', dest='subgroups_config',
         default=None,
         help='The config for subgroups, default: [None]')
-    parser.add_argument('-m', '--mirror', default='http://genome.ucsc.edu',
-        help='The mirror of UCSC, default: [http://genome.ucsc.edu]')
-    parser.add_argument('-C', '--http-config', dest='http_config',
+    parser.add_argument('-t', '--http-config', dest='http_config',
         default=None,
         help='The config for http, open access, including host, root_dir, \
         default [None]')
+    parser.add_argument('--http-host', dest='http_host', default=None,
+        help='The http server host url, example: http://abc.com/upload')
+    parser.add_argument('--http-root-dir', dest='http_root_dir', default=None,
+        help='The http server, root_dir, example: /data/upload')
     parser.add_argument('--dry-run', dest='dry_run', action='store_true',
         help='Do not copy the files')
-    # args=parser.parse_args()
     return parser
 
 
