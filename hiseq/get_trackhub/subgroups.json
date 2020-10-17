@@ -1,0 +1,109 @@
+{
+    "default": {
+        "rep": {
+            "name": "rep",
+            "label": "Replicate",
+            "mapping": {
+                "0": "merged",
+                "1": "rep1",
+                "2": "rep2",
+                "3": "rep3",
+                "4": "rep4",
+                "5": "rep5",
+                "6": "rep6"
+            }
+        },
+        "strand": {
+            "name": "strand",
+            "label": "Strand",
+            "mapping": {
+                "f": "fwd",
+                "r": "rev",
+                "n": "non"
+            }
+        },
+        "kind": {
+            "name": "kind",
+            "label": "kind",
+            "mapping": {
+                "signal": "signal",
+                "peak": "peak"
+            }
+        }
+    },
+    "ATACseq": {
+        "gene": {
+            "name": "gene",
+            "label": "Gene",
+            "mapping": {
+                "piwi1": "shPiwi1",
+                "piwi2": "shPiwi2",
+                "piwi3": "shPiwi3",
+                "piwi1_shpiwi2": "shPiwi1&2",
+                "white": "shWhite",
+                "mael": "shMael",
+                "cg3893": "shCG3893"
+            }
+        },
+        "stage": {
+            "name": "stage",
+            "label": "Stage",
+            "mapping": {
+                "3h": "3h",
+                "6h": "6h",
+                "12": "12h",
+                "l1": "L1",
+                "l2": "L2",
+                "l3": "L3",
+                "male": "Adult_mael",
+                "female": "Adult_female"
+            }
+        },
+        "kind": {
+            "name": "kind",
+            "label": "kind",
+            "mapping": {
+                "signal": "signal",
+                "peak": "peak"
+            }
+        }
+    },
+    "RNAseq": {
+        "gene": {
+            "name": "gene",
+            "label": "Gene",
+            "mapping": {
+                "piwi1": "shPiwi1",
+                "piwi2": "shPiwi2",
+                "piwi3": "shPiwi3",
+                "piwi1_shPiwi2": "shPiwi1&2",
+                "white": "shWhite",
+                "mael": "shMael",
+                "cg3893": "shCG3893"
+            }
+        },
+        "stage": {
+            "name": "stage",
+            "label": "Stage",
+            "mapping": {
+                "3h": "3h",
+                "6h": "6h",
+                "12": "12h",
+                "l1": "L1",
+                "l2": "L2",
+                "l3": "L3",
+                "male": "Adult_mael",
+                "female": "Adult_female"
+            }
+        },
+        "strand": {
+            "name": "strand",
+            "label": "Strand",
+            "mapping": {
+                "f": "fwd",
+                "r": "rev",
+                "n": "non"
+            }
+        }
+    }
+}

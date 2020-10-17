@@ -33,6 +33,8 @@ from .utils.seq import Fastx
 from .atac.atac_utils import Bam2bw, Bam2cor, PeakIDR, BedOverlap
 from .utils.helper import *
 from .fragsize.fragsize import BamPEFragSize2
+from .get_trackhub.get_trackhub import TrackHub 
+from .peak.call_peak import Macs2
 
 
 class Hiseq(object):
@@ -65,6 +67,7 @@ class Hiseq(object):
         go           Run GO analysis on geneset
         deseq_pair   Run RNAseq compare
 
+        run_trackhub Generate the trackhub urls
         fragsize     Fragment size of PE alignments
         bam2cor      Correlation between bam files
         bam2bw       Convert bam to bigWig 
@@ -179,9 +182,46 @@ class Hiseq(object):
         ...
         """
         parser = add_peak_args()
-        args = parser.parse_args(sys.argv[2:])
-        print('hiseq peak')
+        args = vars(parser.parse_args(sys.argv[2:]))
+        genome = args.get('genome', 'dm6')
+        outdir = args.get('outdir', str(pathlib.Path.cwd()))
+        bam_list = args.get('bam', None)
+        control_list = args.get('control', None)
+        name_list = args.get('name', None)
 
+        if bam_list is None:
+            log.warning('-i not detect bam files')
+        else:
+            for i, bam in enumerate(bam_list):
+                # control
+                if not control_list is None:
+                    control = control_list[i]
+                else:
+                    control = None
+
+                # prefix
+                if not name_list is None:
+                    name = name_list(i)
+                else:
+                    name = os.path.basename(os.path.splitext(bam)[0])
+
+                # output
+                subdir = os.path.join(outdir, name)
+                peak = os.path.join(subdir, name + '_peaks.narrowPeak')
+
+                if os.path.exists(peak):
+                    log.info('file exists: {}'.format(peak))
+                else:
+                    Macs2(
+                        ip=bam,
+                        genome=args.get('genome', 'dm6'),
+                        output=subdir,
+                        prefix=name,
+                        control=control,
+                        atac=args.get('is_atac', False), 
+                        gsize=args.get('genome_size', 0),
+                        overwrite=args.get('overwrite', False)).callpeak()
+        
 
     def motif(self):
         """
@@ -442,6 +482,16 @@ class Hiseq(object):
         Download files
         """
         dl.main(sys.argv[1:])
+
+
+    def run_trackhub(self):
+        """
+        Make trackhub 
+        """ 
+        parser = add_trackhub_args()
+        args = parser.parse_args(sys.argv[2:])
+        args = vars(args)
+        TrackHub(**args).run()
 
 
 def main():
