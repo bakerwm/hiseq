@@ -916,7 +916,7 @@ class ChIPseqR1(object):
         self.prep_raw(copy_raw_fq)
 
         # 2. trim
-        self.trim(trimmed)
+        self.trim(trimmed=True)
 
         # 3. align
         self.align()

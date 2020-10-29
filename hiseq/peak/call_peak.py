@@ -89,7 +89,7 @@ class Macs2(object):
             peak = os.path.join(self.output, self.prefix + '_peaks.narrowPeak')
         else:
             # ChIP-seq
-            macs2_cmd = 'macs2 callpeak -t {} -g {} --outdir {} -n {} \
+            macs2_cmd = 'macs2 callpeak --nomodel --extsize 150 -t {} -g {} --outdir {} -n {} \
                 --keep-dup auto -B --SPMR'.format(
                     self.ip, 
                     self.gsize,

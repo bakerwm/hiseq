@@ -94,6 +94,7 @@ import pathlib
 import shutil
 import logging
 import json
+import tempfile
 import pandas as pd
 from multiprocessing import Pool
 from hiseq.utils.seq import Fastx
@@ -2602,4 +2603,84 @@ class AlignIndex(object):
         else:
             # other groups
             return os.path.basename(index)
+
+
+    def _tmp(self):
+        """
+        Create a tmp file to save json object
+        """
+        tmp = tempfile.NamedTemporaryFile(prefix='tmp', suffix='.txt',
+            delete=False)
+        return tmp.name
+
+
+    def index_size(self, index=None, return_file=False):
+        """
+        chr size of index
+
+        bowtie:  bowtie-inspect -s <index>
+        bowtie2: bowtie-inspect -s <index>
+        STAR:  chrNameLength.txt
+        """
+        if index is None:
+            index = self.index
+
+        ## check
+        if index is None:
+            log.warning('AlignIndex(index=) or AlignIndex().index_name(index=) required')
+            return None
+
+        if not self.is_index(index=index):
+            log_msg = '\n'.join([
+                'index not exists, or not match the aligner:',
+                '{:>30s}: {}'.format('Index', index),
+                '{:>30s}: {}'.format('Aligner expected', self.get_aligner(index=index)),
+                '{:>30s}: {}'.format('Aligner get', self.aligner)])
+            log.warning(log_msg)
+            return None
+
+        ## aligner
+        gsize = self._tmp()
+        chrLength = 0
+        aligner = self.get_aligner(index)
+
+        if aligner in ['bowtie', 'bowtie2', 'hisat2', 'STAR']:
+            # get genome size
+            if aligner == 'STAR':
+                gsize = os.path.join(index, 'chrNameLength.txt')
+            else:
+                if aligner == 'bowtie':
+                    x_inspect = shutil.which('bowtie-inspect')
+                elif aligner == 'bowtie2':
+                    x_inspect = shutil.which('bowtie2-inspect')
+                elif aligner == 'hisat2':
+                    x_inspect = shutil.which('hisat2-inspect')
+                else:
+                    pass
+
+                # inspect
+                cmd = ' '.join([
+                    '{}'.format(x_inspect),
+                    '-s {} |'.format(index),
+                    'grep ^Sequence |',
+                    "sed -E 's/^Sequence-[0-9]+\t//' > {}".format(gsize)])
+
+                # run
+                try:
+                    os.system(cmd)
+                except:
+                    log.error('failed to run: {}'.format(x_inspect))
+
+            # read size
+            with open(gsize, 'rt') as r:
+                s = [i.strip().split('\t')[-1] for i in r.readlines()]
+            chrLength = sum(map(int, s))
+
+        else:
+            log.error('unknown aligner: {}'.format(aligner))
+
+        ## output
+        return gsize if return_file else chrLength
+
+
 
