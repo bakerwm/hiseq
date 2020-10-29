@@ -327,14 +327,17 @@ def peak_FRiP(inbed, inbam, threads=4):
 
     Using: Deeptools
     """
-    # reads in peak
-    cr = crpb.CountReadsPerBin([inbam], bedFile=inbed, numberOfProcessors=threads)
-    crn = cr.run()
-    rip = crn.sum(axis=0)[0]
-    # fraction
-    bam = pysam.AlignmentFile(inbam)
-    total = bam.mapped
-    frip = float(rip) / total
+    if file_row_counter(inbed) > 1 and file_exists(inbam):
+        # reads in peak
+        cr = crpb.CountReadsPerBin([inbam], bedFile=inbed, numberOfProcessors=threads)
+        crn = cr.run()
+        rip = crn.sum(axis=0)[0]
+        # fraction
+        bam = pysam.AlignmentFile(inbam)
+        total = bam.mapped
+        frip = float(rip) / total
+    else:
+        frip = rip = total = 0
 
     # output
     return (frip, rip, total)

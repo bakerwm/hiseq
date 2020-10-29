@@ -45,7 +45,7 @@ from multiprocessing import Pool
 from Levenshtein import distance
 from hiseq.utils.helper import *
 from hiseq.trim.trimmer import Trimmer
-from hiseq.align.alignment import Alignment
+from hiseq.align.alignment import Alignment, AlignIndex
 from hiseq.peak.call_peak import Macs2
 from hiseq.atac.atac_utils import *
 from hiseq.fragsize.fragsize import BamPEFragSize
@@ -155,7 +155,7 @@ class ChIPseqR1Config(object):
         """
         args_init = {
             'is_ip': True,
-            'is_trimmed': False,
+            'trimmed': True,
             'smp_name': None,
             'fq1': None,
             'fq2': None,
@@ -163,6 +163,7 @@ class ChIPseqR1Config(object):
             'outdir': str(pathlib.Path.cwd()),
             'aligner': 'bowtie2',
             'align_to_chrM': True,
+            'extra_index': None,
             'threads': 1,
             'parallel_jobs': 1,
             'overwrite': False,
@@ -187,6 +188,22 @@ class ChIPseqR1Config(object):
         self.smp_name = getattr(self, 'smp_name', None)
         if self.smp_name is None:
             self.smp_name = fq_name(self.fq1, pe_fix=True) # the first one
+
+        # check genome size
+        if isinstance(self.extra_index, list):
+            if self.genome_size < 1:
+                ai = AlignIndex(index=self.extra_index[-1])
+                self.genome_size = ai.index_size()
+                self.gsize_file = ai.index_size(return_file=True)
+        elif isinstance(self.genome, str):
+            self.gsize_file = Genome(genome=self.genome).get_fasize()
+            gsize = self.gsize_file
+            with open(gsize, 'rt') as r:
+                s = [i.strip().split('\t')[-1] for i in r.readlines()]
+            if self.genome_size < 1:
+                self.genome_size = sum(map(int, s))
+        else:
+            raise ValueError('unknown genome, extra_index')
 
         # threads
         self.threads, self.parallel_jobs = init_cpu(self.threads, self.parallel_jobs)
@@ -293,7 +310,8 @@ class ChIPseqRnConfig(object):
             'parallel_jobs': 1,
             'overwrite': False,
             'binsize': 50,
-            'genome_size': 0
+            'genome_size': 0,
+            'extra_index': None
         }
         self = update_obj(self, args_init, force=False)
         self.chipseq_type = 'chipseq_rn'
@@ -310,6 +328,21 @@ class ChIPseqRnConfig(object):
             self.smp_name = self.smp_name.pop() # to str !!! to-do, check unique
         else:
             raise ValueError('ChIPseqRnConfig failed, fq1/rep_list expect list, got {}'.format(type(self.rep_list).__name__))
+
+        # check genome size
+        if isinstance(self.extra_index, list):
+            if self.genome_size < 1:
+                ai = AlignIndex(index=self.extra_index[-1])
+                self.genome_size = ai.index_size()
+                self.gsize_file = ai.index_size(return_file=True)
+        elif isinstance(self.genome, str):
+            gsize = Genome(genome=self.genome).get_fasize()
+            with open(gsize, 'rt') as r:
+                s = [i.strip().split('\t')[-1] for i in r.readlines()]
+            if self.genome_size < 1:
+                self.genome_size = sum(map(int, s))
+        else:
+            raise ValueError('unknown genome, extra_index')
 
         # threads
         self.threads, self.parallel_jobs = init_cpu(self.threads, self.parallel_jobs)
@@ -406,7 +439,8 @@ class ChIPseqRxConfig(object):
             'parallel_jobs': 1,
             'overwrite': False,
             'binsize': 50,
-            'genome_size': 0
+            'genome_size': 0,
+            'extra_index': None
         }
         self = update_obj(self, args_init, force=False)
         self.chipseq_type = 'chipseq_rx'
@@ -421,6 +455,21 @@ class ChIPseqRxConfig(object):
             self.ip_name = ChIPseqReader(self.ip_dir).args.get('smp_name', None)
             self.input_name = ChIPseqReader(self.input_dir).args.get('smp_name', None)
             self.smp_name = '{}.vs.{}'.format(self.ip_name, self.input_name)
+
+        # check genome size
+        if isinstance(self.extra_index, list):
+            if self.genome_size < 1:
+                ai = AlignIndex(index=self.extra_index[-1])
+                self.genome_size = ai.index_size()
+                self.gsize_file = ai.index_size(return_file=True)
+        elif isinstance(self.genome, str):
+            gsize = Genome(genome=self.genome).get_fasize()
+            with open(gsize, 'rt') as r:
+                s = [i.strip().split('\t')[-1] for i in r.readlines()]
+            if self.genome_size < 1:
+                self.genome_size = sum(map(int, s))
+        else:
+            raise ValueError('unknown genome, extra_index')
 
         # threads
         self.threads, self.parallel_jobs = init_cpu(self.threads, 
@@ -501,11 +550,13 @@ class ChIPseqConfig(object):
             'outdir': str(pathlib.Path.cwd()),
             'aligner': 'bowtie2',
             'align_to_chrM': True,
+            'extra_index': None,
             'threads': 1,
             'parallel_jobs': 1,
             'overwrite': False,
             'binsize': 50,
-            'genome_size': 0
+            'genome_size': 0,
+            'trimmed': True
         }
         self = update_obj(self, args_init, force=False)
 
@@ -533,6 +584,22 @@ class ChIPseqConfig(object):
         else:
             pass
             # raise ValueError('rep_list failed, None, str, list expected, got {}'.format(type(self.rep_list).__name__))
+
+        # check genome size
+        if isinstance(self.extra_index, list):
+            if self.genome_size < 1:
+                ai = AlignIndex(index=self.extra_index[-1])
+                self.genome_size = ai.index_size()
+                self.gsize_file = ai.index_size(return_file=True)
+        elif isinstance(self.genome, str):
+            self.gsize_file = Genome(genome=self.genome).get_fasize()
+            gsize = self.gsize_file # Genome(genome=self.genome).get_fasize()
+            with open(gsize, 'rt') as r:
+                s = [i.strip().split('\t')[-1] for i in r.readlines()]
+            if self.genome_size < 1:
+                self.genome_size = sum(map(int, s))
+        else:
+            raise ValueError('unknown genome, extra_index')
 
 
     def check_fq(self, fq):
@@ -637,6 +704,7 @@ class ChIPseqR1(object):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
 
+
     def init_args(self):
         obj_local = ChIPseqR1Config(**self.__dict__)
         self = update_obj(self, obj_local.__dict__, force=True)
@@ -727,6 +795,7 @@ class ChIPseqR1(object):
             'fq2': fq2,
             'fq': fq1,
             'outdir': self.align_dir,
+            'extra_index': self.extra_index,
             'extra_para': '--very-sensitive-local', # --no-mixed -X 800
             'aligner': 'bowtie2'
         }
@@ -808,11 +877,18 @@ class ChIPseqR1(object):
         Bam(bam).to_bed(bed)
         args_peak.pop('genome', None)
         args_peak.pop('outdir', None)
+
+        # determine the genome size
+        genome_size = getattr(self, 'genome_size', 0)
+        gsize_file = getattr(self, 'gsize_file', None)
+
         if check_file(self.peak):
             log.info('call_peak() skipped, file exists: {}'.format(
                 self.peak))
         else:
-            Macs2(bed, self.genome, self.peak_dir, self.project_name, atac=False).callpeak()
+            Macs2(bed, self.genome, self.peak_dir, self.project_name,
+                atac=False, genome_size=genome_size, 
+                gsize_file=gsize_file).callpeak()
 
 
     def qc_lendist(self):
@@ -881,7 +957,7 @@ class ChIPseqR1(object):
         """
         pkg_dir = os.path.dirname(hiseq.__file__)
         qc_reportR = os.path.join(pkg_dir, 'bin', 'chipseq_report.R')
-        atac_report_html = os.path.join(
+        chipseq_report_html = os.path.join(
             self.report_dir, 
             'ChIPseq_report.html')
 
@@ -894,7 +970,10 @@ class ChIPseqR1(object):
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + '\n')
     
-        run_shell_cmd(cmd)
+        if file_exists(chipseq_report_html):
+            log.info('report() skipped, file exists: {}'.format(chipseq_report_html))
+        else:
+            run_shell_cmd(cmd)
         # try:
         #     run_shell_cmd(cmd)
         # except:
@@ -916,7 +995,7 @@ class ChIPseqR1(object):
         self.prep_raw(copy_raw_fq)
 
         # 2. trim
-        self.trim(trimmed=True)
+        self.trim(trimmed=trimmed)
 
         # 3. align
         self.align()
@@ -1021,7 +1100,6 @@ class ChIPseqRn(object):
         """
         args_peak = self.__dict__.copy()
         args_peak['genome_size'] = getattr(self, 'genome_size', 0)
-
         
         bam = self.bam
         bed = os.path.splitext(bam)[0] + '.bed'
@@ -1029,12 +1107,15 @@ class ChIPseqRn(object):
         genome = args_peak.pop('genome', None)
         output = args_peak.pop('peak_dir', None)
         prefix = args_peak.pop('smp_name', None)
+        genome_size = getattr(self, 'genome_size', 0)
+        gsize_file = getattr(self, 'gsize_file', None)
 
         if check_file(self.peak):
             log.info('call_peak() skipped, file exists: {}'.format(
                 self.peak))
         else:
-            Macs2(bed, genome, output, prefix, atac=False).callpeak()
+            Macs2(bed, genome, output, prefix, atac=False,
+                genome_size=genome_size, gsize_file=gsize_file).callpeak()
 
 
     def get_bam_cor(self, window=500):
@@ -1143,9 +1224,9 @@ class ChIPseqRn(object):
         """
         pkg_dir = os.path.dirname(hiseq.__file__)
         qc_reportR = os.path.join(pkg_dir, 'bin', 'chipseq_report.R')
-        atac_report_html = os.path.join(
+        chipseq_report_html = os.path.join(
             self.report_dir, 
-            'chipseq_report.html')
+            'ChIPseq_report.html')
 
         cmd = 'Rscript {} {} {}'.format(
             qc_reportR,
@@ -1156,8 +1237,10 @@ class ChIPseqRn(object):
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + '\n')
 
-        print('!AAAA-4', 'report')
-        run_shell_cmd(cmd) 
+        if file_exists(chipseq_report_html):
+            log.info('report() skipped, file exists: {}'.format(chipseq_report_html))
+        else:
+            run_shell_cmd(cmd) 
 
 
     def pick_fq_samples(self, i):
@@ -1197,8 +1280,9 @@ class ChIPseqRn(object):
         args_tmp = self.__dict__.copy()
         # required args
         args_required = ['align_to_chrM', 'aligner', 'fq1', 'fq2', 'genome', 
-            'genome_size', 'is_ip', 'is_trimmed', 'outdir', 'overwrite', 
-            'parallel_jobs', 'threads']
+            'genome_size', 'gsize_file', 'is_ip', 'is_trimmed', 'outdir', 
+            'overwrite', 'extra_index', 'extra_para', 'parallel_jobs', 
+            'threads']
         args_local = dict((k, args_tmp[k]) for k in args_required 
             if k in args_tmp)
 
@@ -1231,7 +1315,6 @@ class ChIPseqRn(object):
             #     self.run_fq_single(i)
 
         if len(self.rep_list) > 1:
-            print('!AAA', self.rep_list)
             # run
             self.merge_bam()
             self.bam_to_bw()
@@ -1265,6 +1348,7 @@ class ChIPseqRx(object):
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
+        print('!AAAA-8', self.gsize_file)
 
 
     def init_args(self):
@@ -1307,7 +1391,7 @@ class ChIPseqRx(object):
         ...
         """
         args_global = self.__dict__.copy()
-        args_required = ['']
+        args_required = ['genome_size', 'gsize_file']
         args_local = dict((k, args_global[k]) for k in args_required if
             k in args_global)
 
@@ -1317,7 +1401,8 @@ class ChIPseqRx(object):
             genome=self.genome,
             output=getattr(self, 'peak_dir', None),
             prefix=self.ip_args.get('smp_name', None),            
-            genome_size=self.genome_size,
+            # genome_size=self.genome_size,
+            # gsize_file=self.gsize_file,
             **args_local)
 
         ## call peaks
@@ -1337,9 +1422,9 @@ class ChIPseqRx(object):
         """
         pkg_dir = os.path.dirname(hiseq.__file__)
         qc_reportR = os.path.join(pkg_dir, 'bin', 'chipseq_report.R')
-        atac_report_html = os.path.join(
+        chipseq_report_html = os.path.join(
             self.report_dir, 
-            'atac_report.html')
+            'ChIPseq_report.html')
 
         cmd = 'Rscript {} {} {}'.format(
             qc_reportR,
@@ -1350,7 +1435,10 @@ class ChIPseqRx(object):
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + '\n')
     
-        run_shell_cmd(cmd) 
+        if file_exists(chipseq_report_html):
+            log.info('report() skipped, file exists: {}'.format(chipseq_report_html))
+        else:
+            run_shell_cmd(cmd) 
 
 
     def run(self):
@@ -1436,18 +1524,22 @@ class ChIPseq(object):
             'fq1': self.ip,
             'fq2': self.ip_fq2,
             'build_design': None,
-            'rep_list': None}
+            'rep_list': None,
+            'extra_index': self.extra_index,
+            'genome_size': self.genome_size}
         ip_args.update(ip_local)
         ip = ChIPseqRn(**ip_args)
 
         # for input fastq
         input_args = self.__dict__
         input_local = {
-            'is_ip': True,
+            'is_ip': False,
             'fq1': self.input,
             'fq2': self.input_fq2,
             'build_design': None,
-            'rep_list': None}
+            'rep_list': None,
+            'extra_index': self.extra_index,
+            'genome_size': self.genome_size}
         input_args.update(input_local)
         input = ChIPseqRn(**input_args)
 
@@ -1465,7 +1557,8 @@ class ChIPseq(object):
             'ip': None,
             'ip_fq2': None,
             'input': None,
-            'input_fq2': None
+            'input_fq2': None,
+            'extra_index': self.extra_index
         }
         rx_args.update(rx_local)
         rx = ChIPseqRx(**rx_args)
@@ -1639,5 +1732,4 @@ class ChIPseqDesign(object):
 
         # save to file
         Json(design_dict).writer(self.design)
-
 

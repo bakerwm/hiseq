@@ -18,9 +18,8 @@ class Macs2(object):
     3. macs2 bdgcmp -t {prefix}_treat_pileup.bdg -c {prefix}_control_lambda.bdg -o {prefix}.FE.bdg -m FE
     4. macs2 bdgcmp -t {prefix}_treat_pileup.bdg -c {prefix}_control_lambda.bdg -o {prefix}.logLR.bdg -m logLR -p 0.00001
     """
-
     def __init__(self, ip, genome, output, prefix=None, control=None, 
-        atac=False, overwrite=False, genome_size=0, **kwargs):
+        atac=False, overwrite=False, genome_size=0, gsize_file=None, **kwargs):
         """Parse the parameters
         venv, the virtualenv created for macs2, running in Python2
         """
@@ -30,6 +29,7 @@ class Macs2(object):
         self.control = control
         self.overwrite = overwrite
         self.genome_size = genome_size
+        self.gsize_file = gsize_file
         self.prefix = prefix
         self.atac = atac
 
@@ -40,6 +40,11 @@ class Macs2(object):
         self.gsize = self.get_gsize()
         if self.gsize is None:
             raise ValueError('unknown genome: {}'.format(genome))
+
+        # get gsize_file, only for genome=None
+        if not isinstance(genome, str):
+            if genome_size == 0 or gsize_file is None:
+                raise ValueError('genome_size and gsize_file required, if genome=None')
 
         is_path(self.output)
 
@@ -150,7 +155,8 @@ class Macs2(object):
         cmd2 = 'sort -k1,1 -k2,2n -o {} {}'.format(out_bdg, out_bdg)
 
         # cnvert *.bdg to *.bigWig
-        gsize_file = Genome(self.genome).get_fasize()
+        # gsize_file = Genome(self.genome).get_fasize()
+        gsize_file = self.gsize_file
         out_bw  = os.path.join(self.output, self.prefix + '.' + opt + '.bigWig')
         cmd3 = 'bedGraphToBigWig {} {} {}'.format(out_bdg, gsize_file, out_bw)
         if os.path.exists(out_bw) and self.overwrite is False:
