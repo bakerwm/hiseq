@@ -161,7 +161,7 @@ class ChIPseqR1Config(object):
             'fq2': None,
             'genome': None,
             'outdir': str(pathlib.Path.cwd()),
-            'aligner': 'bowtie2',
+            'aligner': None,
             'align_to_chrM': True,
             'extra_index': None,
             'threads': 1,
@@ -304,7 +304,7 @@ class ChIPseqRnConfig(object):
             'fq2': None,
             'genome': None,
             'outdir': str(pathlib.Path.cwd()),
-            'aligner': 'bowtie2',
+            'aligner': None,
             'align_to_chrM': True,
             'threads': 1,
             'parallel_jobs': 1,
@@ -433,7 +433,7 @@ class ChIPseqRxConfig(object):
             'input_dir': None,
             'genome': None,
             'outdir': str(pathlib.Path.cwd()),
-            'aligner': 'bowtie2',
+            'aligner': None,
             'align_to_chrM': True,
             'threads': 1,
             'parallel_jobs': 1,
@@ -548,7 +548,7 @@ class ChIPseqConfig(object):
             'smp_name': None,
             'genome': None,
             'outdir': str(pathlib.Path.cwd()),
-            'aligner': 'bowtie2',
+            'aligner': None,
             'align_to_chrM': True,
             'extra_index': None,
             'threads': 1,
@@ -586,6 +586,7 @@ class ChIPseqConfig(object):
             # raise ValueError('rep_list failed, None, str, list expected, got {}'.format(type(self.rep_list).__name__))
 
         # check genome size
+        print('!BBBB-1', self.extra_index, self.genome)
         if isinstance(self.extra_index, list):
             if self.genome_size < 1:
                 ai = AlignIndex(index=self.extra_index[-1])
@@ -598,7 +599,7 @@ class ChIPseqConfig(object):
                 s = [i.strip().split('\t')[-1] for i in r.readlines()]
             if self.genome_size < 1:
                 self.genome_size = sum(map(int, s))
-        else:
+        elif not self.build_design:
             raise ValueError('unknown genome, extra_index')
 
 
@@ -797,7 +798,7 @@ class ChIPseqR1(object):
             'outdir': self.align_dir,
             'extra_index': self.extra_index,
             'extra_para': '--very-sensitive-local', # --no-mixed -X 800
-            'aligner': 'bowtie2'
+            'aligner': None
         }
         args_local.update(args_init)
 

@@ -386,8 +386,6 @@ class Hiseq(object):
         if len(sf) == 1:
             sf_list = sf * len(bam_list)
         elif not len(sf) == len(bam_list):
-            print('!AAAA-1', sf)
-            print('!AAAA-2', bam_list)
             raise ValueError('--scaleFactor not match bam files')
         else:
             sf_list = sf

@@ -185,7 +185,7 @@ def add_align_args():
     parser.add_argument('-o', '--outdir', default=None,
         help='The directory to save results, default, \
         current working directory.')
-    parser.add_argument('-g', '--genome', required=True, default='dm6',
+    parser.add_argument('-g', '--genome', required=True, default=None,
         choices=[None, 'dm6', 'dm3', 'hg38', 'hg19', 'mm10', 'mm9'],
         help='Reference genome : dm6, dm3, hg38, hg19, mm10, mm9, default: dm6')
     parser.add_argument('-k', '--spikein', default=None,
@@ -282,7 +282,7 @@ def add_peak_args():
         current working directory.')
     parser.add_argument('-n', '--name', default=None,
         help='The prefix of output files, default: None')
-    parser.add_argument('-g', '--genome', required=False, default='dm6',
+    parser.add_argument('-g', '--genome', required=False, default=None,
         choices=[None, 'dm6', 'dm3', 'hg38', 'hg19', 'mm10', 'mm9'],
         help='Reference genome : dm6, dm3, hg38, hg19, mm10, mm9, default: dm6')
     parser.add_argument('-gs', '--genome-size', required=False, type=int, default=0,
@@ -360,7 +360,7 @@ def add_rnaseq_args():
     parser.add_argument('-o', '--outdir', default=None,
         help='The directory to save results, default, \
         current working directory.')
-    parser.add_argument('-g', '--genome', default='dm6',
+    parser.add_argument('-g', '--genome', default=None,
         choices=['dm3', 'dm6', 'hg19', 'hg38', 'mm9', 'mm10'],
         help='Reference genome : dm3, dm6, hg19, hg39, mm9, mm10, default: hg19')
 
@@ -450,7 +450,7 @@ def add_rnaseq_args2():
     parser.add_argument('-o', '--outdir', required=True,
         help='The directory to save results, default, \
         current working directory.')
-    parser.add_argument('-g', '--genome', required=True,
+    parser.add_argument('-g', '--genome', required=True, default=None,
         choices=['dm3', 'dm6', 'hg19', 'hg38', 'mm9', 'mm10'],
         help='Reference genome : dm3, dm6, hg19, hg39, mm9, mm10, default: hg19')
     parser.add_argument('--threads', default=1, type=int,
@@ -482,7 +482,7 @@ def add_atac_args():
     parser.add_argument('-o', '--outdir', default=None,
         help='The directory to save results, default, \
         current working directory.')
-    parser.add_argument('-g', '--genome', default='dm6',
+    parser.add_argument('-g', '--genome', default=None,
         choices=['dm3', 'dm6', 'hg19', 'hg38', 'mm9', 'mm10'],
         help='Reference genome : dm3, dm6, hg19, hg39, mm9, mm10, default: hg19')
 
@@ -522,7 +522,7 @@ def add_atac_args():
     parser.add_argument('-k', '--spikein', default=None,
         choices=[None, 'dm3', 'hg19', 'hg38', 'mm10'],
         help='Spike-in genome : dm3, hg19, hg38, mm10, default: None')
-    parser.add_argument('-x', '--ext-index', nargs='+', dest="ext_index",
+    parser.add_argument('-x', '--ext-index', nargs='+', dest="extra_index",
         help='Provide alignment index(es) for alignment, support multiple\
         indexes. if specified, ignore -g, -k')
 
@@ -558,7 +558,7 @@ def add_chipseq_args():
     parser.add_argument('-o', '--outdir', default=str(pathlib.Path.cwd()),
         help='The directory to save results, default, \
         current working directory.')
-    parser.add_argument('-g', '--genome', default='dm6',
+    parser.add_argument('-g', '--genome', default=None,
         choices=['dm3', 'dm6', 'hg19', 'hg38', 'mm9', 'mm10'],
         help='Reference genome : dm3, dm6, hg19, hg39, mm9, mm10, default: hg19')
 
@@ -575,7 +575,7 @@ def add_chipseq_args():
         help='if spcified, overwrite exists file')
 
     ## extra: index
-    parser.add_argument('-x', '--ext-index', nargs='+', dest="ext_index",
+    parser.add_argument('-x', '--extra-index', nargs='+', dest="extra_index",
         help='Provide alignment index(es) for alignment, support multiple\
         indexes. if specified, ignore -g, -k')
 

@@ -148,14 +148,12 @@ class Macs2(object):
         if os.path.exists(out_bdg) and self.overwrite is False:
             logging.info('file exists, skip macs2 bdgcmp')
         else:
-            # self.python2_run(c)
             run_shell_cmd(cmd1)
 
         # sort output *.bdg
         cmd2 = 'sort -k1,1 -k2,2n -o {} {}'.format(out_bdg, out_bdg)
 
         # cnvert *.bdg to *.bigWig
-        # gsize_file = Genome(self.genome).get_fasize()
         gsize_file = self.gsize_file
         out_bw  = os.path.join(self.output, self.prefix + '.' + opt + '.bigWig')
         cmd3 = 'bedGraphToBigWig {} {} {}'.format(out_bdg, gsize_file, out_bw)

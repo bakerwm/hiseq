@@ -1196,7 +1196,8 @@ class Bam(object):
 
     def count(self):
         """Using samtools view -c"""
-        return pysam.view('-c', self.bam)
+        x = pysam.view('-c', self.bam)
+        return int(x.strip())
 
 
     def to_bed(self, outfile=None):
