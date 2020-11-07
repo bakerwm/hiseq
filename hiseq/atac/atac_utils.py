@@ -23,6 +23,27 @@ from hiseq.utils.seq import Fastx
 import deeptools.countReadsPerBin as crpb
 
 
+def update_obj(obj, d, force=True, remove=False):
+    """
+    d: dict
+    force: bool, update exists attributes
+    remove: bool, remove exists attributes
+    Update attributes from dict
+    force exists attr
+    """
+    # fresh start
+    if remove is True:
+        for k in obj.__dict__:
+            delattr(obj, k)
+    # add attributes
+    if isinstance(d, dict):
+        for k, v in d.items():
+            if not hasattr(obj, k) or force:
+                setattr(obj, k, v)
+
+    return obj
+
+
 def fasize(x, sum_all=False):
     """
     Count number of bases for each sequence
@@ -35,22 +56,6 @@ def fasize(x, sum_all=False):
             k[n] = len(s)
 
     return sum(k.values()) if sum_all else k
-
-
-# def symlink(src, dest, absolute_path=True):
-#     """
-#     Create symlinks within output dir
-#     ../src
-#     """
-#     if absolute_path:
-#         # support: ~, $HOME,
-#         srcname = os.path.abspath(os.path.expanduser(os.path.expandvars(src)))
-#     else:
-#         # only for directories within the same folder
-#         srcname = os.path.join('..', os.path.basename(src))
-
-#     if not os.path.exists(dest):
-#         os.symlink(srcname, dest)
 
 
 def symlink(src, dest, absolute_path=True):
@@ -70,9 +75,12 @@ def symlink(src, dest, absolute_path=True):
             # only for directories within the same folder
             srcname = os.path.join('..', os.path.basename(src))
 
-        if not os.path.exists(dest):
-            os.symlink(srcname, dest)
-
+        # if not os.path.exists(dest):
+        try:
+            if not file_exists(dest):
+                os.symlink(srcname, dest)
+        except:
+            log.error('symlink() failed')
 
 
 def in_dict(d, k):
@@ -327,6 +335,7 @@ def peak_FRiP(inbed, inbam, threads=4):
 
     Using: Deeptools
     """
+<<<<<<< HEAD
     if file_row_counter(inbed) > 1 and file_exists(inbam):
         # reads in peak
         cr = crpb.CountReadsPerBin([inbam], bedFile=inbed, numberOfProcessors=threads)
@@ -338,51 +347,26 @@ def peak_FRiP(inbed, inbam, threads=4):
         frip = float(rip) / total
     else:
         frip = rip = total = 0
+=======
+    # init data
+    frip = 0
+    rip = 0
+    total = 0
+
+    if file_exists(inbed):
+        if file_row_counter(inbed) > 10:
+            # reads in peak
+            cr = crpb.CountReadsPerBin([inbam], bedFile=inbed, numberOfProcessors=threads)
+            crn = cr.run()
+            rip = crn.sum(axis=0)[0]
+            # fraction
+            bam = pysam.AlignmentFile(inbam)
+            total = bam.mapped
+            frip = float(rip) / total
+>>>>>>> atac-fix
 
     # output
     return (frip, rip, total)
-
-
-# def peak_FRiP(inbed, inbam, genome="dm6"):
-#     """Calculate FRiP for ChIP-seq/ATAC-seq peaks
-#     Fraction of reads in called peak regions
-#     input: bam, peak (bed)
-
-#     using: bedtools intersect 
-#     count reads in peaks
-#     """
-#     # total map
-#     # index
-#     Bam(inbam).index()
-#     bam = pysam.AlignmentFile(inbam)
-#     total = bam.mapped
-
-#     gsize = Genome(genome).get_fasize()
-#     tmp = os.path.basename(inbed) + '.count.tmp'
-
-#     try:
-#         # reads in peak
-#         cmd = ' '.join([
-#             'sort -k1,1 -k2,2n {}'.format(inbed),
-#             '| bedtools intersect -c -a - -b {} > {}'.format(inbam, tmp)])
-#         run_shell_cmd(cmd)
-
-#         x = 0 # init
-#         with open(tmp) as r:
-#             for line in r:
-#                 p = line.strip().split('\t').pop()
-#                 x += eval(p)
-
-#         frip = '{:.2f}%'.format(x/total*100)
-
-#         os.remove(tmp)
-#     except:
-#         log.warning('cal_FRiP() failed, skip {}'.format(inbed))
-#         if os.path.exists(tmp):
-#             os.remove(tmp)
-#         frip = x = total = 0 # init
-
-#     return (frip, x, total)
 
 
 def frag_length(infile, outfile=None):
@@ -1144,6 +1128,95 @@ class Bam2cor(object):
             self.cor_pca_plot()
 
 
+class Bam2fingerprint(object):
+    """
+    QC for bam files
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+
+
+    def init_args(self):
+        """
+        Required arguments for ATACseq analysis
+        """
+        args_init = {
+            'bam_dir': None,
+            'bam_list': None,
+            'threads': 8,
+            'outdir': None,
+            'title': 'BAM_fingerprint',
+            'labels': None,
+            'overlap': False
+            }
+        self = update_obj(self, args_init, force=False)
+
+        ## bam_dir
+        if isinstance(self.bam_dir, str):
+            self.bam_list = listfile(self.bam_dir, '*.bam')
+
+        ## bam_list
+        if not isinstance(self.bam_list, list):
+            raise ValueError('bam_list, expect list, got {}'.format(type(self.bam_list).__name__))
+
+        if not all(file_exists(self.bam_list)):
+            raise ValueError('bam_list, file not exists')
+
+        ## outdir
+        if self.outdir is None:
+            self.outdir = str(pathlib.Path.cwd())
+        self.outdir = file_abspath(self.outdir)
+        check_path(self.outdir)
+
+        ## labels
+        bam_names = [os.path.splitext(os.path.basename(i))[0] for i in self.bam_list]
+        if self.labels is None:
+            self.labels = bam_names
+
+        if not isinstance(self.labels, list):
+            raise ValueError('labels, expect list, got {}'.format(type(self.labels).__name))
+
+        if abs(len(self.bam_list) - len(self.labels)) > 0:
+            log.warning('bam_list, labels are not in equal in length')
+            self.labels = bam_names
+
+        ## output files
+        prefix = re.sub('[^A-Za-z0-9-.]', '_', self.title)
+        prefix = re.sub('_+', '_', prefix) # format string
+        self.fp_png = os.path.join(self.outdir, prefix + '.png')
+        self.fp_tab = os.path.join(self.outdir, prefix + '.tab')
+
+
+    def run(self):
+        # check bam index
+        [Bam(i).index() for i in self.bam_list]
+
+        cmd = ' '.join([
+            '{}'.format(shutil.which('plotFingerprint')),
+            '--minMappingQuality 30 --skipZeros --numberOfSamples 50000',
+            '-p {}'.format(self.threads),
+            '--plotFile {}'.format(self.fp_png),
+            '--outRawCounts {}'.format(self.fp_tab),
+            '-b {}'.format(' '.join(self.bam_list)),
+            '--labels {}'.format(' '.join(self.labels))
+            ])
+
+        # save cmd
+        cmd_txt = os.path.join(self.outdir, 'cmd.txt')
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+
+        # run
+        try:
+            if file_exists(self.fp_png) and not self.overwrite:
+                os.system(cmd)
+            else:
+                log.info('Bam2fingerprint() skipped, file exists: {}'.format(self.fp_png))
+        except:
+            log.error('fingerPrint failed in {}'.format(self.outdir))
+
+
 class PeakIDR(object):
     """
     peak
@@ -1421,3 +1494,5 @@ def bwCompare(bw1, bw2, bw_out, operation='log2', **kwargs):
         log.info('bwCompare() skipped, file exists: {}'.format(bw_out))
     else:
         run_shell_cmd(cmd)
+
+

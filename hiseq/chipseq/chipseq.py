@@ -155,7 +155,11 @@ class ChIPseqR1Config(object):
         """
         args_init = {
             'is_ip': True,
+<<<<<<< HEAD
             'trimmed': True,
+=======
+            'trimmed': False,
+>>>>>>> atac-fix
             'smp_name': None,
             'fq1': None,
             'fq2': None,
@@ -636,7 +640,7 @@ class ChIPseqConfig(object):
             # check
             q_tag = 0
             for q1, q2 in zip(fq1, fq2):
-                if not distance(fq1, fq2) == 1:
+                if not distance(q1, q2) == 1:
                     log.error('PE fq files failed, {}, {}'.format(q1, q2))
                     q_tag += 1
 
@@ -679,7 +683,7 @@ class ChIPseqConfig(object):
         elif file_exists(self.design):
             self.chipseq_type = 'chipseq_rx_from_design'
         elif isinstance(self.ip_dir, str) and isinstance(self.input_dir, str):
-            self.chipseq_tyep = 'chipseq_rx'
+            self.chipseq_type = 'chipseq_rx'
         # elif isinstance(self.ip, list) and isinstance(self.input, list):
         elif all([not i is None for i in [self.ip, self.input]]):
             self.chipseq_type = 'chipseq_rx'
@@ -1281,9 +1285,14 @@ class ChIPseqRn(object):
         args_tmp = self.__dict__.copy()
         # required args
         args_required = ['align_to_chrM', 'aligner', 'fq1', 'fq2', 'genome', 
+<<<<<<< HEAD
             'genome_size', 'gsize_file', 'is_ip', 'is_trimmed', 'outdir', 
             'overwrite', 'extra_index', 'extra_para', 'parallel_jobs', 
             'threads']
+=======
+            'genome_size', 'is_ip', 'trimmed', 'outdir', 'overwrite', 
+            'parallel_jobs', 'threads']
+>>>>>>> atac-fix
         args_local = dict((k, args_tmp[k]) for k in args_required 
             if k in args_tmp)
 
@@ -1576,9 +1585,9 @@ class ChIPseq(object):
         elif self.chipseq_type == 'chipseq_rx_from_design':
             self.run_chipseq_rx_from_design()
         elif self.chipseq_type == 'chipseq_r1':
-            ChIPseqR1(self.__dict__).run()
+            ChIPseqR1(**self.__dict__).run()
         elif self.chipseq_type == 'chipseq_rn':
-            ChIPseqRn(self.__dict__).run()
+            ChIPseqRn(**self.__dict__).run()
         elif self.chipseq_type == 'chipseq_rx':
             self.run_chipseq_rx()
         else:
