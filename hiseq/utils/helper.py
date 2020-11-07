@@ -334,7 +334,6 @@ def fq_name(fq, include_path=False, pe_fix=False):
         return fq
 
 
-
 def fq_name_rmrep(fq, include_path=False, pe_fix=True):
     """
     x, filename, or list
