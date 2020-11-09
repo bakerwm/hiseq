@@ -335,19 +335,6 @@ def peak_FRiP(inbed, inbam, threads=4):
 
     Using: Deeptools
     """
-<<<<<<< HEAD
-    if file_row_counter(inbed) > 1 and file_exists(inbam):
-        # reads in peak
-        cr = crpb.CountReadsPerBin([inbam], bedFile=inbed, numberOfProcessors=threads)
-        crn = cr.run()
-        rip = crn.sum(axis=0)[0]
-        # fraction
-        bam = pysam.AlignmentFile(inbam)
-        total = bam.mapped
-        frip = float(rip) / total
-    else:
-        frip = rip = total = 0
-=======
     # init data
     frip = 0
     rip = 0
@@ -363,7 +350,6 @@ def peak_FRiP(inbed, inbam, threads=4):
             bam = pysam.AlignmentFile(inbam)
             total = bam.mapped
             frip = float(rip) / total
->>>>>>> atac-fix
 
     # output
     return (frip, rip, total)
@@ -937,7 +923,6 @@ class Bam2bw2(object):
             log.error('unknown strandness')
 
 
-
 class Bam2cor(object):
     """
     Compute correlation between replicates: 2 or more
@@ -997,7 +982,7 @@ class Bam2cor(object):
 
         # outname
         if self.prefix is None:
-            prefix = 'multibam'
+            self.prefix = 'multibam'
 
         # outdir
         check_path(self.outdir)
@@ -1026,16 +1011,16 @@ class Bam2cor(object):
 
         # files
         self.config_txt = os.path.join(self.outdir, 'arguments.txt')
-        self.bam_npz = os.path.join(self.outdir, prefix + '.npz')        
-        self.log = os.path.join(self.outdir, prefix + '.deeptools.log')
+        self.bam_npz = os.path.join(self.outdir, self.prefix + '.npz')
+        self.log = os.path.join(self.outdir, self.prefix + '.deeptools.log')
         # heatmap
-        self.plot_cor_heatmap_png = os.path.join(self.outdir, prefix + '.cor_heatmap.png')
-        self.log_heatmap = os.path.join(self.outdir, prefix + '.cor_heatmap.log')
-        self.cor_counts = os.path.join(self.outdir, prefix + '.cor_counts.tab')        
-        self.cor_matrix = os.path.join(self.outdir, prefix + '.cor.matrix')
+        self.plot_cor_heatmap_png = os.path.join(self.outdir, self.prefix + '.cor_heatmap.png')
+        self.log_heatmap = os.path.join(self.outdir, self.prefix + '.cor_heatmap.log')
+        self.cor_counts = os.path.join(self.outdir, self.prefix + '.cor_counts.tab')        
+        self.cor_matrix = os.path.join(self.outdir, self.prefix + '.cor.matrix')
         # PCA plot
-        self.plot_cor_pca_png = os.path.join(self.outdir, prefix + '.cor_PCA.png')
-        self.log_pca = os.path.join(self.outdir, prefix + '.cor_PCA.log')        
+        self.plot_cor_pca_png = os.path.join(self.outdir, self.prefix + '.cor_PCA.png')
+        self.log_pca = os.path.join(self.outdir, self.prefix + '.cor_PCA.log')        
 
 
     def bam_summary(self):
@@ -1046,7 +1031,7 @@ class Bam2cor(object):
             '--outRawCounts {}'.format(self.cor_counts),
             '--bamfiles {}'.format(self.bam_list)
         ])
-        cmd_txt = os.path.join(self.outdir, 'cmd.sh')
+        cmd_txt = os.path.join(self.outdir, self.prefix + '.cmd.bam_cor.sh')
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + '\n')
 
@@ -1075,7 +1060,7 @@ class Bam2cor(object):
             '--outFileCorMatrix {}'.format(self.cor_matrix)
             ])
 
-        cmd_txt = os.path.join(self.outdir, 'cmd_cor_plot.sh')
+        cmd_txt = os.path.join(self.outdir, self.prefix + '.cmd.heatmap.sh')
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + '\n')
 
@@ -1102,7 +1087,7 @@ class Bam2cor(object):
             '-o {}'.format(self.plot_cor_pca_png),
             '-T "PCA for Bam files"'
             ])
-        cmd_txt = os.path.join(self.outdir, 'cmd.pca.sh')
+        cmd_txt = os.path.join(self.outdir, self.prefix + '.cmd.pca.sh')
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + '\n')
 
@@ -1146,6 +1131,7 @@ class Bam2fingerprint(object):
             'bam_list': None,
             'threads': 8,
             'outdir': None,
+            'prefix': None,
             'title': 'BAM_fingerprint',
             'labels': None,
             'overlap': False
@@ -1184,6 +1170,11 @@ class Bam2fingerprint(object):
         ## output files
         prefix = re.sub('[^A-Za-z0-9-.]', '_', self.title)
         prefix = re.sub('_+', '_', prefix) # format string
+        if isinstance(self.prefix, str):
+            prefix = self.prefix
+        else:
+            self.prefix = prefix
+
         self.fp_png = os.path.join(self.outdir, prefix + '.png')
         self.fp_tab = os.path.join(self.outdir, prefix + '.tab')
 
@@ -1203,18 +1194,18 @@ class Bam2fingerprint(object):
             ])
 
         # save cmd
-        cmd_txt = os.path.join(self.outdir, 'cmd.txt')
+        cmd_txt = os.path.join(self.outdir, self.prefix + '_cmd.sh')
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + '\n')
 
         # run
-        try:
-            if file_exists(self.fp_png) and not self.overwrite:
-                os.system(cmd)
-            else:
-                log.info('Bam2fingerprint() skipped, file exists: {}'.format(self.fp_png))
-        except:
-            log.error('fingerPrint failed in {}'.format(self.outdir))
+        if file_exists(self.fp_png) and not self.overwrite:
+            log.info('Bam2fingerprint() skipped, file exists: {}'.format(self.fp_png))
+        else:
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.error('Bam2fingerprint() failed, see {}'.format(self.outdir))
 
 
 class PeakIDR(object):
@@ -1240,6 +1231,7 @@ class PeakIDR(object):
             'peak': None,
             'idr_cmd': shutil.which('idr'),
             'outdir': str(pathlib.Path.cwd()),
+            'prefix': None,
             'input_type': 'narrowPeak', # broadPeak, bed, gff
             'cor_method': 'pearson', # spearman
             'overwrite': False,
@@ -1251,7 +1243,7 @@ class PeakIDR(object):
                 setattr(self, k, v)
 
         # file
-        self.config_txt = os.path.join(self.outdir, 'arguments.txt')
+        self.config_txt = os.path.join(self.outdir, 'peak_idr.config.txt')
 
         # outdir
         check_path(self.outdir)
@@ -1293,6 +1285,9 @@ class PeakIDR(object):
         pA = os.path.splitext(os.path.basename(peakA))[0] #
         pB = os.path.splitext(os.path.basename(peakB))[0] #
         prefix = '{}.vs.{}.idr'.format(pA, pB)
+
+        if isinstance(self.prefix, str):
+            prefix = self.prefix
 
         # files
         cmd_txt = os.path.join(self.outdir, prefix + '.cmd.sh')
