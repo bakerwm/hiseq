@@ -548,6 +548,8 @@ class CnRConfig(object):
             'build_design': False,
             'design': None,
             'rep_list': None,
+            'ip_dir': None,
+            'input_dir': None,
             'ip': None,
             'input': None,
             'ip_fq2': None,
@@ -650,7 +652,7 @@ class CnRxConfig(object):
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
-        self.init_fq()
+        # self.init_fq()
         # self.init_index()
         self.init_files()
 
@@ -668,6 +670,7 @@ class CnRxConfig(object):
             'smp_name': None,
             'extra_index': None,
             'threads': 1,
+            'parallel_jobs': 1,
             'overwrite': False,
             'binsize': 50,
             'genome_size': 0
@@ -679,12 +682,14 @@ class CnRxConfig(object):
         if self.ip_dir is None or self.input_dir is None:
             raise ValueError('ip_dir, input_dir required, ip:{}, \
                 input:{}'.format(ip_dir, input_dir))
+        else:
+            self.ip_dir = file_abspath(self.ip_dir)
+            self.input_dir = file_abspath(self.input_dir)
 
-        # check smp_name
+        # check smp_name        
+        self.ip_name = CnRReader(self.ip_dir).args.get('smp_name', None)
+        self.input_name = CnRReader(self.input_dir).args.get('smp_name', None)
         if self.smp_name is None:
-            self.ip_name = CnRReader(self.ip_dir).args.get('smp_name', None)
-            self.input_name = CnRReader(self.input_dir).args.get(
-                'smp_name', None)
             self.smp_name = '{}.vs.{}'.format(self.ip_name, self.input_name)
 
         # threads
@@ -727,7 +732,16 @@ class CnRxConfig(object):
             'input_bw': self.bw_dir + '/' + self.input_name + '.bigWig',
             'peak': self.peak_dir + '/' + self.project_name + '_peaks.narrowPeak',
             'ip_over_input_bw': self.bw_dir + '/' + self.ip_name + '.ip_over_input.bigWig',
-            'bw': self.bw_dir + '/' + self.ip_name + '.bigWig'
+            'bw': self.bw_dir + '/' + self.ip_name + '.bigWig',
+            'tss_enrich_matrix': self.qc_dir + '/04.tss_enrich.mat.gz',
+            'tss_enrich_matrix_log': self.qc_dir + '/04.tss_enrich.log',
+            'tss_enrich_png': self.qc_dir + '/04.tss_enrich.png',
+            'tss_enrich_cmd': self.qc_dir + '/04.tss_enrich.cmd.sh',
+            'genebody_enrich_matrix': self.qc_dir + '/05.genebody_enrich.mat.gz',
+            'genebody_enrich_matrix_log': self.qc_dir + '/05.genebody_enrich.log',
+            'genebody_enrich_png': self.qc_dir + '/05.genebody_enrich.png',
+            'genebody_enrich_cmd': self.qc_dir + '/05.genebody_enrich.cmd.sh',
+            'bam_fingerprint': self.qc_dir + '/09.fingerprint.png'
         }
         self = update_obj(self, default_files, force=True) # key
 
@@ -774,6 +788,7 @@ class CnRnConfig(object):
             'spikein_index': None,
             'extra_index': None,
             'threads': 1,
+            'parallel_jobs': 1,
             'overwrite': False,
             'binsize': 50,
             'genome_size': 0
@@ -799,11 +814,6 @@ class CnRnConfig(object):
             pass
 
         elif isinstance(self.fq1, list):
-            # fq1
-            raise ValueError('--fq1, list expected, got {}'.format(
-                type(self.fq1).__name__))
-
-            # abspath
             self.fq1 = file_abspath(self.fq1)
 
             # file exists
@@ -883,11 +893,10 @@ class CnRnConfig(object):
         self.config_dir = os.path.join(self.project_dir, 'config')
 
         default_dirs = {
-            'raw_dir': 'raw_data',
-            'clean_dir': 'clean_data',
             'align_dir': 'align',
             'bam_dir': 'bam_files',
             'bw_dir': 'bw_files',
+            'bg_dir': 'bg_files',
             'peak_dir': 'peak',
             'motif_dir': 'motif',
             'qc_dir': 'qc',
@@ -909,27 +918,40 @@ class CnRnConfig(object):
             'bam': self.bam_dir + '/' + self.project_name + '.bam',
             'bed': self.bam_dir + '/' + self.project_name + '.bed',
             'peak': self.peak_dir + '/' + self.project_name + '_peaks.narrowPeak',
+            'bg': self.bg_dir + '/' + self.project_name + '.bedGraph',
             'bw': self.bw_dir + '/' + self.project_name + '.bigWig',
-            'lendist_txt': self.qc_dir + '/length_distribution.txt',
-            'lendist_pdf': self.qc_dir + '/length_distribution.pdf',
-            'frip_txt': self.qc_dir + '/FRiP.txt',
-            'cor_npz': self.qc_dir + '/cor.bam.npz',
-            'cor_counts': self.qc_dir + '/cor.bam.counts.tab',
-            'idr_txt': self.qc_dir + '/idr.txt',
-            'idr_log': self.qc_dir + '/idr.log',
-            'peak_overlap_png': self.qc_dir + 'peak_overlap_pdf'
+            'align_scale_txt': self.align_dir + '/' + 'scale.txt',
+            'align_summary_json': self.qc_dir + '/01.alignment_summary.json',
+            'lendist_txt': self.qc_dir + '/02.length_distribution.txt',
+            'lendist_pdf': self.qc_dir + '/02.length_distribution.pdf',
+            'frip_txt': self.qc_dir + '/03.FRiP.txt',
+            'tss_enrich_matrix': self.qc_dir + '/04.tss_enrich.mat.gz',
+            'tss_enrich_matrix_log': self.qc_dir + '/04.tss_enrich.log',
+            'tss_enrich_png': self.qc_dir + '/04.tss_enrich.png',
+            'tss_enrich_cmd': self.qc_dir + '/04.tss_enrich.cmd.sh',
+            'genebody_enrich_matrix': self.qc_dir + '/05.genebody_enrich.mat.gz',
+            'genebody_enrich_matrix_log': self.qc_dir + '/05.genebody_enrich.log',
+            'genebody_enrich_png': self.qc_dir + '/05.genebody_enrich.png',
+            'genebody_enrich_cmd': self.qc_dir + '/05.genebody_enrich.cmd.sh',
+            'bam_cor_npz': self.qc_dir + '/06.bam_cor.npz',
+            'bam_cor_counts': self.qc_dir + '/06.bam_cor.counts.tab',
+            'bam_cor_heatmap_png': self.qc_dir + '/06.bam_cor.cor_heatmap.png',
+            'bam_cor_pca_png': self.qc_dir + '/06.bam_cor.cor_PCA.png',
+            'peak_idr_png': self.qc_dir + '/07.peak_idr.png',
+            'peak_idr_txt': self.qc_dir + '/07.peak_idr.txt',
+            'peak_overlap_png': self.qc_dir + '/08.peak_overlap.png',
+            'peak_overlap_tiff': self.qc_dir + '/08.peak_overlap.tiff',
+            'bam_fingerprint': self.qc_dir + '/09.fingerprint.png'
         }
         self = update_obj(self, default_files, force=True) # key
 
         if create_dirs:
             check_path([
-                self.project_dir, 
-                self.config_dir, 
-                self.raw_dir,
-                self.clean_dir,
+                self.config_dir,
                 self.align_dir,
                 self.bam_dir, 
                 self.bw_dir, 
+                self.bg_dir,
                 self.peak_dir, 
                 self.motif_dir,
                 self.qc_dir, 
@@ -1106,13 +1128,24 @@ class CnR1Config(object):
             'spikein_flagstat': self.spikein_dir + '/' + 'spikein.flagstat',
             'spikein_stat': self.spikein_dir + '/' + 'spikein.align.stat',
             'spikein_json': self.spikein_dir + '/' + 'spikein.align.json',
-            'align_summary_json': self.qc_dir + '/alignment_summary.json',
-            'lendist_txt': self.qc_dir + '/length_distribution.txt',
-            'lendist_pdf': self.qc_dir + '/length_distribution.pdf',
-            'frip_txt': self.qc_dir + '/FRiP.txt',
-            'tss_enrich_matrix': self.qc_dir + '/tss_enrich.mat.gz',
-            'tss_enrich_matrix_log': self.qc_dir + '/tss_enrich.log',
-            'tss_enrich_png': self.qc_dir + '/tss_enrich.png'
+
+            'align_summary_json': self.qc_dir + '/01.alignment_summary.json',
+            'lendist_txt': self.qc_dir + '/02.length_distribution.txt',
+            'lendist_pdf': self.qc_dir + '/02.length_distribution.pdf',
+            'frip_txt': self.qc_dir + '/03.FRiP.txt',
+            'tss_enrich_matrix': self.qc_dir + '/04.tss_enrich.mat.gz',
+            'tss_enrich_matrix_log': self.qc_dir + '/04.tss_enrich.log',
+            'tss_enrich_png': self.qc_dir + '/04.tss_enrich.png',
+            'tss_enrich_cmd': self.qc_dir + '/04.tss_enrich.cmd.sh',
+            'genebody_enrich_matrix': self.qc_dir + '/05.genebody_enrich.mat.gz',
+            'genebody_enrich_matrix_log': self.qc_dir + '/05.genebody_enrich.log',
+            'genebody_enrich_png': self.qc_dir + '/05.genebody_enrich.png',
+            'genebody_enrich_cmd': self.qc_dir + '/05.genebody_enrich.cmd.sh',
+            'bam_cor_heatmap_png': self.qc_dir + '/06.bam_cor.cor_heatmap.png',
+            'bam_cor_pca_png': self.qc_dir + '/06.bam_cor.cor_PCA.png',
+            'peak_idr_png': self.qc_dir + '/07.peak_idr.png',
+            'peak_overlap_png': self.qc_dir + '/08.peak_overlap.png',
+            'bam_fingerprint': self.qc_dir + '/09.fingerprint.png'
         }
         self = update_obj(self, default_files, force=True) # key
 
@@ -1149,7 +1182,141 @@ class CnRtConfig(object):
 
 
 class CnR(object):
-    pass
+    """
+    Main port for CnR analysis
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+
+
+    def init_args(self):
+        obj_local = CnRConfig(**self.__dict__)
+        self = update_obj(self, obj_local.__dict__, force=True)
+
+        ## save arguments
+        chk0 = args_checker(self.__dict__, self.config_pickle)
+        chk1 = args_logger(self.__dict__, self.config_txt)
+
+
+    def run_CnR_design(self):
+        """
+        Create design
+        """
+        CnRDesign(**self.__dict__).save()
+
+
+    def run_CnR_r1(self):
+        """
+        Run single
+        """
+        CnR1(**self.__dict__).run()
+
+
+    def run_CnR_rn(self):
+        """
+        Run multiple samples, rep_list
+        """
+        CnRRn(**self.__dict__).run()
+
+
+    def run_CnR_rx_from_design(self):
+        """
+        Run ChIPseq all, require design
+
+        multiple projects
+        """
+        design = Json(self.design).reader()
+
+        for k, v in design.items():
+            project_name = k
+            args_local = v
+            self = update_obj(self, args_local, force=True)
+            self.run_CnR_rx()
+
+
+    def run_CnR_rx(self):
+        """
+        main:
+        Run whole pipeline
+
+        required args:
+        input_fq, ip_fq
+        """
+        # for ip fastq files
+        ip_args = self.__dict__
+        ip_local = {
+            'is_ip': True,
+            'fq1': self.ip,
+            'fq2': self.ip_fq2,
+            'build_design': None,
+            'spikein': self.spikein,
+            'spikein_index': self.spikein_index,
+            'rep_list': None,
+            'extra_index': self.extra_index,
+            'genome_size': self.genome_size,
+            'gene_bed': self.gene_bed}
+        ip_args.update(ip_local)
+        ip = CnRn(**ip_args)
+
+        # for input fastq
+        input_args = self.__dict__
+        input_local = {
+            'is_ip': False,
+            'fq1': self.input,
+            'fq2': self.input_fq2,
+            'build_design': None,
+            'spikein': self.spikein,
+            'spikein_index': self.spikein_index,
+            'rep_list': None,
+            'extra_index': self.extra_index,
+            'genome_size': self.genome_size,
+            'gene_bed': self.gene_bed}
+        input_args.update(input_local)
+        input = CnRn(**input_args)
+
+        # run
+        ip.run()
+        input.run()
+
+        # for pipeline
+        rx_args = self.__dict__
+        rx_local = {
+            'ip_dir': ip.project_dir,
+            'input_dir': input.project_dir,
+            'fq1': None,
+            'fq2': None,
+            'ip': None,
+            'ip_fq2': None,
+            'input': None,
+            'input_fq2': None,
+            'spikein': self.spikein,
+            'spikein_index': self.spikein_index,
+            'extra_index': self.extra_index,
+            'gene_bed': self.gene_bed
+        }
+        rx_args.update(rx_local)
+        rx = CnRx(**rx_args)
+        rx.run()
+
+
+    def run(self):
+        """
+        Run all
+        """
+        if self.hiseq_type == 'build_design':
+            self.run_CnR_design()
+        elif self.hiseq_type == 'hiseq_rx_from_design':
+            self.run_CnR_rx_from_design()
+        elif self.hiseq_type == 'hiseq_r1':
+            # ChIPseqR1(**self.__dict__).run()
+            self.run_CnR_r1()
+        elif self.hiseq_type == 'hiseq_rn':
+            self.run_CnR_rn()
+        elif self.hiseq_type == 'hiseq_rx':
+            self.run_CnR_rx()
+        else:
+            raise ValueError('unknown hiseqtype: {}'.format(self.hiseq_type))
 
 
 class CnRx(object):
@@ -1163,7 +1330,7 @@ class CnRx(object):
 
 
     def init_args(self):
-        obj_local = CnRx(**self.__dict__)
+        obj_local = CnRxConfig(**self.__dict__)
         self = update_obj(self, obj_local.__dict__, force=True)
 
         ## save arguments
@@ -1173,23 +1340,36 @@ class CnRx(object):
         ## check args
         self.ip_args = CnRReader(self.ip_dir).args
         self.input_args = CnRReader(self.input_dir).args
+        self.ip_bam_from = self.ip_args.get('bam', None)
+        self.ip_bw_from = self.ip_args.get('bw', None)
+        self.input_bam_from = self.input_args.get('bam', None)
+        self.input_bw_from = self.input_args.get('bw', None)
 
 
-    def get_bam_files(self):
+    def copy_bam_files(self):
         """
         Copy bam files
         """
-        symlink(self.ip_args.get('bam', None), self.ip_bam)
-        symlink(self.input_args.get('bam', None), self.input_bam)
+        symlink(self.ip_bam_from, self.ip_bam)
+        symlink(self.input_bam_from, self.input_bam)
+        # file_copy(self.ip_bam_from, self.ip_bam)
+        # file_copy(self.input_from, self.input_bam)
 
 
-    def get_bw_files(self):
+    def copy_bw_files(self):
         """
         Copy bw files
         """
-        symlink(self.ip_args.get('bw', None), self.ip_bw)
-        symlink(self.input_args.get('bw', None), self.input_bw)
+        symlink(self.ip_bw_from, self.ip_bw)
+        symlink(self.input_bw_from, self.input_bw)
+        # file_copy(self.ip_bw_from, self.ip_bw)
+        # file_copy(self.input_bw_from, self.input_bw)
 
+
+    def get_ip_over_input_bw(self):
+        """
+        Copy bw files
+        """
         # ip over input, subtract
         bwCompare(self.ip_bw, self.input_bw, self.ip_over_input_bw, 'subtract',
             threads=self.threads, binsize=10)
@@ -1218,12 +1398,106 @@ class CnRx(object):
 
         ## call peaks
         peak.callpeak()
-        peak.bdgcmp(opt='ppois')
-        peak.bdgcmp(opt='FE')
-        peak.bdgcmp(opt='logLR')
+        # peak.bdgcmp(opt='ppois')
+        # peak.bdgcmp(opt='FE')
+        # peak.bdgcmp(opt='logLR')
 
         # ## annotation
         # peak.broadpeak_annotation()
+
+
+    def qc_tss_enrich(self):
+        """
+        Calculate the TSS enrichment
+        """
+        bw_list = [self.ip_bw, self.input_bw, self.ip_over_input_bw]
+        bw_list_arg = ' '.join(bw_list)
+
+        cmd = ' '.join([
+            '{}'.format(shutil.which('computeMatrix')),
+            'reference-point',
+            '-R {}'.format(self.gene_bed),
+            '-S {}'.format(bw_list_arg),
+            '-o {}'.format(self.tss_enrich_matrix),
+            '--referencePoint TSS',
+            '-b 2000 -a 2000',
+            '--binSize 10 --sortRegions descend --skipZeros',
+            '--smartLabels',
+            '-p {}'.format(self.threads),
+            '2> {}'.format(self.tss_enrich_matrix_log),
+            '&& {}'.format(shutil.which('plotProfile')),
+            '-m {}'.format(self.tss_enrich_matrix),
+            '-o {}'.format(self.tss_enrich_png),
+            '--dpi 300',
+            '--perGroup'
+            ])
+
+        if file_exists(self.tss_enrich_png) and not self.overwrite:
+            log.info('qc_tss_enrich() skipped, file exists: {}'.format(
+                self.tss_enrich_png))
+        else:            
+            if not file_exists(self.gene_bed):
+                log.error('qc_tss() skipped, gene_bed not found')
+            else:
+                with open(self.tss_enrich_cmd, 'wt') as w:
+                    w.write(cmd + '\n')
+
+                try:
+                    run_shell_cmd(cmd)
+                except:
+                    log.error('qc_tss_enrich() failed, see: ')
+
+
+    def qc_genebody_enrich(self):
+        """
+        Calculate the TSS enrichment
+        """
+        bw_list = [self.ip_bw, self.input_bw, self.ip_over_input_bw]
+        bw_list_arg = ' '.join(bw_list)
+
+        cmd = ' '.join([
+            '{}'.format(shutil.which('computeMatrix')),
+            'scale-regions',
+            '-R {}'.format(self.gene_bed),
+            '-S {}'.format(bw_list_arg),
+            '-o {}'.format(self.genebody_enrich_matrix),
+            '-b 2000 -a 2000 --regionBodyLength 2000',
+            '--binSize 10 --sortRegions descend --skipZeros',
+            '--smartLabels',
+            '-p {}'.format(self.threads),
+            '2> {}'.format(self.genebody_enrich_matrix_log),
+            '&& {}'.format(shutil.which('plotProfile')),
+            '-m {}'.format(self.genebody_enrich_matrix),
+            '-o {}'.format(self.genebody_enrich_png),
+            '--dpi 300',
+            '--perGroup'
+            ])
+
+        if file_exists(self.genebody_enrich_png) and not self.overwrite:
+            log.info('qc_genebody_enrich() skipped, file exists: {}'.format(
+                self.genebody_enrich_png))
+        else:
+            if not file_exists(self.gene_bed):
+                log.error('qc_tss() skipped, gene_bed not found')
+            else:
+                with open(self.genebody_enrich_cmd, 'wt') as w:
+                    w.write(cmd + '\n')
+                    
+                try:
+                    run_shell_cmd(cmd)
+                except:
+                    log.error('qc_genebody_enrich() failed, see: ')
+
+
+    def qc_bam_fingerprint(self):
+        """
+        Calculate fingerprint for bam files
+        """
+        Bam2fingerprint(
+            bam_list=[self.ip_bam, self.input_bam],
+            prefix='09.fingerprint',
+            outdir=self.qc_dir,
+            threads=self.threads).run()
 
 
     def report(self):
@@ -1259,10 +1533,14 @@ class CnRx(object):
         multipleprocess.Pool
         """
         # run
-        self.get_bam_files()
-        self.get_bw_files()
+        self.copy_bam_files()
+        self.copy_bw_files()
+        self.get_ip_over_input_bw()
         self.call_peak()
         # qc
+        self.qc_tss_enrich()
+        self.qc_genebody_enrich()
+        self.qc_bam_fingerprint()
         # self.report()
 
 
@@ -1279,7 +1557,6 @@ class CnRn(object):
     def init_args(self):
         obj_local = CnRnConfig(**self.__dict__)
         self = update_obj(self, obj_local.__dict__, force=True)
-        # self.chipseq_type = 'chipseq_rn'
 
         ## save arguments
         chk0 = args_checker(self.__dict__, self.config_pickle)
@@ -1291,6 +1568,13 @@ class CnRn(object):
         get the proper_mapped.bam files
         """
         return [CnRReader(i).args.get('bam', None) for i in self.rep_list]
+
+
+    def get_bw_list(self):
+        """
+        get the proper_mapped.bam files
+        """
+        return [CnRReader(i).args.get('bw', None) for i in self.rep_list]
 
 
     def get_peak_list(self):
@@ -1321,6 +1605,11 @@ class CnRn(object):
             except:
                 log.warning('merge_bam() failed.')
 
+        ## calculate norm scale
+        self.align_scale = self.cal_norm_scale(self.bam)
+        with open(self.align_scale_txt, 'wt') as w:
+            w.write('{:.4f}\n'.format(self.align_scale))
+
 
     def bam_to_bw(self, norm=1000000):
         """
@@ -1329,6 +1618,7 @@ class CnRn(object):
         """
         args_local = {
             'bam': self.bam,
+            'scaleFactor': self.align_scale,
             'outdir': self.bw_dir,
             'genome': self.genome,
             'strandness': 0,
@@ -1338,6 +1628,56 @@ class CnRn(object):
         }
 
         Bam2bw(**args_local).run()
+
+
+    def bam_to_bg(self):
+        """
+        Convert bam to bedgraph
+        
+        norm
+        bedtools genomecov -bg -scale $scale_factor -ibam bam > bg
+        """
+        cmd = ' '.join([
+            '{}'.format(shutil.which('bedtools')),
+            'genomecov -bg -scale {}'.format(self.align_scale),
+            '-ibam {}'.format(self.bam),
+            '| sort -k1,1 -k2,2n > {}'.format(self.bg)
+            ])
+
+        if file_exists(self.bg) and not self.overwrite:
+            log.info('bam_to_bg() skipped, file exists:{}'.format(self.bg))
+        else:
+            cmd_txt = self.bg_dir + '/cmd.txt'
+            with open(cmd_txt, 'wt') as w:
+                w.write(cmd + '\n')
+
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.error('bam_to_bg() failed')
+
+
+    def bg_to_bw(self):
+        """
+        Create bigWig
+        bedgraph to bigWig
+        """
+        cmd = ' '.join([
+            '{}'.format(shutil.which('bedGraphToBigWig')),
+            '{} {} {}'.format(self.bg, self.gsize_file, self.bw)
+            ])
+
+        if file_exists(self.bw) and not self.overwrite:
+            log.info('bg_to_bw() skipped, file exists:{}'.format(self.bw))
+        else:
+            cmd_txt = self.bw_dir + '/cmd.txt'
+            with open(cmd_txt, 'wt') as w:
+                w.write(cmd + '\n')
+
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.error('bg_to_bw() failed')
 
 
     def call_peak(self):
@@ -1365,7 +1705,28 @@ class CnRn(object):
                 genome_size=genome_size, gsize_file=gsize_file).callpeak()
 
 
-    def get_bam_cor(self, window=500):
+    def cal_norm_scale(self, bam, norm=1000000):
+        """
+        scale factor
+        
+        Bam().count_reads()
+        """
+        bam = Bam(bam)
+        is_pe = bam.isPaired()
+        n_map = bam.getNumberOfAlignments()
+        if is_pe:
+            n_map = n_map/2
+
+        if n_map > 0:
+            n_scale = norm/n_map
+        else:
+            log.error('no mapped reads detected')
+            n_scale = 1
+
+        return n_scale
+
+
+    def qc_bam_cor(self, window=500):
         """
         Compute correlation (pearson) between replicates
         window = 500bp
@@ -1376,7 +1737,8 @@ class CnRn(object):
         """
         args_local = {
             'bam': self.get_bam_list(),
-            'outdir': self.qc_cor_dir,
+            'outdir': self.qc_dir,
+            'prefix': '06.bam_cor',
             'threads': self.threads,
             'overwrite': self.overwrite,
             'binsize': self.binsize
@@ -1384,20 +1746,21 @@ class CnRn(object):
         Bam2cor(**args_local).run()
 
 
-    def get_peak_overlap(self):
+    def qc_peak_overlap(self):
         """
         Compute the overlaps between overlaps
         """
         args_local = {
             'peak': self.get_peak_list(),
-            'outdir': self.qc_overlap_dir,
+            'outdir': self.qc_dir,
+            'prefix': '08.peak_overlap',
             'overwrite': self.overwrite
         }   
 
         BedOverlap(**args_local).run()
 
 
-    def get_peak_idr(self):
+    def qc_peak_idr(self):
         """
         Calculate IDR for replicates
         1 vs 1
@@ -1405,7 +1768,8 @@ class CnRn(object):
         """
         args_local = {
             'peak': self.get_peak_list(),
-            'outdir': self.qc_idr_dir,
+            'outdir': self.qc_dir,
+            'prefix': '07.peak_idr',
             'overwrite': self.overwrite
         }
 
@@ -1417,13 +1781,11 @@ class CnRn(object):
         Save all FRiP.txt file to one
         """
         # get list
-        self.frip_list = []
-        for fq in self.fq1:
-            fq_dir = os.path.join(self.outdir, fq_name(fq, pe_fix=True))
-            self.frip_list.append(
-                ChIPseqReader(fq_dir).args.get('frip_txt', None))
+        self.frip_list = [CnRReader(i).args.get('frip_txt', None) for \
+            i in self.rep_list]
+        self.frip_list = [i for i in self.frip_list if file_exists(i)]
 
-        if not os.path.exists(self.frip_txt):
+        if len(self.frip_list) > 0:
             with open(self.frip_txt, 'wt') as w:
                 for f in self.frip_list:
                     with open(f) as r:
@@ -1450,18 +1812,109 @@ class CnRn(object):
                 w.write('\t'.join(n) + '\n')
 
 
-    def get_align_txt(self):
+    def qc_align_txt(self):
         """
         Copy align.txt files to align/
         """
         pass
 
 
-    def get_tss_enrich(self):
+    def qc_tss_enrich(self):
         """
         Calculate the TSS enrichment
         """
-        pass
+        bw_list = self.get_bw_list()
+        bw_list.append(self.bw)
+        bw_list_arg = ' '.join(bw_list)
+
+        cmd = ' '.join([
+            '{}'.format(shutil.which('computeMatrix')),
+            'reference-point',
+            '-R {}'.format(self.gene_bed),
+            '-S {}'.format(bw_list_arg),
+            '-o {}'.format(self.tss_enrich_matrix),
+            '--referencePoint TSS',
+            '-b 2000 -a 2000',
+            '--binSize 10 --sortRegions descend --skipZeros',
+            '--smartLabels',
+            '-p {}'.format(self.threads),
+            '2> {}'.format(self.tss_enrich_matrix_log),
+            '&& {}'.format(shutil.which('plotProfile')),
+            '-m {}'.format(self.tss_enrich_matrix),
+            '-o {}'.format(self.tss_enrich_png),
+            '--dpi 300',
+            '--perGroup'
+            ])
+
+        if file_exists(self.tss_enrich_png) and not self.overwrite:
+            log.info('qc_tss_enrich() skipped, file exists: {}'.format(
+                self.tss_enrich_png))
+        else:
+            if not file_exists(self.gene_bed):
+                log.error('qc_tss() skipped, gene_bed not found')
+            else:
+                with open(self.tss_enrich_cmd, 'wt') as w:
+                    w.write(cmd + '\n')
+
+                try:
+                    run_shell_cmd(cmd)
+                except:
+                    log.error('qc_tss_enrich() failed, see: {}'.format(
+                        self.tss_enrich_matrix_log))
+
+
+    def qc_genebody_enrich(self):
+        """
+        Calculate the TSS enrichment
+        """
+        bw_list = self.get_bw_list()
+        bw_list.append(self.bw)
+        bw_list_arg = ' '.join(bw_list)
+
+        cmd = ' '.join([
+            '{}'.format(shutil.which('computeMatrix')),
+            'scale-regions',
+            '-R {}'.format(self.gene_bed),
+            '-S {}'.format(bw_list_arg),
+            '-o {}'.format(self.genebody_enrich_matrix),
+            '-b 2000 -a 2000 --regionBodyLength 2000',
+            '--binSize 10 --sortRegions descend --skipZeros',
+            '--smartLabels',
+            '-p {}'.format(self.threads),
+            '2> {}'.format(self.genebody_enrich_matrix_log),
+            '&& {}'.format(shutil.which('plotProfile')),
+            '-m {}'.format(self.genebody_enrich_matrix),
+            '-o {}'.format(self.genebody_enrich_png),
+            '--dpi 300',
+            '--perGroup'
+            ])
+
+        if file_exists(self.genebody_enrich_png) and not self.overwrite:
+            log.info('qc_genebody_enrich() skipped, file exists: {}'.format(
+                self.genebody_enrich_png))
+        else:
+            if not file_exists(self.gene_bed):
+                log.error('qc_tss() skipped, gene_bed not found')
+            else:
+                with open(self.genebody_enrich_cmd, 'wt') as w:
+                    w.write(cmd + '\n')
+                    
+                try:
+                    run_shell_cmd(cmd)
+                except:
+                    log.error('qc_genebody_enrich() failed, see: {}'.format(
+                        self.genebody_enrich_matrix_log))
+
+
+    def qc_bam_fingerprint(self):
+        """
+        Calculate fingerprint for bam files
+        """
+        Bam2fingerprint(
+            bam_list=self.get_bam_list(),
+            prefix='09.fingerprint',
+            outdir=self.qc_dir,
+            threads=self.threads).run()
 
 
     def report(self):
@@ -1526,22 +1979,23 @@ class CnRn(object):
         """
         args_tmp = self.__dict__.copy()
         # required args
-        args_required = ['align_to_chrM', 'aligner', 'fq1', 'fq2', 'genome', 
+        args_required = ['aligner', 'fq1', 'fq2', 'genome', 'gene_bed',
             'genome_size', 'is_ip', 'trimmed', 'outdir', 'overwrite', 
-            'parallel_jobs', 'threads']
+            'parallel_jobs', 'threads', 'spikein', 'spikein_index',
+            'extra_index']
         args_local = dict((k, args_tmp[k]) for k in args_required 
             if k in args_tmp)
 
         args_input = self.pick_fq_samples(i)
         args_init = {
             'build_design': None,
-            'design': None
+            'design': None,
+            'gene_bed': self.gene_bed
         }
         args_local.update(args_input) # update fq1/rep_list/group
         args_local.update(args_init) #
 
-        obj_local = ChIPseqR1Config(**args_local)
-        ChIPseqR1(**obj_local.__dict__).run()
+        CnR1(**args_local).run()
 
 
     def run(self):
@@ -1563,21 +2017,24 @@ class CnRn(object):
         if len(self.rep_list) > 1:
             # run
             self.merge_bam()
-            self.bam_to_bw()
+            # self.bam_to_bw()
+            self.bam_to_bg()
+            self.bg_to_bw()
             self.call_peak()
             # qc
-            self.get_bam_cor()
-            self.get_peak_overlap()
-            self.get_peak_idr()
+            self.qc_bam_cor()
+            self.qc_peak_overlap()
+            self.qc_peak_idr()
             self.get_peak_frip()
             self.qc_frip()
-            self.get_align_txt()
-            self.get_tss_enrich()
-            self.report()
+            self.qc_align_txt()
+            self.qc_tss_enrich()
+            self.qc_genebody_enrich()
+            # self.report()
         elif len(self.rep_list) == 1:
             log.warning('merge() skipped, Only 1 replicate detected')
             # copy files: bam, bw, peak
-            rep_dict = ChIPseqReader(self.rep_list[0]).args
+            rep_dict = CnRReader(self.rep_list[0]).args
             symlink(rep_dict.get('bam', None), self.bam)
             symlink(rep_dict.get('bw', None), self.bw)
             symlink(rep_dict.get('peak', None), self.peak)
@@ -2034,6 +2491,95 @@ class CnR1(object):
                         self.tss_enrich_matrix_log ))
 
 
+    def qc_tss_enrich(self):
+        """
+        Calculate the TSS enrichment
+        """
+        cmd = ' '.join([
+            '{}'.format(shutil.which('computeMatrix')),
+            'reference-point',
+            '-R {}'.format(self.gene_bed),
+            '-S {}'.format(self.bw),
+            '-o {}'.format(self.tss_enrich_matrix),
+            '--referencePoint TSS',
+            '-b 2000 -a 2000',
+            '--binSize 10 --sortRegions descend --skipZeros',
+            '--smartLabels',
+            '-p {}'.format(self.threads),
+            '2> {}'.format(self.tss_enrich_matrix_log),
+            '&& {}'.format(shutil.which('plotProfile')),
+            '-m {}'.format(self.tss_enrich_matrix),
+            '-o {}'.format(self.tss_enrich_png),
+            '--dpi 300',
+            '--perGroup'
+            ])
+
+        if file_exists(self.tss_enrich_png) and not self.overwrite:
+            log.info('qc_tss_enrich() skipped, file exists: {}'.format(
+                self.tss_enrich_png))
+        else:
+            if not file_exists(self.gene_bed):
+                log.error('qc_tss() skipped, gene_bed not found')
+            else:
+                with open(self.tss_enrich_cmd, 'wt') as w:
+                    w.write(cmd + '\n')
+
+                try:
+                    run_shell_cmd(cmd)
+                except:
+                    log.error('qc_tss_enrich() failed, see: ')
+
+
+    def qc_genebody_enrich(self):
+        """
+        Calculate the TSS enrichment
+        """
+        cmd = ' '.join([
+            '{}'.format(shutil.which('computeMatrix')),
+            'scale-regions',
+            '-R {}'.format(self.gene_bed),
+            '-S {}'.format(self.bw),
+            '-o {}'.format(self.genebody_enrich_matrix),
+            '-b 2000 -a 2000 --regionBodyLength 2000',
+            '--binSize 10 --sortRegions descend --skipZeros',
+            '--smartLabels',
+            '-p {}'.format(self.threads),
+            '2> {}'.format(self.genebody_enrich_matrix_log),
+            '&& {}'.format(shutil.which('plotProfile')),
+            '-m {}'.format(self.genebody_enrich_matrix),
+            '-o {}'.format(self.genebody_enrich_png),
+            '--dpi 300',
+            '--perGroup'
+            ])
+
+        if file_exists(self.genebody_enrich_png) and not self.overwrite:
+            log.info('qc_genebody_enrich() skipped, file exists: {}'.format(
+                self.genebody_enrich_png))
+        else:
+            if not file_exists(self.gene_bed):
+                log.error('qc_tss() skipped, gene_bed not found')
+            else:
+                with open(self.genebody_enrich_cmd, 'wt') as w:
+                    w.write(cmd + '\n')
+                    
+                try:
+                    run_shell_cmd(cmd)
+                except:
+                    log.error('qc_genebody_enrich() failed, see: ')
+
+
+    def qc_bam_fingerprint(self):
+        """
+        Calculate fingerprint for bam files
+        """
+        Bam2fingerprint(
+            bam_list=self.get_bam_list(),
+            prefix='09.fingerprint',
+            outdir=self.qc_dir,
+            threads=self.threads).run()
+
+
+
     def pipe_qc(self):
         """
         Quality control
@@ -2041,7 +2587,8 @@ class CnR1(object):
         self.qc_align_summary()
         self.qc_lendist()
         self.qc_mito()
-        self.qc_tss()
+        self.qc_tss_enrich()
+        self.qc_genebody_enrich()
 
 
     def report(self):

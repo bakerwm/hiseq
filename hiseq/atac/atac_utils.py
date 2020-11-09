@@ -642,7 +642,9 @@ class Bam2bw(object):
             '--filterRNAstrand forward',
             '--numberOfProcessors {}'.format(self.threads), 
             '--scaleFactor {}'.format(self.scaleFactor),
-            '--normalizeUsing {}'.format(self.normalizeUsing)])
+            '--normalizeUsing {}'.format(self.normalizeUsing),
+            '2> {}'.format(self.bw_log)
+            ])
         cmd_txt = os.path.join(self.outdir, 'cmd_fwd.txt')
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + '\n')
@@ -1031,7 +1033,7 @@ class Bam2cor(object):
             '--outRawCounts {}'.format(self.cor_counts),
             '--bamfiles {}'.format(self.bam_list)
         ])
-        cmd_txt = os.path.join(self.outdir, self.prefix + '.cmd.bam_cor.sh')
+        cmd_txt = os.path.join(self.outdir, self.prefix + '.bam_cor.sh')
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + '\n')
 
@@ -1060,7 +1062,7 @@ class Bam2cor(object):
             '--outFileCorMatrix {}'.format(self.cor_matrix)
             ])
 
-        cmd_txt = os.path.join(self.outdir, self.prefix + '.cmd.heatmap.sh')
+        cmd_txt = os.path.join(self.outdir, self.prefix + '.heatmap.sh')
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + '\n')
 
@@ -1087,7 +1089,7 @@ class Bam2cor(object):
             '-o {}'.format(self.plot_cor_pca_png),
             '-T "PCA for Bam files"'
             ])
-        cmd_txt = os.path.join(self.outdir, self.prefix + '.cmd.pca.sh')
+        cmd_txt = os.path.join(self.outdir, self.prefix + '.pca.sh')
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + '\n')
 
@@ -1134,7 +1136,8 @@ class Bam2fingerprint(object):
             'prefix': None,
             'title': 'BAM_fingerprint',
             'labels': None,
-            'overlap': False
+            'overlap': False,
+            'overwrite': False
             }
         self = update_obj(self, args_init, force=False)
 
@@ -1243,7 +1246,7 @@ class PeakIDR(object):
                 setattr(self, k, v)
 
         # file
-        self.config_txt = os.path.join(self.outdir, 'peak_idr.config.txt')
+        self.config_txt = os.path.join(self.outdir, self.prefix + '.config.txt')
 
         # outdir
         check_path(self.outdir)
