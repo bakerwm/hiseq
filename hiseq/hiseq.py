@@ -27,6 +27,7 @@ from .rnaseq.rnaseq import RNAseq
 from .rnaseq.rnaseq_pipe import RNAseqPipe
 from .rnaseq.deseq_pair import DeseqPair
 from .chipseq.chipseq import ChIPseq
+from .cnr.cnr import CnR
 from .go.go import Go
 from .utils import download as dl # download.main()
 from .utils.seq import Fastx
@@ -55,6 +56,7 @@ class Hiseq(object):
         rnaseq       RNAseq pipeline
         rnaseq2      RNAseq pipeline, simplify version
         chipseq      ChIPseq pipeline
+        cnr          CUN&RUN pipeline
 
         demx         Demultiplexing reads (P7, barcode)
         qc           quality control, fastqc
@@ -342,6 +344,7 @@ class Hiseq(object):
         # help
         if len(sys.argv) < 3:
             parser.parse_args(['-h'])
+        
         # main
         args = vars(args) # convert to dict
         # # check config or --fq1,--fq2,--genome,--outdir
@@ -360,6 +363,19 @@ class Hiseq(object):
         #     sys.exit('required: --config, or --design, or --fq1, --fq2, --genome, --outdir')
 
         ChIPseq(**args).run()
+
+
+    def cnr(self):
+        """
+        CUN&RUN pipeline
+        """
+        parser = add_cnr_args()
+        args = parser.parse_args(sys.argv[2:])
+        if len(sys.argv) < 3:
+            parser.parse_args(['-h'])
+
+        args = vars(args)
+        CnR(**args).run()
 
 
     def fragsize(self):

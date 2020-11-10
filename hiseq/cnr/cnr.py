@@ -603,13 +603,8 @@ class CnRConfig(object):
         Check fastq files
         IP, Input
         """
-        # For IP #
         chk1 = fq_paired(self.ip, self.ip_fq2)
-        # self.ip_rep_list
-
-        # For Input #
         chk2 = fq_paired(self.input, self.input_fq2)
-        # self.input_rep_list
 
 
     def init_mission(self):
@@ -648,11 +643,13 @@ class CnRxConfig(object):
     Prepare directories for Rx: IP vs Input
 
     require: ip_dir, input_dir
+    or:
+    ip,ip-fq2, input,input-fq2
     """
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
-        # self.init_fq()
+        self.init_fq()
         # self.init_index()
         self.init_files()
 
@@ -662,41 +659,101 @@ class CnRxConfig(object):
         required arguments for CnR analysis
         """
         args_init = {
+            'outdir': None,
             'ip_dir': None,
             'input_dir': None,
-            'genome': None,
-            'outdir': None,
-            'aligner': None,
+            'ip': None,
+            'ip_fq2': None,
+            'input': None,
+            'input_fq2': None,
             'smp_name': None,
+            'genome': None,
+            'spikein': None,
+            'spikein_index': None,
+            'aligner': None,
             'extra_index': None,
             'threads': 1,
             'parallel_jobs': 1,
             'overwrite': False,
             'binsize': 50,
-            'genome_size': 0
+            'genome_size': 0,
+            'gene_bed': None
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'hiseq_rx' # 
-
-        # check ip/input
-        if self.ip_dir is None or self.input_dir is None:
-            raise ValueError('ip_dir, input_dir required, ip:{}, \
-                input:{}'.format(ip_dir, input_dir))
-        else:
-            self.ip_dir = file_abspath(self.ip_dir)
-            self.input_dir = file_abspath(self.input_dir)
-
-        # check smp_name        
-        self.ip_name = CnRReader(self.ip_dir).args.get('smp_name', None)
-        self.input_name = CnRReader(self.input_dir).args.get('smp_name', None)
-        if self.smp_name is None:
-            self.smp_name = '{}.vs.{}'.format(self.ip_name, self.input_name)
 
         # threads
         self.threads, self.parallel_jobs = init_cpu(self.threads, 
             self.parallel_jobs)
 
         self.outdir = file_abspath(self.outdir)
+
+
+    def init_fq(self):
+        """
+        Support fastq files
+        ip, input
+        """
+        if isinstance(self.ip, list) and isinstance(self.input, list):
+            self.ip = file_abspath(self.ip)
+            self.ip_fq2 = file_abspath(self.ip_fq2)
+            self.input = file_abspath(self.input)
+            self.input_fq2 = file_abspath(self.input_fq2)
+
+            # file exists
+            if not all(file_exists(self.ip)):
+                raise ValueError('--ip, file not exists: {}'.format(
+                    self.ip))
+
+            if not all(file_exists(self.input)):
+                raise ValueError('--input, file not exists: {}'.format(
+                    self.ip))
+
+            # check, ip,input name
+            ip_names = set(map(fq_name_rmrep, self.ip))
+            input_names = set(map(fq_name_rmrep, self.input))
+            if len(ip_names) > 1:
+                raise ValueError('--ip failed, filename differ: {}'.format(
+                    ip_names))
+
+            if len(input_names) > 1:
+                raise ValueError('--input failed, filename differ: {}'.format(
+                    input_names))
+
+            # check paired
+            ip_pe = fq_paired(self.ip, self.ip_fq2)
+            input_pe = fq_paired(self.input, self.input_fq2)
+            if not ip_pe:
+                raise ValueError('--ip, --ip-fq2, not paired: {}, {}'.format(
+                    self.ip, self.ip_fq2))
+
+            if not input_pe:
+                raise ValueError('--input, --input-fq2, not paired: \
+                    {}, {}'.format(self.input, self.input_fq2))
+
+            # update ip_dir, input_dir
+            self.ip_name = ip_names.pop()
+            self.input_name = input_names.pop()
+            self.ip_dir = self.outdir + '/' + self.ip_name
+            self.input_dir = self.outdir + '/' + self.input_name
+
+        elif isinstance(self.ip_dir, str) and isinstance(self.input_dir, str):
+            c_ip = CnRReader(self.ip_dir)
+            c_input = CnRReader(self.input_dir)
+
+            if not c_ip.is_hiseq_rn or not c_input.is_hiseq_rn:
+                raise ValueError('ip_dir, input_dir failed: {}, {}'.format(
+                    self.ip_dir, self.input_dir))
+
+            self.ip_name = c_ip.args.get('smp_name', None)
+            self.input_name = c_input.args.get('smp_name', None)
+
+        else:
+            raise ValueError('--ip, --input, or --ip-dir, --input-dir failed')
+
+        # update smp_name
+        if self.smp_name is None:
+            self.smp_name = self.ip_name
 
 
     def init_files(self, create_dirs=True):
@@ -1184,6 +1241,15 @@ class CnRtConfig(object):
 class CnR(object):
     """
     Main port for CnR analysis
+
+    if ip,ip-fq2, input,input-fq2: 
+        (CnRn + CnRn) -> CnRx
+
+    if ip_dir, input_dir:
+        CnRx
+
+    if fq1, f2:
+        CnRn or CnR1
     """
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
@@ -1220,9 +1286,10 @@ class CnR(object):
         CnRRn(**self.__dict__).run()
 
 
-    def run_CnR_rx_from_design(self):
+
+    def run_CnR_from_design(self):
         """
-        Run ChIPseq all, require design
+        Run ChIPseq, multiple group
 
         multiple projects
         """
@@ -1232,7 +1299,7 @@ class CnR(object):
             project_name = k
             args_local = v
             self = update_obj(self, args_local, force=True)
-            self.run_CnR_rx()
+            CnRx(**self.__dict__).run()
 
 
     def run_CnR_rx(self):
@@ -1243,61 +1310,27 @@ class CnR(object):
         required args:
         input_fq, ip_fq
         """
-        # for ip fastq files
-        ip_args = self.__dict__
-        ip_local = {
-            'is_ip': True,
-            'fq1': self.ip,
-            'fq2': self.ip_fq2,
-            'build_design': None,
-            'spikein': self.spikein,
-            'spikein_index': self.spikein_index,
-            'rep_list': None,
-            'extra_index': self.extra_index,
-            'genome_size': self.genome_size,
-            'gene_bed': self.gene_bed}
-        ip_args.update(ip_local)
-        ip = CnRn(**ip_args)
+        CnRx(**self.__dict__).run()
 
-        # for input fastq
-        input_args = self.__dict__
-        input_local = {
-            'is_ip': False,
-            'fq1': self.input,
-            'fq2': self.input_fq2,
-            'build_design': None,
-            'spikein': self.spikein,
-            'spikein_index': self.spikein_index,
-            'rep_list': None,
-            'extra_index': self.extra_index,
-            'genome_size': self.genome_size,
-            'gene_bed': self.gene_bed}
-        input_args.update(input_local)
-        input = CnRn(**input_args)
-
-        # run
-        ip.run()
-        input.run()
-
-        # for pipeline
-        rx_args = self.__dict__
-        rx_local = {
-            'ip_dir': ip.project_dir,
-            'input_dir': input.project_dir,
-            'fq1': None,
-            'fq2': None,
-            'ip': None,
-            'ip_fq2': None,
-            'input': None,
-            'input_fq2': None,
-            'spikein': self.spikein,
-            'spikein_index': self.spikein_index,
-            'extra_index': self.extra_index,
-            'gene_bed': self.gene_bed
-        }
-        rx_args.update(rx_local)
-        rx = CnRx(**rx_args)
-        rx.run()
+        # # for pipeline
+        # rx_args = self.__dict__
+        # rx_local = {
+        #     'ip_dir': ip.project_dir,
+        #     'input_dir': input.project_dir,
+        #     'fq1': None,
+        #     'fq2': None,
+        #     'ip': None,
+        #     'ip_fq2': None,
+        #     'input': None,
+        #     'input_fq2': None,
+        #     'spikein': self.spikein,
+        #     'spikein_index': self.spikein_index,
+        #     'extra_index': self.extra_index,
+        #     'gene_bed': self.gene_bed
+        # }
+        # rx_args.update(rx_local)
+        # rx = CnRx(**rx_args)
+        # rx.run()
 
 
     def run(self):
@@ -1306,10 +1339,9 @@ class CnR(object):
         """
         if self.hiseq_type == 'build_design':
             self.run_CnR_design()
-        elif self.hiseq_type == 'hiseq_rx_from_design':
-            self.run_CnR_rx_from_design()
+        elif self.hiseq_type == 'hiseq_from_design':
+            self.run_CnR_from_design()
         elif self.hiseq_type == 'hiseq_r1':
-            # ChIPseqR1(**self.__dict__).run()
             self.run_CnR_r1()
         elif self.hiseq_type == 'hiseq_rn':
             self.run_CnR_rn()
@@ -1337,7 +1369,55 @@ class CnRx(object):
         chk0 = args_checker(self.__dict__, self.config_pickle)
         chk1 = args_logger(self.__dict__, self.config_txt)
 
-        ## check args
+
+    def run_CnRn(self):
+        """
+        Run CnR for ip/input fastq files
+        or copy file from CnRn
+        """
+        c_ip = CnRReader(self.ip_dir).is_hiseq_rn
+        c_input = CnRReader(self.input_dir).is_hiseq_rn
+
+        if c_ip and c_input:
+            log.info('run CnRx for ip_dir and input_dir')
+        elif isinstance(self.ip, list) and isinstance(self.input, list):
+            # for ip
+            log.info('run CnRn for ip')                
+            # for ip fastq files
+            ip_args = self.__dict__
+            ip_local = {
+                'build_design': False,
+                'is_ip': True,
+                'fq1': self.ip,
+                'fq2': self.ip_fq2,
+                'spikein': self.spikein,
+                'spikein_index': self.spikein_index,
+                'rep_list': None,
+                'extra_index': self.extra_index,
+                'genome_size': self.genome_size,
+                'gene_bed': self.gene_bed}
+            ip_args.update(ip_local)
+            CnRn(**ip_args).run()
+
+            # for input fastq
+            input_args = self.__dict__
+            input_local = {
+                'build_design': False,
+                'is_ip': False,
+                'fq1': self.input,
+                'fq2': self.input_fq2,
+                'spikein': self.spikein,
+                'spikein_index': self.spikein_index,
+                'rep_list': None,
+                'extra_index': self.extra_index,
+                'genome_size': self.genome_size,
+                'gene_bed': self.gene_bed}
+            input_args.update(input_local)
+            CnRn(**input_args).run()
+        else:
+            log.error('CnRx() failed, unknown args')
+
+        ## update 
         self.ip_args = CnRReader(self.ip_dir).args
         self.input_args = CnRReader(self.input_dir).args
         self.ip_bam_from = self.ip_args.get('bam', None)
@@ -1506,10 +1586,10 @@ class CnRx(object):
         html
         """
         pkg_dir = os.path.dirname(hiseq.__file__)
-        qc_reportR = os.path.join(pkg_dir, 'bin', 'chipseq_report.R')
-        chipseq_report_html = os.path.join(
+        qc_reportR = os.path.join(pkg_dir, 'bin', 'hiseq_report.R')
+        hiseq_report_html = os.path.join(
             self.report_dir, 
-            'ChIPseq_report.html')
+            'HiSeq_report.html')
 
         cmd = 'Rscript {} {} {}'.format(
             qc_reportR,
@@ -1520,8 +1600,9 @@ class CnRx(object):
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + '\n')
     
-        if file_exists(chipseq_report_html):
-            log.info('report() skipped, file exists: {}'.format(chipseq_report_html))
+        if file_exists(hiseq_report_html):
+            log.info('report() skipped, file exists: {}'.format(
+                hiseq_report_html))
         else:
             run_shell_cmd(cmd) 
 
@@ -1533,6 +1614,7 @@ class CnRx(object):
         multipleprocess.Pool
         """
         # run
+        self.run_CnRn()
         self.copy_bam_files()
         self.copy_bw_files()
         self.get_ip_over_input_bw()
@@ -1541,7 +1623,7 @@ class CnRx(object):
         self.qc_tss_enrich()
         self.qc_genebody_enrich()
         self.qc_bam_fingerprint()
-        # self.report()
+        self.report()
 
 
 class CnRn(object):
@@ -1923,10 +2005,10 @@ class CnRn(object):
         html
         """
         pkg_dir = os.path.dirname(hiseq.__file__)
-        qc_reportR = os.path.join(pkg_dir, 'bin', 'chipseq_report.R')
-        chipseq_report_html = os.path.join(
+        qc_reportR = os.path.join(pkg_dir, 'bin', 'hiseq_report.R')
+        hiseq_report_html = os.path.join(
             self.report_dir, 
-            'ChIPseq_report.html')
+            'HiSeq_report.html')
 
         cmd = 'Rscript {} {} {}'.format(
             qc_reportR,
@@ -1937,8 +2019,9 @@ class CnRn(object):
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + '\n')
 
-        if file_exists(chipseq_report_html):
-            log.info('report() skipped, file exists: {}'.format(chipseq_report_html))
+        if file_exists(hiseq_report_html):
+            log.info('report() skipped, file exists: {}'.format(
+                hiseq_report_html))
         else:
             run_shell_cmd(cmd) 
 
@@ -2030,7 +2113,7 @@ class CnRn(object):
             self.qc_align_txt()
             self.qc_tss_enrich()
             self.qc_genebody_enrich()
-            # self.report()
+            self.report()
         elif len(self.rep_list) == 1:
             log.warning('merge() skipped, Only 1 replicate detected')
             # copy files: bam, bw, peak
@@ -2597,10 +2680,10 @@ class CnR1(object):
         html
         """
         pkg_dir = os.path.dirname(hiseq.__file__)
-        qc_reportR = os.path.join(pkg_dir, 'bin', 'chipseq_report.R')
-        chipseq_report_html = os.path.join(
+        qc_reportR = os.path.join(pkg_dir, 'bin', 'hiseq_report.R')
+        hiseq_report_html = os.path.join(
             self.report_dir, 
-            'ChIPseq_report.html')
+            'HiSeq_report.html')
 
         cmd = 'Rscript {} {} {}'.format(
             qc_reportR,
@@ -2611,8 +2694,9 @@ class CnR1(object):
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + '\n')
     
-        if file_exists(chipseq_report_html):
-            log.info('report() skipped, file exists: {}'.format(chipseq_report_html))
+        if file_exists(hiseq_report_html):
+            log.info('report() skipped, file exists: {}'.format(
+                hiseq_report_html))
         else:
             run_shell_cmd(cmd)
 
@@ -2627,7 +2711,7 @@ class CnR1(object):
         self.pipe_genome()
         self.pipe_spikein()
         self.pipe_qc()
-        # self.report()
+        self.report()
 
 
 class CnRt(object):
@@ -2642,6 +2726,13 @@ class CnRReader(object):
         self.x = x
         self.read()
         self.hiseq_type = self.args.get('hiseq_type', None)
+
+        self.is_hiseq_r1 = self.hiseq_type == 'hiseq_r1'
+        self.is_hiseq_rn = self.hiseq_type == 'hiseq_rn'
+        self.is_hiseq_rx = self.hiseq_type == 'hiseq_rx'
+        self.is_hiseq_rt = self.hiseq_type == 'hiseq_rt'
+        self.is_hiseq_rd = self.hiseq_type == 'build_design'
+
 
         if isinstance(self.hiseq_type, str):
             self.is_hiseq = self.hiseq_type.startswith('hiseq_')
@@ -2674,13 +2765,6 @@ class CnRReader(object):
             self.args = pickle2dict(p2[0])
         else:
             self.args = {}
-
-
-
-
-
-
-
 
 
 class CnRDesign(object):
@@ -2801,6 +2885,21 @@ class CnRDesign(object):
 
         # save to file
         Json(design_dict).writer(self.design)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 class ChIPseqR1Config(object):
