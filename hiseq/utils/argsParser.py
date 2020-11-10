@@ -622,6 +622,8 @@ def add_cnr_args():
 
     parser.add_argument('--trimmed', action='store_true',
         help='specify if input files are trimmed')
+    parser.add_argument('--gene-bed', dest='gene_bed', default=None,
+        help='The BED or GTF of genes')
 
     # optional arguments - 1
     parser.add_argument('-p', '--threads', default=1, type=int,

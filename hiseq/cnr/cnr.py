@@ -528,6 +528,225 @@ class Align(object):
                 os.remove(self.unmap2)
 
 
+class CallPeak(object):
+    """
+    Call peaks using MACS2, or SEACR
+
+    MACS2: 
+    macs2 callpeak -t ip.bam -c input.bam \
+      -g hs -f BAMPE -n macs2_peak_q0.1 \
+      --outdir outdir -q 0.1 
+      --keep-dup all 
+      2>log.txt
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+        self.init_files()
+
+
+    def init_args(self):
+        default_args = {
+            'method': 'macs2',
+            'ip': None,
+            'input': None,
+            'genome': None,
+            'genome_size': None,
+            'prefix': None,
+            'outdir': None,
+            'overwrite': False,
+            'hiseq_type': 'macs2_call_peak'
+            }
+        self = update_obj(self, default_args, force=False)
+
+        # outdir
+        if not isinstance(self.outdir, str):
+            self.outdir = str(pathlib.Path.cwd())
+            log.warning('set pwd as outdir: {}'.format(self.outdir))
+        self.outdir = file_abspath(self.outdir)
+        check_path(self.outdir)
+
+        # input
+        self.ip = file_abspath(self.ip)
+        self.input = file_abspath(self.input)
+
+        # genome
+        g = {
+          'dm6': 'dm',
+          'dm3': 'dm',
+          'mm9': 'mm',
+          'mm10': 'mm',
+          'hg19': 'hs',
+          'hg38': 'hs',
+          'GRCh38': 'hs'
+        }
+
+        if isinstance(self.genome, str):
+            self.genome_size = g.get(self.genome, None)
+            if self.genome_size is None:
+                log.error('genome, unknown, {}'.format(self.genome))
+
+        elif isinstance(self.genome_size, int):
+            if self.genome_size < 1:
+                log.error('genome_size, failed, {}'.format(self.genome_size))
+
+        else:
+            pass
+
+        self.ip_name = os.path.splitext(os.path.basename(self.ip))[0]
+        self.input_name = os.path.splitext(os.path.basename(self.input))[0]
+        
+        # prefix
+        if isinstance(self.prefix, str):
+            pass
+        else:
+            self.prefix = self.ip_name
+
+        self.prefix_top001 = self.prefix + '.top0.01'
+
+
+    def init_files(self):
+        # files
+        default_files = {
+            'config_pickle': self.outdir + '/config.pickle',
+            'macs2_peak': self.outdir + '/' + self.prefix + '_peaks.narrowPeak',
+            'macs2_log': self.outdir + '/' + self.prefix + '.callpeak.log',
+            'macs2_peak_xls': self.outdir + '/' + self.prefix + '_peaks.xls',
+            'ip_bed': self.outdir + '/' + self.ip_name + '.frag.bed',
+            'ip_bg': self.outdir + '/' + self.ip_name + '.frag.bg',
+            'input_bed': self.outdir + '/' + self.input_name + '.frag.bed',
+            'input_bg': self.outdir + '/' + self.input_name + '.frag.bg',
+            'seacr_peak': self.outdir + '/' + self.ip_name + '.stringent.bed'
+        }
+        self = update_obj(self, default_files, force=True) # key
+
+        ## gsize
+        self.genome_size_file = Genome(genome=self.genome).get_fasize()
+        
+
+    def run_macs2(self):
+        input_arg = '' if self.input is None else '-c {}'.format(self.input)
+
+        cmd = ' '.join([
+            '{} callpeak'.format(shutil.which('macs2')),
+            '-t {} {}'.format(self.ip, input_arg),
+            '-g {} -f BAMPE'.format(self.genome_size),
+            '-n {}'.format(self.outdir + '/' + self.prefix),
+            '-q 0.1 --keep-dup all',
+            '--nomodel --extsize 150',
+            '2> {}'.format(self.macs2_log)
+            ])
+
+        # save cmd
+        cmd_txt = self.outdir + '/cmd.txt'
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+
+        # run
+        if file_exists(self.macs2_peak) and not self.overwrite:
+            log.info('run_macs2() skipped, file exists:{}'.format(
+                self.macs2_peak))
+        else:
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.error('run_macs2() failed, check {}'.format(
+                    self.macs2_log))
+
+
+    def bampe_to_bg(self, bam, bg):
+        """
+        Convert bam to bed
+        bedpe, sort -n (by name)
+        """
+        bam_sorted = os.path.splitext(bg)[0] + '.sorted_by_name.bam'
+        bed = os.path.splitext(bg)[0] + '.bed'
+
+        cmd = ' '.join([
+            'samtools sort -@ 4 -n -o {} {}'.format(bam_sorted, bam),
+            '&& bedtools bamtobed -bedpe -i {}'.format(bam_sorted),
+            "| awk '$1==$4 && $6-$2 < 1000 {print $0}'",
+            '| cut -f 1,2,6',
+            '| sort -k1,1 -k2,2n > {}'.format(bed),
+            '&& bedtools genomecov -bg -i {}'.format(bed),
+            '-g {}'.format(self.genome_size_file),
+            '> {}'.format(bg)
+        ])
+
+        # save cmd
+        cmd_txt = self.outdir + '/' + self.prefix + '.bam2bg.cmd.sh'
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+
+        # run
+        if file_exists(bg) and not self.overwrite:
+            log.info('bampe_to_bg() skipped, file exists:{}'.format(bg))
+        else:
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.error('bampe_to_bg() failed, check {}'.format(bg))
+
+
+    def run_seacr(self):
+        """
+        bash $seacr ip.bedgraph input.bedgraph \
+        non stringent output
+    
+        see: https://github.com/FredHutch/SEACR
+        1. bam-to-bed
+        bedtools bamtobed -bedpe -i in.bam > out.bed
+        awk '$1==$4 && $6-$2 < 1000 {print $0}' out.bed > out.clean.bed
+        cut -f1,2,6 out.clean.bed | sort -k1,1 -k2,2n -k3,3n > out.fragments.bed
+        bedtools genomecov -bg -i out.fragments.bed -g genome > out.fragments.bg
+        
+        2. call peak
+        bash seacr out.fragments.bg IgG.bg non stringent output
+        bash seacr out.fragments.bg 0.01 non 0.01 non stringent top0.01.peaks
+        """
+        self.bampe_to_bg(self.ip, self.ip_bg)
+        self.bampe_to_bg(self.input, self.input_bg)
+
+        cmd = ' '.join([
+            'bash {}'.format(shutil.which('SEACR_1.3.sh')),
+            '{} {}'.format(self.ip_bg, self.input_bg),
+            'non stringent {}'.format(self.outdir + '/' + self.prefix),
+            '&& bash {}'.format(shutil.which('SEACR_1.3.sh')),
+            '{} 0.01'.format(self.ip_bg),
+            'non stringent {}'.format(self.outdir + '/' + self.prefix_top001)
+        ])
+
+        # save cmd
+        cmd_txt = self.outdir + '/' + self.prefix + '.SEACR.cmd.sh'
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+
+        # run
+        if file_exists(self.seacr_peak) and not self.overwrite:
+            log.info('run_seacr() skipped, file exists:{}'.format(
+                self.seacr_peak))
+        else:
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.error('run_seacr() failed, check {}'.format(
+                    self.seacr_peak))
+
+
+    def run(self):
+        # save config
+        dict2pickle(self.__dict__, self.config_pickle)
+
+        # generate cmd
+        if self.method.lower() == 'macs2':
+            self.run_macs2()
+        elif self.method.lower() == 'seacr':
+            self.run_seacr()
+        else:
+            raise ValueError('unknown method: {macs2|seacr}, got {}'.format(
+                self.method))
+
+
 class CnRConfig(object):
     """
     Global config for CnR analysis
@@ -762,8 +981,7 @@ class CnRxConfig(object):
             raise ValueError('--ip, --input, or --ip-dir, --input-dir failed')
 
         # update smp_name
-        if self.smp_name is None:
-            self.smp_name = self.ip_name
+        self.smp_name = '{}.vs.{}'.format(self.ip_name, self.input_name)
 
 
     def init_files(self, create_dirs=True):
@@ -1194,6 +1412,8 @@ class CnR1Config(object):
             'bg': self.bg_dir + '/' + self.project_name + '.bedGraph',
             'peak': self.peak_dir + '/' + self.project_name + '_peaks.narrowPeak',
             'bw': self.bw_dir + '/' + self.project_name + '.bigWig',
+
+            'trim_stat_txt': self.clean_dir + '/' + self.project_name + '.qc.stat',
             'align_scale_txt': self.align_dir + '/' + 'scale.txt',
             'align_flagstat': self.align_dir + '/' + self.smp_name + '.flagstat',
             'align_stat': self.align_dir + '/' + self.smp_name + '.bowtie2.stat',
@@ -1204,6 +1424,7 @@ class CnR1Config(object):
             'spikein_stat': self.spikein_dir + '/' + 'spikein.align.stat',
             'spikein_json': self.spikein_dir + '/' + 'spikein.align.json',
 
+            'trim_summary_json': self.qc_dir + '/00.trim_summary.json',
             'align_summary_json': self.qc_dir + '/01.alignment_summary.json',
             'lendist_txt': self.qc_dir + '/02.length_distribution.txt',
             'lendist_pdf': self.qc_dir + '/02.length_distribution.pdf',
@@ -1399,10 +1620,17 @@ class CnRx(object):
         if c_ip and c_input:
             log.info('run CnRx for ip_dir and input_dir')
         elif isinstance(self.ip, list) and isinstance(self.input, list):
+            # remove args
+            # rep_list, ip_dir, input_dir, ip, ip_fq2, input, input_fq2
+            args_local = self.__dict__.copy()
+            rm_args = ['rep_list', 'ip_dir', 'input_dir', 'ip', 'ip_fq2',
+                'input', 'input_fq2']
+            [args_local.pop(i, None) for i in rm_args] # remove
+
             # for ip
             log.info('run CnRn for ip')                
             # for ip fastq files
-            ip_args = self.__dict__
+            ip_args = args_local.copy()
             ip_local = {
                 'build_design': False,
                 'is_ip': True,
@@ -1410,15 +1638,16 @@ class CnRx(object):
                 'fq2': self.ip_fq2,
                 'spikein': self.spikein,
                 'spikein_index': self.spikein_index,
-                'rep_list': None,
                 'extra_index': self.extra_index,
                 'genome_size': self.genome_size,
-                'gene_bed': self.gene_bed}
+                'gene_bed': self.gene_bed,
+                'hiseq_type': 'hiseq_rn'
+                }
             ip_args.update(ip_local)
             CnRn(**ip_args).run()
 
             # for input fastq
-            input_args = self.__dict__
+            input_args = args_local.copy()
             input_local = {
                 'build_design': False,
                 'is_ip': False,
@@ -1426,10 +1655,11 @@ class CnRx(object):
                 'fq2': self.input_fq2,
                 'spikein': self.spikein,
                 'spikein_index': self.spikein_index,
-                'rep_list': None,
                 'extra_index': self.extra_index,
                 'genome_size': self.genome_size,
-                'gene_bed': self.gene_bed}
+                'gene_bed': self.gene_bed,
+                'hiseq_type': 'hiseq_rn'
+                }
             input_args.update(input_local)
             CnRn(**input_args).run()
         else:
@@ -1469,11 +1699,15 @@ class CnRx(object):
         Copy bw files
         """
         # ip over input, subtract
-        bwCompare(self.ip_bw, self.input_bw, self.ip_over_input_bw, 'subtract',
-            threads=self.threads, binsize=10)
+        try:
+            bwCompare(self.ip_bw, self.input_bw, self.ip_over_input_bw, 'subtract',
+                threads=self.threads, binsize=10)
+        except:
+            log.error('get_ip_over_input_bw() failed, see {}'.format(
+                self.bw_dir))
 
 
-    def call_peak(self):
+    def call_peak2(self):
         """
         Call peaks using MACS2
         ip, input
@@ -1502,6 +1736,29 @@ class CnRx(object):
 
         # ## annotation
         # peak.broadpeak_annotation()
+
+
+    def call_peak(self):
+        """
+        Call peaks using MACS2/SEACR
+        """
+        args_local = {
+            'method': 'macs2',
+            'ip': self.bam,
+            'input': None,
+            'outdir': self.peak_dir,
+            'genome': self.genome
+        }
+        CallPeak(**args_local).run()
+
+        args_local = {
+            'method': 'seacr',
+            'ip': self.ip_bam,
+            'input': self.input_bam,
+            'outdir': self.peak_dir,
+            'genome': self.genome
+        }
+        CallPeak(**args_local).run()
 
 
     def qc_tss_enrich(self):
@@ -1780,7 +2037,7 @@ class CnRn(object):
                 log.error('bg_to_bw() failed')
 
 
-    def call_peak(self):
+    def call_peak2(self):
         """
         Call peaks using MACS2
         ...
@@ -1803,6 +2060,20 @@ class CnRn(object):
         else:
             Macs2(bed, genome, output, prefix, atac=False,
                 genome_size=genome_size, gsize_file=gsize_file).callpeak()
+
+
+    def call_peak(self):
+        """
+        Call peaks using MACS2/SEACR
+        """
+        args_local = {
+            'method': 'macs2',
+            'ip': self.bam,
+            'input': None,
+            'outdir': self.peak_dir,
+            'genome': self.genome
+        }
+        CallPeak(**args_local).run()
 
 
     def cal_norm_scale(self, bam, norm=1000000):
@@ -2131,6 +2402,7 @@ class CnRn(object):
             self.qc_align_txt()
             self.qc_tss_enrich()
             self.qc_genebody_enrich()
+            self.qc_bam_fingerprint()
             self.report()
         elif len(self.rep_list) == 1:
             log.warning('merge() skipped, Only 1 replicate detected')
@@ -2350,7 +2622,7 @@ class CnR1(object):
             symlink(self.bam, self.bam_rmdup, absolute_path=True)
 
 
-    def call_peak(self):
+    def call_peak2(self):
         """
         Call peaks using MACS2/SEACR
         """
@@ -2373,6 +2645,20 @@ class CnR1(object):
             Macs2(bed, self.genome, self.peak_dir, self.project_name,
                 atac=False, genome_size=genome_size, 
                 gsize_file=gsize_file).callpeak()
+
+
+    def call_peak(self):
+        """
+        Call peaks using MACS2/SEACR
+        """
+        args_local = {
+            'method': 'macs2',
+            'ip': self.bam,
+            'input': None,
+            'outdir': self.peak_dir,
+            'genome': self.genome
+        }
+        CallPeak(**args_local).run()
 
 
     def bam_to_bg(self):
@@ -2465,9 +2751,41 @@ class CnR1(object):
             log.error('no mapped reads detected')
             n_scale = 1
 
-        print('!scale: {}, {}'.format(n_scale, n_map))
-
         return n_scale
+
+
+    def qc_trim_summary(self):
+        """
+        reads trim off
+
+        #sample input   output  percent
+        fq_rep1      2234501 2234276 99.99%
+
+        """
+        if file_exists(self.trim_stat_txt):
+            with open(self.trim_stat_txt, 'rt') as r:
+                lines = r.readlines()
+            lines = [i for i in lines if not i.startswith('#')]
+            line = lines.pop()
+            fqname, n_input, n_output, n_pct = line.strip().split('\t')
+            n_pct = eval(n_pct.strip('%'))
+
+            d = {
+                'id': fqname,
+                'input': n_input,
+                'output': n_output,
+                'out_pct': n_pct,
+                'rm_pct': 100 - n_pct
+            }
+        else:
+            d = {
+                'id': self.smp_name,
+                'input': 0,
+                'output': 0,
+                'out_pct': 100,
+                'rm_pct': 0
+            }
+        Json(d).writer(self.trim_summary_json)
 
 
     def qc_align_summary(self):
@@ -2685,6 +3003,7 @@ class CnR1(object):
         """
         Quality control
         """
+        self.qc_trim_summary()
         self.qc_align_summary()
         self.qc_lendist()
         self.qc_mito()
@@ -3349,9 +3668,6 @@ class ChIPseqConfig(object):
         #     args_design = Json(self.design).reader()
         #     self = update_obj(self, args_design, force=True)
 
-        # print('!AAAA-1')
-        # print_dict(self.__dict__)
-        # sys.exit()
         if self.outdir is None:
           self.outdir = str(pathlib.Path.cwd())
         
@@ -3369,7 +3685,6 @@ class ChIPseqConfig(object):
             # raise ValueError('rep_list failed, None, str, list expected, got {}'.format(type(self.rep_list).__name__))
 
         # check genome size
-        print('!BBBB-1', self.extra_index, self.genome)
         if isinstance(self.extra_index, list):
             if self.genome_size < 1:
                 ai = AlignIndex(index=self.extra_index[-1])
@@ -4131,7 +4446,6 @@ class ChIPseqRx(object):
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
-        print('!AAAA-8', self.gsize_file)
 
 
     def init_args(self):
@@ -4352,7 +4666,6 @@ class ChIPseq(object):
         """
         Run all
         """
-        print('!AAAA-1', self.chipseq_type)
         if self.chipseq_type == 'build_design':
             self.run_chipseq_design()
         elif self.chipseq_type == 'chipseq_rx_from_design':
