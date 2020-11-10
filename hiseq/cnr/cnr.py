@@ -554,9 +554,11 @@ class CnRConfig(object):
             'input': None,
             'ip_fq2': None,
             'input_fq2': None,
+            'fq1': None,
+            'fq2': None,
             'genome': None,
             'outdir': None,
-            'aligner': None,
+            'aligner': 'bowtie2',
             'spikein': None,
             'spikein_index': None,
             'extra_index': None,
@@ -572,6 +574,10 @@ class CnRConfig(object):
         if self.outdir is None:
           self.outdir = str(pathlib.Path.cwd())
         self.outdir = file_abspath(self.outdir)
+
+        # aligner
+        if self.aligner is None:
+            self.aligner = 'bowtie2'
 
         # threads
         self.threads, self.parallel_jobs = init_cpu(self.threads, 
@@ -620,8 +626,8 @@ class CnRConfig(object):
         # 1st level
         if self.build_design:
             self.hiseq_type = 'build_design'
-        # elif file_exists(self.design):
-        #     self.hiseq_type = 'chipseq_rx_from_design'
+        elif file_exists(self.design):
+            self.hiseq_type = 'hiseq_from_design'
         elif isinstance(self.ip_dir, str) and isinstance(self.input_dir, str):
             self.hiseq_type = 'hiseq_rx'
         elif all([not i is None for i in [self.ip, self.input]]):
@@ -670,7 +676,7 @@ class CnRxConfig(object):
             'genome': None,
             'spikein': None,
             'spikein_index': None,
-            'aligner': None,
+            'aligner': 'bowtie2',
             'extra_index': None,
             'threads': 1,
             'parallel_jobs': 1,
@@ -681,6 +687,10 @@ class CnRxConfig(object):
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'hiseq_rx' # 
+
+        # aligner
+        if self.aligner is None:
+            self.aligner = 'bowtie2'
 
         # threads
         self.threads, self.parallel_jobs = init_cpu(self.threads, 
@@ -839,7 +849,7 @@ class CnRnConfig(object):
             'fq2': None,
             'genome': None,
             'outdir': None,
-            'aligner': None,
+            'aligner': 'bowtie2',
             'smp_name': None,
             'spikein': None,
             'spikein_index': None,
@@ -852,6 +862,10 @@ class CnRnConfig(object):
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'hiseq_rn' # 
+
+        # aligner
+        if self.aligner is None:
+            self.aligner = 'bowtie2'
 
         # threads
         self.threads, self.parallel_jobs = init_cpu(self.threads, 
@@ -1039,8 +1053,8 @@ class CnR1Config(object):
             'fq2': None,
             'genome': None,
             'outdir': None,
-            'aligner': 'bowtie2',
             'smp_name': None,
+            'aligner': 'bowtie2',
             'genome_index': None,
             'spikein': None,
             'spikein_index': None,
@@ -1053,6 +1067,10 @@ class CnR1Config(object):
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'hiseq_r1' # 
+
+        # aligner
+        if self.aligner is None:
+            self.aligner = 'bowtie2'
 
         # smp_name
         if not isinstance(self.smp_name, str):
