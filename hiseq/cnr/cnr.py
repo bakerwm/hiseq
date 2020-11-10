@@ -566,7 +566,10 @@ class CallPeak(object):
         self.outdir = file_abspath(self.outdir)
         check_path(self.outdir)
 
-        # input
+        # bam files
+        if not file_exists(self.ip):
+            raise ValueError('ip, required')
+
         self.ip = file_abspath(self.ip)
         self.input = file_abspath(self.input)
 
@@ -594,7 +597,10 @@ class CallPeak(object):
             pass
 
         self.ip_name = os.path.splitext(os.path.basename(self.ip))[0]
-        self.input_name = os.path.splitext(os.path.basename(self.input))[0]
+        if self.input is None:
+            self.input_name = ''
+        else:
+            self.input_name = os.path.splitext(os.path.basename(self.input))[0]
         
         # prefix
         if isinstance(self.prefix, str):
@@ -616,7 +622,8 @@ class CallPeak(object):
             'ip_bg': self.outdir + '/' + self.ip_name + '.frag.bg',
             'input_bed': self.outdir + '/' + self.input_name + '.frag.bed',
             'input_bg': self.outdir + '/' + self.input_name + '.frag.bg',
-            'seacr_peak': self.outdir + '/' + self.ip_name + '.stringent.bed'
+            'seacr_peak': self.outdir + '/' + self.prefix + '.stringent.bed',
+            'seacr_peak_top': self.outdir + '/' + self.prefix_top001 + '.stringent.bed'
         }
         self = update_obj(self, default_files, force=True) # key
 
@@ -705,16 +712,21 @@ class CallPeak(object):
         bash seacr out.fragments.bg 0.01 non 0.01 non stringent top0.01.peaks
         """
         self.bampe_to_bg(self.ip, self.ip_bg)
-        self.bampe_to_bg(self.input, self.input_bg)
-
         cmd = ' '.join([
             'bash {}'.format(shutil.which('SEACR_1.3.sh')),
-            '{} {}'.format(self.ip_bg, self.input_bg),
-            'non stringent {}'.format(self.outdir + '/' + self.prefix),
-            '&& bash {}'.format(shutil.which('SEACR_1.3.sh')),
             '{} 0.01'.format(self.ip_bg),
             'non stringent {}'.format(self.outdir + '/' + self.prefix_top001)
         ])
+
+        if not self.input is None:
+            self.bampe_to_bg(self.input, self.input_bg)
+
+            cmd = ' '.join([
+                '&& {}'.format(cmd),
+                'bash {}'.format(shutil.which('SEACR_1.3.sh')),
+                '{} {}'.format(self.ip_bg, self.input_bg),
+                'non stringent {}'.format(self.outdir + '/' + self.prefix)            
+            ])
 
         # save cmd
         cmd_txt = self.outdir + '/' + self.prefix + '.SEACR.cmd.sh'
@@ -722,7 +734,7 @@ class CallPeak(object):
             w.write(cmd + '\n')
 
         # run
-        if file_exists(self.seacr_peak) and not self.overwrite:
+        if file_exists(self.seacr_peak_top) and not self.overwrite:
             log.info('run_seacr() skipped, file exists:{}'.format(
                 self.seacr_peak))
         else:
@@ -967,6 +979,9 @@ class CnRxConfig(object):
             self.input_dir = self.outdir + '/' + self.input_name
 
         elif isinstance(self.ip_dir, str) and isinstance(self.input_dir, str):
+            self.ip_dir = file_abspath(self.ip_dir)
+            self.input_dir = file_abspath(self.input_dir)
+            
             c_ip = CnRReader(self.ip_dir)
             c_input = CnRReader(self.input_dir)
 
@@ -1016,6 +1031,9 @@ class CnRxConfig(object):
             'input_bam': self.bam_dir + '/' + self.input_name + '.bam',
             'input_bw': self.bw_dir + '/' + self.input_name + '.bigWig',
             'peak': self.peak_dir + '/' + self.project_name + '_peaks.narrowPeak',
+            'peak_seacr': self.peak_dir + '/' + self.project_name + '.stringent.bed',
+            'peak_seacr_top001': self.peak_dir + '/' + self.project_name + '.top0.01.stringent.bed',
+
             'ip_over_input_bw': self.bw_dir + '/' + self.ip_name + '.ip_over_input.bigWig',
             'bw': self.bw_dir + '/' + self.ip_name + '.bigWig',
             'tss_enrich_matrix': self.qc_dir + '/04.tss_enrich.mat.gz',
@@ -1206,7 +1224,9 @@ class CnRnConfig(object):
             'bam_proper_pair': self.bam_dir + '/' + self.smp_name + '.proper_pair.bam',
             'bam': self.bam_dir + '/' + self.project_name + '.bam',
             'bed': self.bam_dir + '/' + self.project_name + '.bed',
-            'peak': self.peak_dir + '/' + self.project_name + '_peaks.narrowPeak',
+            'peak': self.peak_dir + '/' + self.project_name + '_peaks.narrowPeak',            
+            'peak_seacr': self.peak_dir + '/' + self.project_name + '.stringent.bed',
+            'peak_seacr_top001': self.peak_dir + '/' + self.project_name + '.top0.01.stringent.bed',
             'bg': self.bg_dir + '/' + self.project_name + '.bedGraph',
             'bw': self.bw_dir + '/' + self.project_name + '.bigWig',
             'align_scale_txt': self.align_dir + '/' + 'scale.txt',
@@ -1411,6 +1431,8 @@ class CnR1Config(object):
             'bed': self.bam_dir + '/' + self.project_name + '.bed',
             'bg': self.bg_dir + '/' + self.project_name + '.bedGraph',
             'peak': self.peak_dir + '/' + self.project_name + '_peaks.narrowPeak',
+            'peak_seacr': self.peak_dir + '/' + self.project_name + '.stringent.bed',
+            'peak_seacr_top001': self.peak_dir + '/' + self.project_name + '.top0.01.stringent.bed',
             'bw': self.bw_dir + '/' + self.project_name + '.bigWig',
 
             'trim_stat_txt': self.clean_dir + '/' + self.project_name + '.qc.stat',
@@ -1743,22 +1765,14 @@ class CnRx(object):
         Call peaks using MACS2/SEACR
         """
         args_local = {
-            'method': 'macs2',
-            'ip': self.bam,
-            'input': None,
-            'outdir': self.peak_dir,
-            'genome': self.genome
-        }
-        CallPeak(**args_local).run()
-
-        args_local = {
-            'method': 'seacr',
             'ip': self.ip_bam,
             'input': self.input_bam,
             'outdir': self.peak_dir,
             'genome': self.genome
         }
         CallPeak(**args_local).run()
+        CallPeak(method='macs2', **args_local).run()
+        CallPeak(method='seacr', **args_local).run()
 
 
     def qc_tss_enrich(self):
@@ -2067,13 +2081,13 @@ class CnRn(object):
         Call peaks using MACS2/SEACR
         """
         args_local = {
-            'method': 'macs2',
             'ip': self.bam,
             'input': None,
             'outdir': self.peak_dir,
             'genome': self.genome
         }
-        CallPeak(**args_local).run()
+        CallPeak(method='macs2', **args_local).run()
+        CallPeak(method='seacr', **args_local).run()
 
 
     def cal_norm_scale(self, bam, norm=1000000):
@@ -2652,13 +2666,13 @@ class CnR1(object):
         Call peaks using MACS2/SEACR
         """
         args_local = {
-            'method': 'macs2',
             'ip': self.bam,
             'input': None,
             'outdir': self.peak_dir,
             'genome': self.genome
         }
-        CallPeak(**args_local).run()
+        CallPeak(method='macs2', **args_local).run()
+        CallPeak(method='seacr', **args_local).run()
 
 
     def bam_to_bg(self):
