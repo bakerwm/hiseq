@@ -637,7 +637,7 @@ def add_cnr_args():
     ## extra: index
     parser.add_argument('--aligner', default='bowtie2',
         help='The alignment tool for CnR pipeline, default: [bowtie2]')
-    parser.add_argument('-x', '--extra-index', nargs='+', dest="extra_index",
+    parser.add_argument('-x', '--extra-index', dest="extra_index",
         help='Provide alignment index(es) for alignment, support multiple\
         indexes. if specified, ignore -g, -k')
 

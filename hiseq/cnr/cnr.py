@@ -82,6 +82,11 @@ scale_factor
 
 report
 
+
+2020-11-12
+
++ Add arg: keep_tmp (default: False)
+
 """
 
 
@@ -104,6 +109,54 @@ def print_dict(d):
     d = collections.OrderedDict(sorted(d.items()))
     for k, v in d.items():
         print('{:>20s}: {}'.format(k, v))
+
+
+def file_remove(x, ask=True):
+    """
+    Remove files, directories
+    """
+    del_list = []
+    undel_list = []
+    if isinstance(x, str):
+        if os.path.isfile(x) and file_exists(x):
+            del_list.append(x)
+        else:
+            undel_list.append(x)
+    elif isinstance(x, list):
+        for f in x:
+            if os.path.isfile(f) and file_exists(x):
+                del_list.append(f)
+            else:
+                undel_list.append(f)
+    elif isinstance(x, dict):
+        for f in list(x.values()):
+            if os.path.isfile(f) and file_exists(x):
+                del_list.append(f)
+            else:
+                undel_list.append(f)
+    else:
+        log.info('Nothing removed, str, list, dict expected, got {}'.format(
+            type(x).__name__))
+
+    # remove files
+    if len(del_list) > 0:
+        del_msg = ['{:>6s}: {}'.format('remove', i) for i in del_list]
+        undel_msg = ['{:>6s}: {}'.format('skip', i) for i in undel_list]
+        msg = '\n'.join(del_msg + undel_msg)
+        log.info('Removing files: \n' + msg)
+        
+        if ask:
+            ask_msg = input('Removing the files? [Y|n]： ')
+        else:
+            ask_msg = 'Y'
+
+        # remove
+        if ask_msg.lower() in ['y', 'yes']:
+            for f in del_list:
+                os.remove(f)
+            log.info('{} files removed'.format(len(del_list)))
+        else:
+            log.info('Nothing removed, skipped')
 
 
 def file_copy(src, dest, force=False):
@@ -269,13 +322,15 @@ class Align(object):
             'fq2': None,
             'index': None,
             'genome': None,
+            'extra_index': None,
             'outdir': None,
             'aligner': 'bowtie2',
             'threads': 1,
             'overwrite': False,
             'max_fragment': 700,
             'remove_unmap': False,
-            'hiseq_type': 'hiseq_alignment'
+            'hiseq_type': 'hiseq_alignment',
+            'keep_tmp': False
             }
         self = update_obj(self, default_args, force=False)
 
@@ -320,9 +375,10 @@ class Align(object):
         """
         Determine the index
         """
-        if isinstance(self.index, str):
+        if isinstance(self.extra_index, str):
+            self.index = self.extra_index
             self.index_check = 0 if AlignIndex(
-                index=self.index, aligner=self.aligner).is_index() else 1
+                index=self.extra_index, aligner=self.aligner).is_index() else 1
         elif isinstance(self.genome, str):
             self.index = AlignIndex(aligner=self.aligner).search(
                 genome=self.genome, group = 'genome')
@@ -385,8 +441,8 @@ class Align(object):
             '<(samtools view -H {} ;'.format(self.sam),
             "samtools view -F 2048 {} | grep 'YT:Z:CP')".format(self.sam),
             '| samtools sort -@ {} -o {} -'.format(self.threads, self.bam),
-            '| samtools index {}'.format(self.bam),
-            '| samtools flagstat {} > {}'.format(self.bam, self.align_flagstat),
+            '&& samtools index {}'.format(self.bam),
+            '&& samtools flagstat {} > {}'.format(self.bam, self.align_flagstat),
             '&& [[ -f {} ]] && rm {}'.format(self.sam, self.sam)
             ])
         
@@ -520,12 +576,10 @@ class Align(object):
         if file_exists(self.align_log):
             self.parse_align(to_json=True)
 
-        # remove unmap files
-        if self.remove_unmap:
-            if file_exists(self.unmap1):
-                os.remove(self.unmap1)
-            if file_exists(self.unmap2):
-                os.remove(self.unmap2)
+        # temp files
+        del_list = [self.sam, self.unmap1, self.unmap2]
+        if not self.keep_tmp:
+            file_remove(del_list, ask=False)
 
 
 class CallPeak(object):
@@ -555,7 +609,8 @@ class CallPeak(object):
             'prefix': None,
             'outdir': None,
             'overwrite': False,
-            'hiseq_type': 'macs2_call_peak'
+            'hiseq_type': 'macs2_call_peak',
+            'keep_tmp': False
             }
         self = update_obj(self, default_args, force=False)
 
@@ -645,7 +700,7 @@ class CallPeak(object):
             ])
 
         # save cmd
-        cmd_txt = self.outdir + '/cmd.txt'
+        cmd_txt = self.outdir + '/' + self.prefix + '.macs2.cmd.sh'
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + '\n')
 
@@ -693,6 +748,11 @@ class CallPeak(object):
                 run_shell_cmd(cmd)
             except:
                 log.error('bampe_to_bg() failed, check {}'.format(bg))
+
+        # temp files
+        del_list = [bam_sorted, bed]
+        if not self.keep_tmp:
+            file_remove(del_list, ask=False)
 
 
     def run_seacr(self):
@@ -758,6 +818,9 @@ class CallPeak(object):
             raise ValueError('unknown method: {macs2|seacr}, got {}'.format(
                 self.method))
 
+        # remove files
+        del_list = []
+
 
 class CnRConfig(object):
     """
@@ -798,7 +861,8 @@ class CnRConfig(object):
             'overwrite': False,
             'binsize': 50,
             'genome_size': 0,
-            'trimmed': True
+            'trimmed': True,
+            'keep_tmp': False
         }
         self = update_obj(self, args_init, force=False)
 
@@ -914,7 +978,8 @@ class CnRxConfig(object):
             'overwrite': False,
             'binsize': 50,
             'genome_size': 0,
-            'gene_bed': None
+            'gene_bed': None,
+            'keep_tmp': False
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'hiseq_rx' # 
@@ -1087,6 +1152,7 @@ class CnRnConfig(object):
             'outdir': None,
             'aligner': 'bowtie2',
             'smp_name': None,
+            'genome_index': None,
             'spikein': None,
             'spikein_index': None,
             'extra_index': None,
@@ -1094,7 +1160,8 @@ class CnRnConfig(object):
             'parallel_jobs': 1,
             'overwrite': False,
             'binsize': 50,
-            'genome_size': 0
+            'genome_size': 0,
+            'keep_tmp': False
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'hiseq_rn' # 
@@ -1301,7 +1368,9 @@ class CnR1Config(object):
             'overwrite': False,
             'binsize': 50,
             'genome_size': 0,
-            'gene_bed': None
+            'gsize_file': None,
+            'gene_bed': None,
+            'keep_tmp': False
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'hiseq_r1' # 
@@ -1779,7 +1848,8 @@ class CnRx(object):
         """
         Calculate the TSS enrichment
         """
-        bw_list = [self.ip_bw, self.input_bw, self.ip_over_input_bw]
+        # bw_list = [self.ip_bw, self.input_bw, self.ip_over_input_bw]
+        bw_list = [self.ip_bw, self.input_bw]
         bw_list_arg = ' '.join(bw_list)
 
         cmd = ' '.join([
@@ -1821,7 +1891,8 @@ class CnRx(object):
         """
         Calculate the TSS enrichment
         """
-        bw_list = [self.ip_bw, self.input_bw, self.ip_over_input_bw]
+        # bw_list = [self.ip_bw, self.input_bw, self.ip_over_input_bw]
+        bw_list = [self.ip_bw, self.input_bw]
         bw_list_arg = ' '.join(bw_list)
 
         cmd = ' '.join([
@@ -1962,9 +2033,9 @@ class CnRn(object):
         self.bam_list = self.get_bam_list()
 
         cmd = ' '.join([
-            'samtools merge {}'.format(self.bam + '.tmp'),
+            'samtools merge -',
             ' '.join(self.bam_list),
-            '&& samtools sort -o {} {}'.format(self.bam, self.bam + '.tmp'),
+            '| samtools sort -o {} -'.format(self.bam),
             '&& samtools index {}'.format(self.bam)])
 
         if os.path.exists(self.bam):
@@ -1980,6 +2051,22 @@ class CnRn(object):
         self.align_scale = self.cal_norm_scale(self.bam)
         with open(self.align_scale_txt, 'wt') as w:
             w.write('{:.4f}\n'.format(self.align_scale))
+
+
+    def get_bam_rmdup(self, rmdup=True):
+        """
+        Remove PCR dup from BAM file using sambamfa/Picard 
+        save only proper paired PE reads
+        """
+        # remove dup
+        if rmdup:
+            if file_exists(self.bam):
+                if file_exists(self.bam_rmdup) and not self.overwrite:
+                    log.info('rmdup() skipped, file exists: {}'.format(
+                        self.bam_rmdup))
+                else:
+                    Bam(self.bam).rmdup(self.bam_rmdup)
+                    Bam(self.bam_rmdup).index()
 
 
     def bam_to_bw(self, norm=1000000):
@@ -2403,6 +2490,7 @@ class CnRn(object):
         if len(self.rep_list) > 1:
             # run
             self.merge_bam()
+            self.get_bam_rmdup()
             # self.bam_to_bw()
             self.bam_to_bg()
             self.bg_to_bw()
@@ -2468,7 +2556,7 @@ class CnR1(object):
             symlink(self.fq2, raw_fq2, absolute_path=True)
 
 
-    def trim(self, trimmed=False):
+    def trim(self, trimmed=True):
         """
         using bowtie2, --local
         no need to trim adapters
@@ -2532,7 +2620,8 @@ class CnR1(object):
             'outdir': self.align_dir,
             'genome': self.genome,
             'extra_index': self.extra_index,
-            'aligner': self.aligner
+            'aligner': self.aligner,
+            'keep_tmp': self.keep_tmp
         }
         args_local.update(args_init)
 
@@ -2552,7 +2641,7 @@ class CnR1(object):
         g_align_flagstat = g.get('align_flagstat', None)
 
         # copy files
-        file_copy(g_align_bam, self.bam)
+        symlink(g_align_bam, self.bam, absolute_path=True)
         file_copy(g_align_stat, self.align_stat)
         file_copy(g_align_json, self.align_json)
         file_copy(g_align_flagstat, self.align_flagstat)
@@ -2577,7 +2666,8 @@ class CnR1(object):
             'outdir': self.spikein_dir,
             'genome': None,
             'index': self.spikein_index,
-            'threads': self.threads
+            'threads': self.threads,
+            'keep_tmp': self.keep_tmp
         }
 
         # output
@@ -2634,31 +2724,6 @@ class CnR1(object):
             Bam(self.bam_rmdup).index()
         else:
             symlink(self.bam, self.bam_rmdup, absolute_path=True)
-
-
-    def call_peak2(self):
-        """
-        Call peaks using MACS2/SEACR
-        """
-        args_peak = self.__dict__.copy()
-        args_peak['genome_size'] = getattr(self, 'genome_size', 0)
-        bam = self.bam
-        bed = os.path.splitext(bam)[0] + '.bed'
-        Bam(bam).to_bed(bed)
-        args_peak.pop('genome', None)
-        args_peak.pop('outdir', None)
-
-        # determine the genome size
-        genome_size = getattr(self, 'genome_size', 0)
-        gsize_file = getattr(self, 'gsize_file', None)
-
-        if check_file(self.peak):
-            log.info('call_peak() skipped, file exists: {}'.format(
-                self.peak))
-        else:
-            Macs2(bed, self.genome, self.peak_dir, self.project_name,
-                atac=False, genome_size=genome_size, 
-                gsize_file=gsize_file).callpeak()
 
 
     def call_peak(self):
@@ -3012,7 +3077,6 @@ class CnR1(object):
             threads=self.threads).run()
 
 
-
     def pipe_qc(self):
         """
         Quality control
@@ -3063,6 +3127,11 @@ class CnR1(object):
         self.pipe_spikein()
         self.pipe_qc()
         self.report()
+
+        # remove clean fastq files
+        del_list = self.clean_fq_list
+        if not self.keep_tmp:
+            file_remove(del_list, ask=False)
 
 
 class CnRt(object):
