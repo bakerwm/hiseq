@@ -2628,13 +2628,13 @@ class CnR1(object):
         if trimmed is True:
             ## fq1
             if is_gz(fq1):
-                file_symlink(fq1, clean_fq1, absolute_path=True)
+                file_symlink(fq1, clean_fq1)
             else:
                 gzip_cmd(fq1, clean_fq1, decompress=False, rm=False)
             ## fq2
             if not fq2 is None:
                 if is_gz(fq2):
-                    file_symlink(fq2, clean_fq2, absolute_path=True)
+                    file_symlink(fq2, clean_fq2)
                 else:
                     gzip_cmd(fq2, clean_fq2, decompress=False, rm=False)
         else:
@@ -2684,7 +2684,7 @@ class CnR1(object):
         g_align_flagstat = g.get('align_flagstat', None)
 
         # copy files
-        file_symlink(g_align_bam, self.bam, absolute_path=True)
+        file_symlink(g_align_bam, self.bam)
         file_copy(g_align_stat, self.align_stat)
         file_copy(g_align_json, self.align_json)
         file_copy(g_align_flagstat, self.align_flagstat)
@@ -2762,14 +2762,14 @@ class CnR1(object):
         bam_raw = self.get_bam(self.align_dir)
 
         # symlink bam
-        file_symlink(bam_raw, self.bam, absolute_path=True)
+        file_symlink(bam_raw, self.bam)
 
         # remove dup
         if rmdup:
             Bam(self.bam).rmdup(self.bam_rmdup)
             Bam(self.bam_rmdup).index()
         else:
-            file_symlink(self.bam, self.bam_rmdup, absolute_path=True)
+            file_symlink(self.bam, self.bam_rmdup)
 
 
     def call_peak(self):
@@ -3957,8 +3957,8 @@ class ChIPseqR1(object):
             shutil.copy(self.fq1, raw_fq1)
             shutil.copy(self.fq2, raw_fq2)
         else:
-            file_symlink(self.fq1, raw_fq1, absolute_path=True)
-            file_symlink(self.fq2, raw_fq2, absolute_path=True)
+            file_symlink(self.fq1, raw_fq1)
+            file_symlink(self.fq2, raw_fq2)
 
 
     def trim(self, trimmed=False):
@@ -3988,13 +3988,13 @@ class ChIPseqR1(object):
         if trimmed is True:
             ## fq1
             if is_gz(fq1):
-                file_symlink(fq1, clean_fq1, absolute_path=True)
+                file_symlink(fq1, clean_fq1)
             else:
                 gzip_cmd(fq1, clean_fq1, decompress=False, rm=False)
             ## fq2
             if not fq2 is None:
                 if is_gz(fq2):
-                    file_symlink(fq2, clean_fq2, absolute_path=True)
+                    file_symlink(fq2, clean_fq2)
                 else:
                     gzip_cmd(fq2, clean_fq2, decompress=False, rm=False)
         else:
