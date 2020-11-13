@@ -151,6 +151,55 @@ def file_symlink(src, dest, absolute_path=False):
             type(src).__name__))
 
 
+def path_remove(x, ask=True):
+    """
+    Remove directories
+    """
+    del_list = []
+    undel_list = []
+    if isinstance(x, str):
+        if os.path.isdir(x) and file_exists(x):
+            del_list.append(x)
+        else:
+            undel_list.append(x)
+    elif isinstance(x, list):
+        for f in x:
+            if os.path.isdir(f) and file_exists(x):
+                del_list.append(f)
+            else:
+                undel_list.append(f)
+    elif isinstance(x, dict):
+        for f in list(x.values()):
+            if os.path.isdir(f) and file_exists(x):
+                del_list.append(f)
+            else:
+                undel_list.append(f)
+    else:
+        log.info('Nothing removed, str, list, dict expected, got {}'.format(
+            type(x).__name__))
+
+    # remove files
+    if len(del_list) > 0:
+        del_msg = ['{:>6s}: {}'.format('remove', i) for i in del_list]
+        undel_msg = ['{:>6s}: {}'.format('skip', i) for i in undel_list]
+        msg = '\n'.join(del_msg + undel_msg)
+        log.info('Removing files: \n' + msg)
+        
+        if ask:
+            ask_msg = input('Removing the files? [Y|n]： ')
+        else:
+            ask_msg = 'Y'
+
+        # remove
+        if ask_msg.lower() in ['y', 'yes']:
+            for f in del_list:
+                # os.remove(f)
+                shutil.rmtree(f)
+            log.info('{} files removed'.format(len(del_list)))
+        else:
+            log.info('Nothing removed, skipped')
+
+
 def file_remove(x, ask=True):
     """
     Remove files, directories
@@ -1329,7 +1378,6 @@ class CnRnConfig(object):
             'config_txt': self.config_dir + '/config.txt',
             'config_pickle': self.config_dir + '/config.pickle',
             'config_json': self.config_dir + '/config.json',
-            'align_stat': self.align_dir + '/' + self.smp_name + '.align.txt',
             'bam_rmdup': self.bam_dir + '/' + self.smp_name + '.rmdup.bam',
             'bam_proper_pair': self.bam_dir + '/' + self.smp_name + '.proper_pair.bam',
             'bam': self.bam_dir + '/' + self.project_name + '.bam',
@@ -1340,6 +1388,10 @@ class CnRnConfig(object):
             'bg': self.bg_dir + '/' + self.project_name + '.bedGraph',
             'bw': self.bw_dir + '/' + self.project_name + '.bigWig',
             'align_scale_txt': self.align_dir + '/' + 'scale.txt',
+            'align_flagstat': self.align_dir + '/' + self.smp_name + '.flagstat',
+            'align_stat': self.align_dir + '/' + self.smp_name + '.bowtie2.stat',
+            'align_json': self.align_dir + '/' + self.smp_name + '.bowtie2.json',
+
             'align_summary_json': self.qc_dir + '/01.alignment_summary.json',
             'lendist_txt': self.qc_dir + '/02.length_distribution.txt',
             'lendist_pdf': self.qc_dir + '/02.length_distribution.pdf',
@@ -2550,15 +2602,35 @@ class CnRn(object):
             self.qc_bam_fingerprint()
             self.report()
         elif len(self.rep_list) == 1:
+            # new files, symlinks
             log.warning('merge() skipped, Only 1 replicate detected')
             # copy files: bam, bw, peak
-            rep_dict = CnRReader(self.rep_list[0]).args
-            file_symlink(rep_dict.get('bam_dir', None), self.bam_dir)
-            file_symlink(rep_dict.get('bg_dir', None), self.bg_dir)
-            file_symlink(rep_dict.get('bw_dir', None), self.bw_dir)
-            file_symlink(rep_dict.get('peak_dir', None), self.peak_dir)
-            file_symlink(rep_dict.get('motif_dir', None), self.motif_dir)
-            file_symlink(rep_dict.get('qc_dir', None), self.qc_dir)
+            rep = CnRReader(self.rep_list[0]).args
+            bam = rep.get('bam', None)
+            bg = rep.get('bg', None)
+            bw = rep.get('bw', None)
+            peak = rep.get('peak', None)
+            peak_seacr = rep.get('seacr', None)
+
+            align_scale_txt = rep.get('align_scale_txt', None)
+            align_json = rep.get('align_json')
+
+            file_symlink(align_scale_txt, self.align_scale_txt)
+            file_symlink(align_json, self.align_json)
+            file_symlink(bam, self.bam)
+            Bam(self.bam).index()
+            file_symlink(bg, self.bg)
+            file_symlink(bw, self.bw)
+            file_symlink(peak, self.peak)
+            file_symlink(peak_seacr, self.peak_seacr)
+
+            self.get_peak_frip()
+            self.qc_frip()
+            self.qc_tss_enrich()
+            self.qc_genebody_enrich()
+            self.qc_bam_fingerprint()
+            self.report()
+
         else:
             log.error('merge() failed, no rep detected')
             raise ValueError('merge() failed, no rep detected')
