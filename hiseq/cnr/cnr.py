@@ -2553,9 +2553,12 @@ class CnRn(object):
             log.warning('merge() skipped, Only 1 replicate detected')
             # copy files: bam, bw, peak
             rep_dict = CnRReader(self.rep_list[0]).args
-            file_symlink(rep_dict.get('bam', None), self.bam)
-            file_symlink(rep_dict.get('bw', None), self.bw)
-            file_symlink(rep_dict.get('peak', None), self.peak)
+            file_symlink(rep_dict.get('bam_dir', None), self.bam_dir)
+            file_symlink(rep_dict.get('bg_dir', None), self.bg_dir)
+            file_symlink(rep_dict.get('bw_dir', None), self.bw_dir)
+            file_symlink(rep_dict.get('peak_dir', None), self.peak_dir)
+            file_symlink(rep_dict.get('motif_dir', None), self.motif_dir)
+            file_symlink(rep_dict.get('qc_dir', None), self.qc_dir)
         else:
             log.error('merge() failed, no rep detected')
             raise ValueError('merge() failed, no rep detected')
