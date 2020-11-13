@@ -419,6 +419,9 @@ class Align(object):
             self.index = self.extra_index
             self.index_check = 0 if AlignIndex(
                 index=self.extra_index, aligner=self.aligner).is_index() else 1
+        elif isinstance(self.index, str):
+            self.index_check = 0 if AlignIndex(
+                index=self.index, aligner=self.aligner).is_index() else 1
         elif isinstance(self.genome, str):
             self.index = AlignIndex(aligner=self.aligner).search(
                 genome=self.genome, group = 'genome')
@@ -2715,6 +2718,9 @@ class CnR1(object):
         if file_exists(bam) and not self.overwrite:
             log.info('align() skipped, file exists: {}'.format(bam))
         else:
+            # print('!AAAA-1')
+            # print_dict(args_sp)
+            # sys.exit()
             Align(**args_sp).run()
 
         # copy files
