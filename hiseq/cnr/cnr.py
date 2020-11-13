@@ -111,6 +111,46 @@ def print_dict(d):
         print('{:>20s}: {}'.format(k, v))
 
 
+def file_symlink(src, dest, absolute_path=False):
+    """
+    Create symlink for dest files
+    
+    file, directories
+    """
+    if isinstance(src, str) and isinstance(dest, str):
+        src = os.path.abspath(os.path.expanduser(os.path.expandvars(src)))
+        dest = os.path.abspath(os.path.expanduser(os.path.expandvars(dest)))
+
+        # target exists
+        if os.path.exists(dest):
+            log.info('symlink() skipped, dest exists: {}'.format(dest))
+        elif os.path.isdir(src):
+            if absolute_path:
+                os.symlink(src, dest)
+            else:
+                rel_src = os.path.relpath(src, dest)
+                os.symlink(rel_src, dest)
+
+        elif os.path.isfile(src):  
+            src_filename = os.path.basename(src)
+            src_dirname = os.path.dirname(src)
+            dest_dirname = os.path.dirname(dest)
+
+            if absolute_path:
+                os.symlink(src, dest)
+            else:
+                rel_src_dirname = os.path.relpath(src_dirname, dest_dirname)
+                rel_src = os.path.join(rel_src_dirname, src_filename)
+                os.symlink(rel_src, dest)
+
+        else:
+            log.error('src path should be file or directory')
+
+    else:
+        log.error('src path should be string, got: {}'.format(
+            type(src).__name__))
+
+
 def file_remove(x, ask=True):
     """
     Remove files, directories
@@ -1769,8 +1809,8 @@ class CnRx(object):
         """
         Copy bam files
         """
-        symlink(self.ip_bam_from, self.ip_bam)
-        symlink(self.input_bam_from, self.input_bam)
+        file_symlink(self.ip_bam_from, self.ip_bam)
+        file_symlink(self.input_bam_from, self.input_bam)
         # file_copy(self.ip_bam_from, self.ip_bam)
         # file_copy(self.input_from, self.input_bam)
 
@@ -1779,8 +1819,8 @@ class CnRx(object):
         """
         Copy bw files
         """
-        symlink(self.ip_bw_from, self.ip_bw)
-        symlink(self.input_bw_from, self.input_bw)
+        file_symlink(self.ip_bw_from, self.ip_bw)
+        file_symlink(self.input_bw_from, self.input_bw)
         # file_copy(self.ip_bw_from, self.ip_bw)
         # file_copy(self.input_bw_from, self.input_bw)
 
@@ -2510,9 +2550,9 @@ class CnRn(object):
             log.warning('merge() skipped, Only 1 replicate detected')
             # copy files: bam, bw, peak
             rep_dict = CnRReader(self.rep_list[0]).args
-            symlink(rep_dict.get('bam', None), self.bam)
-            symlink(rep_dict.get('bw', None), self.bw)
-            symlink(rep_dict.get('peak', None), self.peak)
+            file_symlink(rep_dict.get('bam', None), self.bam)
+            file_symlink(rep_dict.get('bw', None), self.bw)
+            file_symlink(rep_dict.get('peak', None), self.peak)
         else:
             log.error('merge() failed, no rep detected')
             raise ValueError('merge() failed, no rep detected')
@@ -2552,8 +2592,8 @@ class CnR1(object):
             shutil.copy(self.fq1, raw_fq1)
             shutil.copy(self.fq2, raw_fq2)
         else:
-            symlink(self.fq1, raw_fq1, absolute_path=True)
-            symlink(self.fq2, raw_fq2, absolute_path=True)
+            file_symlink(self.fq1, raw_fq1, absolute_path=True)
+            file_symlink(self.fq2, raw_fq2, absolute_path=True)
 
 
     def trim(self, trimmed=True):
@@ -2585,13 +2625,13 @@ class CnR1(object):
         if trimmed is True:
             ## fq1
             if is_gz(fq1):
-                symlink(fq1, clean_fq1, absolute_path=True)
+                file_symlink(fq1, clean_fq1, absolute_path=True)
             else:
                 gzip_cmd(fq1, clean_fq1, decompress=False, rm=False)
             ## fq2
             if not fq2 is None:
                 if is_gz(fq2):
-                    symlink(fq2, clean_fq2, absolute_path=True)
+                    file_symlink(fq2, clean_fq2, absolute_path=True)
                 else:
                     gzip_cmd(fq2, clean_fq2, decompress=False, rm=False)
         else:
@@ -2602,8 +2642,8 @@ class CnR1(object):
                 trimmer = Trimmer(**args_trim)
                 trimmer.run()
                 fq1, fq2 = trimmer.out_files
-                symlink(fq1, clean_fq1)
-                symlink(fq2, clean_fq2)
+                file_symlink(fq1, clean_fq1)
+                file_symlink(fq2, clean_fq2)
 
 
     def align_genome(self):
@@ -2641,7 +2681,7 @@ class CnR1(object):
         g_align_flagstat = g.get('align_flagstat', None)
 
         # copy files
-        symlink(g_align_bam, self.bam, absolute_path=True)
+        file_symlink(g_align_bam, self.bam, absolute_path=True)
         file_copy(g_align_stat, self.align_stat)
         file_copy(g_align_json, self.align_json)
         file_copy(g_align_flagstat, self.align_flagstat)
@@ -2716,14 +2756,14 @@ class CnR1(object):
         bam_raw = self.get_bam(self.align_dir)
 
         # symlink bam
-        symlink(bam_raw, self.bam, absolute_path=True)
+        file_symlink(bam_raw, self.bam, absolute_path=True)
 
         # remove dup
         if rmdup:
             Bam(self.bam).rmdup(self.bam_rmdup)
             Bam(self.bam_rmdup).index()
         else:
-            symlink(self.bam, self.bam_rmdup, absolute_path=True)
+            file_symlink(self.bam, self.bam_rmdup, absolute_path=True)
 
 
     def call_peak(self):
@@ -3911,8 +3951,8 @@ class ChIPseqR1(object):
             shutil.copy(self.fq1, raw_fq1)
             shutil.copy(self.fq2, raw_fq2)
         else:
-            symlink(self.fq1, raw_fq1, absolute_path=True)
-            symlink(self.fq2, raw_fq2, absolute_path=True)
+            file_symlink(self.fq1, raw_fq1, absolute_path=True)
+            file_symlink(self.fq2, raw_fq2, absolute_path=True)
 
 
     def trim(self, trimmed=False):
@@ -3942,13 +3982,13 @@ class ChIPseqR1(object):
         if trimmed is True:
             ## fq1
             if is_gz(fq1):
-                symlink(fq1, clean_fq1, absolute_path=True)
+                file_symlink(fq1, clean_fq1, absolute_path=True)
             else:
                 gzip_cmd(fq1, clean_fq1, decompress=False, rm=False)
             ## fq2
             if not fq2 is None:
                 if is_gz(fq2):
-                    symlink(fq2, clean_fq2, absolute_path=True)
+                    file_symlink(fq2, clean_fq2, absolute_path=True)
                 else:
                     gzip_cmd(fq2, clean_fq2, decompress=False, rm=False)
         else:
@@ -3959,8 +3999,8 @@ class ChIPseqR1(object):
                 trimmer = Trimmer(**args_trim)
                 trimmer.run()
                 fq1, fq2 = trimmer.out_files
-                symlink(fq1, clean_fq1)
-                symlink(fq2, clean_fq2)
+                file_symlink(fq1, clean_fq1)
+                file_symlink(fq2, clean_fq2)
 
 
     def align(self):
@@ -4513,9 +4553,9 @@ class ChIPseqRn(object):
             log.warning('merge() skipped, Only 1 replicate detected')
             # copy files: bam, bw, peak
             rep_dict = ChIPseqReader(self.rep_list[0]).args
-            symlink(rep_dict.get('bam', None), self.bam)
-            symlink(rep_dict.get('bw', None), self.bw)
-            symlink(rep_dict.get('peak', None), self.peak)
+            file_symlink(rep_dict.get('bam', None), self.bam)
+            file_symlink(rep_dict.get('bw', None), self.bw)
+            file_symlink(rep_dict.get('peak', None), self.peak)
         else:
             log.error('merge() failed, no rep detected')
             raise ValueError('merge() failed, no rep detected')
@@ -4548,16 +4588,16 @@ class ChIPseqRx(object):
         """
         Copy bam files
         """
-        symlink(self.ip_args.get('bam', None), self.ip_bam)
-        symlink(self.input_args.get('bam', None), self.input_bam)
+        file_symlink(self.ip_args.get('bam', None), self.ip_bam)
+        file_symlink(self.input_args.get('bam', None), self.input_bam)
 
 
     def get_bw_files(self):
         """
         Copy bw files
         """
-        symlink(self.ip_args.get('bw', None), self.ip_bw)
-        symlink(self.input_args.get('bw', None), self.input_bw)
+        file_symlink(self.ip_args.get('bw', None), self.ip_bw)
+        file_symlink(self.input_args.get('bw', None), self.input_bw)
 
         # ip over input, subtract
         bwCompare(self.ip_bw, self.input_bw, self.ip_over_input_bw, 'subtract',
