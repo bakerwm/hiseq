@@ -698,6 +698,7 @@ class CallPeak(object):
             'input': None,
             'genome': None,
             'genome_size': None,
+            'genome_size_file': None,
             'prefix': None,
             'outdir': None,
             'overwrite': False,
@@ -720,29 +721,7 @@ class CallPeak(object):
         self.ip = file_abspath(self.ip)
         self.input = file_abspath(self.input)
 
-        # genome
-        g = {
-          'dm6': 'dm',
-          'dm3': 'dm',
-          'mm9': 'mm',
-          'mm10': 'mm',
-          'hg19': 'hs',
-          'hg38': 'hs',
-          'GRCh38': 'hs'
-        }
-
-        if isinstance(self.genome, str):
-            self.genome_size = g.get(self.genome, None)
-            if self.genome_size is None:
-                log.error('genome, unknown, {}'.format(self.genome))
-
-        elif isinstance(self.genome_size, int):
-            if self.genome_size < 1:
-                log.error('genome_size, failed, {}'.format(self.genome_size))
-
-        else:
-            pass
-
+        # file name
         self.ip_name = os.path.splitext(os.path.basename(self.ip))[0]
         if self.input is None:
             self.input_name = ''
@@ -750,12 +729,45 @@ class CallPeak(object):
             self.input_name = os.path.splitext(os.path.basename(self.input))[0]
         
         # prefix
-        if isinstance(self.prefix, str):
-            pass
-        else:
+        if not isinstance(self.prefix, str):
             self.prefix = self.ip_name
 
         self.prefix_top001 = self.prefix + '.top0.01'
+
+
+    def init_genome(self):
+        """
+        Determine the genome_size, genome_size_file
+        """
+        # genome
+        g = {
+          'dm6': 'dm',
+          'dm3': 'dm',
+          'mm9': 'mm',
+          'mm10': 'mm',
+          'hg19': 'hs',
+          'hg38': 'hs'
+        }
+
+        if isinstance(self.genome, str):
+            self.genome_size = g.get(self.genome, 0)
+            self.genome_size_file = Genome(genome=self.genome).get_fasize()
+
+            if self.genome_size is None:
+                raise ValueError('unknown genome: {}'.format(self.genome))
+
+        elif isinstance(self.genome_size, int):
+            if self.genome_size < 1:
+                raise ValueError('genome_size, failed, {}'.format(
+                    self.genome_size))
+            elif not isinstance(self.genome_size_file, str):
+                raise ValueError('genome_size_file, failed, {}'.format(
+                    self.genome_size_file))
+            else:
+                pass
+        
+        else:
+            raise ValueError('--genome, --genome-size, required')
 
 
     def init_files(self):
@@ -775,7 +787,7 @@ class CallPeak(object):
         self = update_obj(self, default_files, force=True) # key
 
         ## gsize
-        self.genome_size_file = Genome(genome=self.genome).get_fasize()
+        # self.genome_size_file = Genome(genome=self.genome).get_fasize()
         
 
     def run_macs2(self):
@@ -1043,7 +1055,7 @@ class CnRxConfig(object):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
         self.init_fq()
-        # self.init_index()
+        self.init_index()
         self.init_files()
 
 
@@ -1070,6 +1082,7 @@ class CnRxConfig(object):
             'overwrite': False,
             'binsize': 50,
             'genome_size': 0,
+            'genome_size_file': None,
             'gene_bed': None,
             'keep_tmp': False
         }
@@ -1217,6 +1230,58 @@ class CnRxConfig(object):
                 self.report_dir])
 
 
+    def init_index(self):
+        """
+        alignment index
+        genome, extra_index, genome_index
+
+        output: genome_index, spikein_index
+        """
+        # check genome size
+        if isinstance(self.extra_index, str):
+            self.genome_index = self.extra_index
+
+        ## check genome index
+        if isinstance(self.genome_index, str):
+            ai = AlignIndex(index=self.genome_index)
+
+            if self.genome_size < 1:
+                self.genome_size = ai.index_size()
+
+            if not isinstance(self.genome_size_file, str): 
+                self.genome_size_file = ai.index_size(return_file=True)
+
+        elif isinstance(self.genome, str):
+            self.genome_index = AlignIndex(aligner=self.aligner).search(
+                genome=self.genome, group='genome')
+
+            self.genome_size_file = Genome(genome=self.genome).get_fasize()
+
+            with open(self.genome_size_file, 'rt') as r:
+                s = [i.strip().split('\t')[-1] for i in r.readlines()]
+            
+            if self.genome_size < 1:
+                self.genome_size = sum(map(int, s))
+            
+        else:
+            raise ValueError('index failed, extra_index, genome, genome_index')
+
+        # check spikein index
+        if isinstance(self.spikein_index, str):
+            ai = AlignIndex(index=self.spikein_index, aligner=self.aligner)
+
+            if not ai.is_index():
+                raise ValueError('spikein_index failed, {}'.format(
+                    self.spikein_index))
+
+        elif isinstance(self.spikein, str):
+            self.spikein_index = AlignIndex(aligner=self.aligner).search(
+                genome=self.spikein, group='genome')
+
+        else:
+            self.spikein_index = None
+
+
 class CnRnConfig(object):
     """
     Prepare directories for R1 single replicates
@@ -1253,6 +1318,7 @@ class CnRnConfig(object):
             'overwrite': False,
             'binsize': 50,
             'genome_size': 0,
+            'gsize_file': None,
             'keep_tmp': False
         }
         self = update_obj(self, args_init, force=False)
@@ -1317,34 +1383,45 @@ class CnRnConfig(object):
         """
         # check genome size
         if isinstance(self.extra_index, str):
+            self.genome_index = self.extra_index
+
+        ## check genome index
+        if isinstance(self.genome_index, str):
+            ai = AlignIndex(index=self.genome_index)
+
             if self.genome_size < 1:
-                ai = AlignIndex(index=self.extra_index)
                 self.genome_size = ai.index_size()
-                self.gsize_file = ai.index_size(return_file=True)
-                self.genome_index = self.extra_index
+
+            if not isinstance(self.genome_size_file, str): 
+                self.genome_size_file = ai.index_size(return_file=True)
+
         elif isinstance(self.genome, str):
-            self.gsize_file = Genome(genome=self.genome).get_fasize()
-            gsize = self.gsize_file
-            with open(gsize, 'rt') as r:
-                s = [i.strip().split('\t')[-1] for i in r.readlines()]
-            if self.genome_size < 1:
-                self.genome_size = sum(map(int, s))
             self.genome_index = AlignIndex(aligner=self.aligner).search(
                 genome=self.genome, group='genome')
-        elif isinstance(self.genome_index, str):
-            pass
+
+            self.genome_size_file = Genome(genome=self.genome).get_fasize()
+
+            with open(self.genome_size_file, 'rt') as r:
+                s = [i.strip().split('\t')[-1] for i in r.readlines()]
+            
+            if self.genome_size < 1:
+                self.genome_size = sum(map(int, s))
+            
         else:
             raise ValueError('index failed, extra_index, genome, genome_index')
 
-        # check spikein
+        # check spikein index
         if isinstance(self.spikein_index, str):
             ai = AlignIndex(index=self.spikein_index, aligner=self.aligner)
+
             if not ai.is_index():
                 raise ValueError('spikein_index failed, {}'.format(
                     self.spikein_index))
+
         elif isinstance(self.spikein, str):
             self.spikein_index = AlignIndex(aligner=self.aligner).search(
                 genome=self.spikein, group='genome')
+
         else:
             self.spikein_index = None
 
@@ -1463,7 +1540,7 @@ class CnR1Config(object):
             'overwrite': False,
             'binsize': 50,
             'genome_size': 0,
-            'gsize_file': None,
+            'genome_size_file': None,
             'gene_bed': None,
             'keep_tmp': False
         }
@@ -1525,34 +1602,45 @@ class CnR1Config(object):
         """
         # check genome size
         if isinstance(self.extra_index, str):
+            self.genome_index = self.extra_index
+
+        ## check genome index
+        if isinstance(self.genome_index, str):
+            ai = AlignIndex(index=self.genome_index)
+
             if self.genome_size < 1:
-                ai = AlignIndex(index=self.extra_index)
                 self.genome_size = ai.index_size()
-                self.gsize_file = ai.index_size(return_file=True)
-                self.genome_index = self.extra_index
+
+            if not isinstance(self.genome_size_file, str): 
+                self.genome_size_file = ai.index_size(return_file=True)
+
         elif isinstance(self.genome, str):
-            self.gsize_file = Genome(genome=self.genome).get_fasize()
-            gsize = self.gsize_file
-            with open(gsize, 'rt') as r:
-                s = [i.strip().split('\t')[-1] for i in r.readlines()]
-            if self.genome_size < 1:
-                self.genome_size = sum(map(int, s))
             self.genome_index = AlignIndex(aligner=self.aligner).search(
                 genome=self.genome, group='genome')
-        elif isinstance(self.genome_index, str):
-            pass
+
+            self.genome_size_file = Genome(genome=self.genome).get_fasize()
+
+            with open(self.genome_size_file, 'rt') as r:
+                s = [i.strip().split('\t')[-1] for i in r.readlines()]
+            
+            if self.genome_size < 1:
+                self.genome_size = sum(map(int, s))
+            
         else:
             raise ValueError('index failed, extra_index, genome, genome_index')
 
-        # check spikein
+        # check spikein index
         if isinstance(self.spikein_index, str):
             ai = AlignIndex(index=self.spikein_index, aligner=self.aligner)
+
             if not ai.is_index():
                 raise ValueError('spikein_index failed, {}'.format(
                     self.spikein_index))
+
         elif isinstance(self.spikein, str):
             self.spikein_index = AlignIndex(aligner=self.aligner).search(
                 genome=self.spikein, group='genome')
+
         else:
             self.spikein_index = None
 
@@ -1900,7 +1988,7 @@ class CnRx(object):
         ...
         """
         args_global = self.__dict__.copy()
-        args_required = ['genome_size', 'gsize_file']
+        args_required = ['genome_size', 'genome_size_file']
         args_local = dict((k, args_global[k]) for k in args_required if
             k in args_global)
 
@@ -1911,7 +1999,7 @@ class CnRx(object):
             output=getattr(self, 'peak_dir', None),
             prefix=self.ip_args.get('smp_name', None),            
             # genome_size=self.genome_size,
-            # gsize_file=self.gsize_file,
+            # genome_size_file=self.genome_size_file,
             **args_local)
 
         ## call peaks
@@ -1932,7 +2020,9 @@ class CnRx(object):
             'ip': self.ip_bam,
             'input': self.input_bam,
             'outdir': self.peak_dir,
-            'genome': self.genome
+            'genome': self.genome,
+            'genome_size': self.genome_size,
+            'genome_size_file': self.genome_size_file
         }
         CallPeak(**args_local).run()
         CallPeak(method='macs2', **args_local).run()
@@ -2217,7 +2307,7 @@ class CnRn(object):
         """
         cmd = ' '.join([
             '{}'.format(shutil.which('bedGraphToBigWig')),
-            '{} {} {}'.format(self.bg, self.gsize_file, self.bw)
+            '{} {} {}'.format(self.bg, self.genome_size_file, self.bw)
             ])
 
         if file_exists(self.bw) and not self.overwrite:
@@ -2248,14 +2338,15 @@ class CnRn(object):
         output = args_peak.pop('peak_dir', None)
         prefix = args_peak.pop('smp_name', None)
         genome_size = getattr(self, 'genome_size', 0)
-        gsize_file = getattr(self, 'gsize_file', None)
+        genome_size_file = getattr(self, 'genome_size_file', None)
 
         if check_file(self.peak):
             log.info('call_peak() skipped, file exists: {}'.format(
                 self.peak))
         else:
             Macs2(bed, genome, output, prefix, atac=False,
-                genome_size=genome_size, gsize_file=gsize_file).callpeak()
+                genome_size=genome_size, 
+                genome_size_file=genome_size_file).callpeak()
 
 
     def call_peak(self):
@@ -2266,7 +2357,9 @@ class CnRn(object):
             'ip': self.bam,
             'input': None,
             'outdir': self.peak_dir,
-            'genome': self.genome
+            'genome': self.genome,
+            'genome_size': self.genome_size,
+            'genome_size_file': self.genome_size_file
         }
         CallPeak(method='macs2', **args_local).run()
         CallPeak(method='seacr', **args_local).run()
@@ -2855,7 +2948,9 @@ class CnR1(object):
             'ip': self.bam,
             'input': None,
             'outdir': self.peak_dir,
-            'genome': self.genome
+            'genome': self.genome,
+            'genome_size': self.genome_size,
+            'genome_size_file': self.genome_size_file
         }
         CallPeak(method='macs2', **args_local).run()
         CallPeak(method='seacr', **args_local).run()
@@ -2895,7 +2990,7 @@ class CnR1(object):
         """
         cmd = ' '.join([
             '{}'.format(shutil.which('bedGraphToBigWig')),
-            '{} {} {}'.format(self.bg, self.gsize_file, self.bw)
+            '{} {} {}'.format(self.bg, self.genome_size_file, self.bw)
             ])
 
         if file_exists(self.bw) and not self.overwrite:
@@ -3500,10 +3595,10 @@ class ChIPseqR1Config(object):
             if self.genome_size < 1:
                 ai = AlignIndex(index=self.extra_index[-1])
                 self.genome_size = ai.index_size()
-                self.gsize_file = ai.index_size(return_file=True)
+                self.genome_size_file = ai.index_size(return_file=True)
         elif isinstance(self.genome, str):
-            self.gsize_file = Genome(genome=self.genome).get_fasize()
-            gsize = self.gsize_file
+            self.genome_size_file = Genome(genome=self.genome).get_fasize()
+            gsize = self.genome_size_file
             with open(gsize, 'rt') as r:
                 s = [i.strip().split('\t')[-1] for i in r.readlines()]
             if self.genome_size < 1:
@@ -3640,7 +3735,7 @@ class ChIPseqRnConfig(object):
             if self.genome_size < 1:
                 ai = AlignIndex(index=self.extra_index[-1])
                 self.genome_size = ai.index_size()
-                self.gsize_file = ai.index_size(return_file=True)
+                self.genome_size_file = ai.index_size(return_file=True)
         elif isinstance(self.genome, str):
             gsize = Genome(genome=self.genome).get_fasize()
             with open(gsize, 'rt') as r:
@@ -3767,7 +3862,7 @@ class ChIPseqRxConfig(object):
             if self.genome_size < 1:
                 ai = AlignIndex(index=self.extra_index[-1])
                 self.genome_size = ai.index_size()
-                self.gsize_file = ai.index_size(return_file=True)
+                self.genome_size_file = ai.index_size(return_file=True)
         elif isinstance(self.genome, str):
             gsize = Genome(genome=self.genome).get_fasize()
             with open(gsize, 'rt') as r:
@@ -3893,10 +3988,10 @@ class ChIPseqConfig(object):
             if self.genome_size < 1:
                 ai = AlignIndex(index=self.extra_index[-1])
                 self.genome_size = ai.index_size()
-                self.gsize_file = ai.index_size(return_file=True)
+                self.genome_size_file = ai.index_size(return_file=True)
         elif isinstance(self.genome, str):
-            self.gsize_file = Genome(genome=self.genome).get_fasize()
-            gsize = self.gsize_file # Genome(genome=self.genome).get_fasize()
+            self.genome_size_file = Genome(genome=self.genome).get_fasize()
+            gsize = self.genome_size_file # Genome(genome=self.genome).get_fasize()
             with open(gsize, 'rt') as r:
                 s = [i.strip().split('\t')[-1] for i in r.readlines()]
             if self.genome_size < 1:
@@ -4183,7 +4278,7 @@ class ChIPseqR1(object):
 
         # determine the genome size
         genome_size = getattr(self, 'genome_size', 0)
-        gsize_file = getattr(self, 'gsize_file', None)
+        genome_size_file = getattr(self, 'genome_size_file', None)
 
         if check_file(self.peak):
             log.info('call_peak() skipped, file exists: {}'.format(
@@ -4191,7 +4286,7 @@ class ChIPseqR1(object):
         else:
             Macs2(bed, self.genome, self.peak_dir, self.project_name,
                 atac=False, genome_size=genome_size, 
-                gsize_file=gsize_file).callpeak()
+                genome_size_file=genome_size_file).callpeak()
 
 
     def qc_lendist(self):
@@ -4411,14 +4506,14 @@ class ChIPseqRn(object):
         output = args_peak.pop('peak_dir', None)
         prefix = args_peak.pop('smp_name', None)
         genome_size = getattr(self, 'genome_size', 0)
-        gsize_file = getattr(self, 'gsize_file', None)
+        genome_size_file = getattr(self, 'genome_size_file', None)
 
         if check_file(self.peak):
             log.info('call_peak() skipped, file exists: {}'.format(
                 self.peak))
         else:
             Macs2(bed, genome, output, prefix, atac=False,
-                genome_size=genome_size, gsize_file=gsize_file).callpeak()
+                genome_size=genome_size, genome_size_file=genome_size_file).callpeak()
 
 
     def get_bam_cor(self, window=500):
@@ -4692,7 +4787,7 @@ class ChIPseqRx(object):
         ...
         """
         args_global = self.__dict__.copy()
-        args_required = ['genome_size', 'gsize_file']
+        args_required = ['genome_size', 'genome_size_file']
         args_local = dict((k, args_global[k]) for k in args_required if
             k in args_global)
 
@@ -4703,7 +4798,7 @@ class ChIPseqRx(object):
             output=getattr(self, 'peak_dir', None),
             prefix=self.ip_args.get('smp_name', None),            
             # genome_size=self.genome_size,
-            # gsize_file=self.gsize_file,
+            # genome_size_file=self.genome_size_file,
             **args_local)
 
         ## call peaks
