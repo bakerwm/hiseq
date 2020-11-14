@@ -2605,11 +2605,11 @@ class AlignIndex(object):
             return os.path.basename(index)
 
 
-    def _tmp(self):
+    def _tmp(self, suffix='.txt'):
         """
         Create a tmp file to save json object
         """
-        tmp = tempfile.NamedTemporaryFile(prefix='tmp', suffix='.txt',
+        tmp = tempfile.NamedTemporaryFile(prefix='tmp', suffix=suffix,
             delete=False)
         return tmp.name
 
@@ -2640,7 +2640,7 @@ class AlignIndex(object):
             return None
 
         ## aligner
-        gsize = self._tmp()
+        gsize = self._tmp(suffix='.chrom.sizes')
         chrLength = 0
         aligner = self.get_aligner(index)
 
