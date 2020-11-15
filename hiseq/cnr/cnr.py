@@ -1073,6 +1073,7 @@ class CnRxConfig(object):
             'input_fq2': None,
             'smp_name': None,
             'genome': None,
+            'genome_index': None,
             'spikein': None,
             'spikein_index': None,
             'aligner': 'bowtie2',
@@ -1797,7 +1798,6 @@ class CnR(object):
         Run multiple samples, rep_list
         """
         CnRRn(**self.__dict__).run()
-
 
 
     def run_CnR_from_design(self):
