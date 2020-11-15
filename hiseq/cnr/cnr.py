@@ -965,7 +965,7 @@ class CnRConfig(object):
             'overwrite': False,
             'binsize': 50,
             'genome_size': 0,
-            'trimmed': True,
+            'trimmed': False,
             'keep_tmp': False
         }
         self = update_obj(self, args_init, force=False)
@@ -1085,7 +1085,8 @@ class CnRxConfig(object):
             'genome_size': 0,
             'genome_size_file': None,
             'gene_bed': None,
-            'keep_tmp': False
+            'keep_tmp': False,
+            'trimmed': False
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'hiseq_rx' # 
@@ -1320,7 +1321,8 @@ class CnRnConfig(object):
             'binsize': 50,
             'genome_size': 0,
             'gsize_file': None,
-            'keep_tmp': False
+            'keep_tmp': False,
+            'trimmed': False
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'hiseq_rn' # 
@@ -1543,7 +1545,8 @@ class CnR1Config(object):
             'genome_size': 0,
             'genome_size_file': None,
             'gene_bed': None,
-            'keep_tmp': False
+            'keep_tmp': False,
+            'trimmed': False
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'hiseq_r1' # 
@@ -2767,7 +2770,7 @@ class CnR1(object):
             file_symlink(self.fq2, raw_fq2, absolute_path=True)
 
 
-    def trim(self, trimmed=True):
+    def trim(self, trimmed=False):
         """
         using bowtie2, --local
         no need to trim adapters
@@ -3011,7 +3014,7 @@ class CnR1(object):
         Run for genome
         """
         self.prep_raw()
-        self.trim()
+        self.trim(trimmed=trimmed)
         self.align_genome()
         self.get_bam_rmdup()
         self.call_peak()
@@ -3344,10 +3347,10 @@ class CnR1(object):
         self.pipe_qc()
         self.report()
 
-        # remove clean fastq files
-        del_list = self.clean_fq_list
-        if not self.keep_tmp:
-            file_remove(del_list, ask=False)
+        # # remove clean fastq files
+        # del_list = self.clean_fq_list
+        # if not self.keep_tmp:
+        #     file_remove(del_list, ask=False)
 
 
 class CnRt(object):
