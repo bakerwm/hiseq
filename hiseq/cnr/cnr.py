@@ -522,7 +522,7 @@ class Align(object):
         """
         self.cmd = ' '.join([
             '{}'.format(shutil.which('bowtie2')),
-            '-p {}'.format(self.threads),
+            '--mm -p {}'.format(self.threads),
             '--local --very-sensitive --no-mixed --no-discordant -I 10',
             '-X {}'.format(self.max_fragment),
             '-x {}'.format(self.index),
@@ -886,7 +886,7 @@ class CallPeak(object):
             self.bampe_to_bg(self.input, self.input_bg)
 
             cmd = ' '.join([
-                '&& {}'.format(cmd),
+                '{} &&'.format(cmd),
                 'bash {}'.format(shutil.which('SEACR_1.3.sh')),
                 '{} {}'.format(self.ip_bg, self.input_bg),
                 'non stringent {}'.format(self.outdir + '/' + self.prefix)            
@@ -1260,7 +1260,7 @@ class CnRxConfig(object):
             self.genome_size_file = Genome(genome=self.genome).get_fasize()
 
             with open(self.genome_size_file, 'rt') as r:
-                s = [i.strip().split('\t')[-1] for i in r.readlines()]
+                s = [i.strip().split('\t')[1] for i in r.readlines()]
             
             if self.genome_size < 1:
                 self.genome_size = sum(map(int, s))
@@ -1405,7 +1405,7 @@ class CnRnConfig(object):
             self.genome_size_file = Genome(genome=self.genome).get_fasize()
 
             with open(self.genome_size_file, 'rt') as r:
-                s = [i.strip().split('\t')[-1] for i in r.readlines()]
+                s = [i.strip().split('\t')[1] for i in r.readlines()]
             
             if self.genome_size < 1:
                 self.genome_size = sum(map(int, s))
@@ -1625,11 +1625,11 @@ class CnR1Config(object):
             self.genome_size_file = Genome(genome=self.genome).get_fasize()
 
             with open(self.genome_size_file, 'rt') as r:
-                s = [i.strip().split('\t')[-1] for i in r.readlines()]
+                s = [i.strip().split('\t')[1] for i in r.readlines()]
             
             if self.genome_size < 1:
                 self.genome_size = sum(map(int, s))
-            
+
         else:
             raise ValueError('index failed, extra_index, genome, genome_index')
 
@@ -3014,7 +3014,7 @@ class CnR1(object):
         Run for genome
         """
         self.prep_raw()
-        self.trim(trimmed=trimmed)
+        self.trim(trimmed=self.trimmed)
         self.align_genome()
         self.get_bam_rmdup()
         self.call_peak()
@@ -3037,9 +3037,9 @@ class CnR1(object):
         
         Bam().count_reads()
         """
-        bam = Bam(bam)
-        is_pe = bam.isPaired()
-        n_map = bam.getNumberOfAlignments()
+        bam_o = Bam(bam)
+        is_pe = bam_o.isPaired()
+        n_map = bam_o.getNumberOfAlignments()
         if is_pe:
             n_map = n_map/2
 
