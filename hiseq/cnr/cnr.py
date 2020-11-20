@@ -2121,11 +2121,14 @@ class CnRx(object):
         """
         Calculate fingerprint for bam files
         """
-        Bam2fingerprint(
-            bam_list=[self.ip_bam, self.input_bam],
-            prefix='09.fingerprint',
-            outdir=self.qc_dir,
-            threads=self.threads).run()
+        try:
+            Bam2fingerprint(
+                bam_list=[self.ip_bam, self.input_bam],
+                prefix='09.fingerprint',
+                outdir=self.qc_dir,
+                threads=self.threads).run()
+        except:
+            log.error('Bam2fingerprint() failed, see {}'.format(self.qc_dir))
 
 
     def report(self):
@@ -2450,9 +2453,12 @@ class CnRn(object):
 
         if len(self.frip_list) > 0:
             with open(self.frip_txt, 'wt') as w:
+                w.write('\t'.join(['FRiP', 'peak_reads', 'total_reads', 'id']) + '\n')
                 for f in self.frip_list:
                     with open(f) as r:
                         for line in r:
+                            if line.startswith('FRiP'):
+                                continue
                             w.write(line)
 
 
@@ -3303,6 +3309,7 @@ class CnR1(object):
         self.qc_trim_summary()
         self.qc_align_summary()
         self.qc_lendist()
+        self.qc_frip()
         self.qc_mito()
         self.qc_tss_enrich()
         self.qc_genebody_enrich()
