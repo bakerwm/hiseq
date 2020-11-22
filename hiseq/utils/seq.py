@@ -11,7 +11,7 @@ import sys
 import re
 from xopen import xopen
 import collections # Fastx().collapse()
-from .helper import *
+from hiseq.utils.helper import *
 
 
 class Fastx(object):
@@ -86,7 +86,6 @@ class Fastx(object):
             fx_type = None
 
         return fx_type
-
 
     def file_ext(self, fn):
         """
@@ -318,6 +317,49 @@ class Fastx(object):
             return sum(buf.count(b'\n>') for buf in _make_gen(fh.read))
 
 
+    def subseq(self, out, region=0):
+        """
+        Get subseq by region
+
+        The region cloud be: 1-indexed
+        1:20,   the first 20 bases
+        -20:-1, the last 20 bases
+        1:-1,   the full length
+        """
+        if region == 0:
+            region = '1:-1' # the full length
+
+        # check region format
+        p = re.compile('^(-?\d+):(-?\d+)$')
+        m = p.search(region)
+        if m:
+            pass
+        else:
+            log.error('unknown region format, expect: 1:-1, got: {}'.format(region))
+
+        # return 0-indexed for python
+        start = int(m.group(1))
+        end = int(m.group(2))
+        if start > 0:
+            start = start - 1
+
+        if end < 0:
+            end = end + 1
+
+        # exceptions
+        # end==0: [start:]
+
+        with xopen(self.input) as r, xopen(out, 'wt') as w:
+            for name, seq, qual in self.readfq(r):
+                seq = seq[start:] if end == 0 else seq[start:end]
+                if qual is None: # fasta
+                    w.write('\n'.join(['>'+name, seq]) + '\n')
+                else:
+                    qual = qual[start:] if end == 0 else qual[start:end]
+                    w.write('\n'.join(['@'+name, seq, '+', qual]) + '\n')
+
+
+    # Deprecated: (see: subseq)
     def cut(self, out, len_min=15, **kwargs):
         """
         Cut bases from either ends of fasta/q
@@ -364,6 +406,19 @@ class Fastx(object):
                     return x
             else:
                 raise Exception('unknown format, cut_to_length={}'.format(cut_to_length))
+            # if isinstance(cut_to_length, int):
+            #     if cut_to_length > 0: # cut from 3' end
+            #         x2 = x[:cut_to_length]
+            #     else: # cut from 5' end
+            #         n = len(x) - abs(cut_to_length)
+            #         if n < 0:
+            #             n = 0
+            #         x2 = x[n:]
+            #     return x2
+            # else:
+            #     log.error('unknown x, expect int, got {}'.format(cut_to_length))
+            #     return x
+
 
         # merge two funcs
         def cut_cut(x):
@@ -389,6 +444,7 @@ class Fastx(object):
                     w.write('\n'.join(['@'+name, seq, '+', qual]) + '\n')
 
 
+    # Deprecated: (see: subseq)
     def cut_pe(self, input2, out1, out2, len_min=15, **kwargs):
         """
         Cut bases from either ends of fasta/q
@@ -495,5 +551,58 @@ class Fastx(object):
                     w.write('\n'.join(['@'+name, key, '+', qual]) + '\n')
                 else:
                     w.write('\n'.join(['>'+name, key]) + '\n')
+
+
+    def detect_adapter(self):
+        """
+        Guess adapters, sampling the first 1000000 records
+        TruSeq    AGATCGGAAGAGC
+        Nextera   CTGTCTCTTATACACATCT
+        smallRNA  TGGAATTCTCGG
+
+        to-do
+        specific type of adapters
+        """
+        ad = {
+            'truseq': 'AGATCGGAAGAGC',
+            'nextera': 'CTGTCTCTTATA',
+            'smallrna': 'TGGAATTCTCGG'
+        }
+
+        # count 
+        d = {}
+        n_max = 1000000
+        n = 0
+        with xopen(self.input) as r:
+            for _, seq, _ in self.readfq(r):
+                n += 1
+                if n > n_max:
+                    break
+                # check
+                if ad['truseq'] in seq:
+                    d['truseq'] = d.get('truseq', 0) + 1
+                elif ad['nextera'] in seq:
+                    d['nextera'] = d.get('nextera', 0) + 1
+                elif ad['smallrna'] in seq:
+                    d['smallrna'] = d.get('smallrna', 0) + 1
+                else:
+                    continue
+
+        # summary
+        msg = '\n'.join([
+            '{}\t{}\t{}\t{}\t{}'.format('Type', 'sequence', 'total', 'count', 'percent'),
+            '{}\t{}\t{}\t{}\t{:.2f}%'.format('TruSeq', ad['truseq'], n_max, d.get('truseq', 0), d.get('truseq', 0)/n_max * 100),
+            '{}\t{}\t{}\t{}\t{:.2f}%'.format('Nextera', ad['nextera'], n_max, d.get('nextera', 0), d.get('nextera', 0)/n_max * 100),
+            '{}\t{}\t{}\t{}\t{:.2f}%'.format('smallRNA', ad['smallrna'], n_max, d.get('smallrna', 0), d.get('smallrna', 0)/n_max * 100)
+            ])
+
+        print(msg)
+        return d
+
+
+
+
+
+
 
 

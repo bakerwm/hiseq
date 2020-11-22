@@ -620,6 +620,8 @@ def add_cnr_args():
     parser.add_argument('--spikein-index', dest='spikein_index', default=None,
         help='Index for Spikein')
 
+    parser.add_argument('--cut-to-length', dest='cut_to_length', default=0, type=int,
+        help='cut the read to specific length, from right, default: [0], not cut')
     parser.add_argument('--trimmed', action='store_true',
         help='specify if input files are trimmed')
     parser.add_argument('--gene-bed', dest='gene_bed', default=None,
