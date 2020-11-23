@@ -465,39 +465,7 @@ class Hiseq(object):
         parser = add_sample_args()
         args = parser.parse_args(sys.argv[2:])
         args = vars(args)
-        input = args.get('input', None)
-        outdir = args.get('outdir', None) # os.getcwd())
-        nsize = args.get('sample_size', 100)
-        if outdir is None:
-            outdir = os.getcwd()
-
-        # get list
-        def get_fq(x):
-            if os.path.isdir(x):
-                # f_list = list_fq_files(x)
-                p = re.compile('\.f(ast)?(a|q)(.gz)?')
-                f_list = [i for i in listfile(x, "*") if p.search(i)]
-            elif os.path.isfile(x):
-                f_list = [x]
-            else:
-                raise ValueError('str,list expected, {} got'.format(type(input).__name__))
-
-            return f_list
-
-        # output
-        fq_list = []
-        if isinstance(input, list):
-            for i in input:
-                fq_list.extend(get_fq(i))
-        elif isinstance(input, str):
-            fq_list.extend(get_fq(input))
-        else:
-            raise ValueError('str,list expected, {} got'.format(type(input).__name__))
-
-        # run 
-        for i in fq_list:
-            log.info('sample fastq: {} {}'.format(i, nsize))
-            Fastx(i).sample(outdir, nsize)
+        FxSample(**args).run()
 
 
     def download(self):

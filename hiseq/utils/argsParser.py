@@ -860,11 +860,17 @@ def add_sample_args():
         'sample_size':
     """
     parser = argparse.ArgumentParser(description='hiseq sample')
-    parser.add_argument('-i', '--input', nargs='+', required=True,
-        help='fastq files, or path contains fastq files')
+    parser.add_argument('-i', '--fx', nargs='+', required=True,
+        help='fastx files')
     parser.add_argument('-o', '--outdir', default=None,
         help='output directory to save results')
-    parser.add_argument('-n', '--sample-size', dest='sample_size',
-        default=100,type=int, 
-        help='Number of fq records, default: 100')
+    parser.add_argument('-n', '--number', type=int, default=1000,
+        help='Number of records, default: 1000')
+    parser.add_argument('-r', '--random', action='store_true',
+        help='Get random subset records'),
+    parser.add_argument('-w', '--overwrite', action='store_true',
+        help='Overwrite the exists files')
+    parser.add_argument('-j', '--parallel-jobs', dest='parallel_jobs',
+        default=1, type=int, 
+        help='Number of threads run in parallel, default [1]')
     return parser
