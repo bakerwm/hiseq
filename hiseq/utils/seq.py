@@ -26,14 +26,13 @@ class Fastx(object):
     7. sample: [seqkit sample -n]
     ...    
     """
-
     def __init__(self, input, **kwargs):
         """
         read fastq/a file
         """
+        self = update_obj(self, kwargs, force=True)
         self.input = input
         self.format = self.fx_type(input)
-        self.count = self.fq_counter(input) if self.format == 'fastq' else self.fa_counter(input)
         self.cat = 'zcat' if input.endswith('.gz') else 'cat'
 
 
@@ -86,6 +85,7 @@ class Fastx(object):
             fx_type = None
 
         return fx_type
+
 
     def file_ext(self, fn):
         """
@@ -299,7 +299,7 @@ class Fastx(object):
         Count fastq records
         N = (total lines) / 4
         """
-        return self.count(x) / 4
+        return int(self.count(x) / 4)
 
 
     def fa_counter(self, x):
@@ -317,19 +317,28 @@ class Fastx(object):
             return sum(buf.count(b'\n>') for buf in _make_gen(fh.read))
 
 
-    def subseq(self, out, region=0):
+    def number_of_seq(self):
         """
-        Get subseq by region
+        Number of sequences
+        fa, fq
+        """
+        return self.fq_counter(self.input) if self.format == 'fastq' else self.fa_counter(self.input)
 
+
+    def region_to_pos(self, region=None):
+        """
+        Extract substring by region: 
+        Convert 1-indexed region to 0-indexed python style
         The region cloud be: 1-indexed
         1:20,   the first 20 bases
         -20:-1, the last 20 bases
         1:-1,   the full length
         """
-        if region == 0:
+        if region is None:
             region = '1:-1' # the full length
+        # convert "7,-7" to "7:-7"
+        region = region.replace(',', ":")
 
-        # check region format
         p = re.compile('^(-?\d+):(-?\d+)$')
         m = p.search(region)
         if m:
@@ -337,7 +346,7 @@ class Fastx(object):
         else:
             log.error('unknown region format, expect: 1:-1, got: {}'.format(region))
 
-        # return 0-indexed for python
+        # 0-indexed
         start = int(m.group(1))
         end = int(m.group(2))
         if start > 0:
@@ -346,17 +355,83 @@ class Fastx(object):
         if end < 0:
             end = end + 1
 
-        # exceptions
-        # end==0: [start:]
+        return (start, end)
+
+
+    def sub_string(self, s, start, end):
+        """
+        Extract substring, by start, end (0-index)
+        convert to python style
+        """
+        if start == 0 and end == 0:
+            pass
+        elif start == 0:
+            s = s[:end]
+        elif end == 0:
+            s = s[start:]
+        else:
+            s = s[start:end]
+
+        return s
+
+
+    def subseq(self, out, region=None):
+        """
+        Get subseq by region
+
+        The region cloud be: 1-indexed
+        1:20,   the first 20 bases
+        -20:-1, the last 20 bases
+        1:-1,   the full length
+        """
+        start, end = self.region_to_pos(region)
 
         with xopen(self.input) as r, xopen(out, 'wt') as w:
             for name, seq, qual in self.readfq(r):
-                seq = seq[start:] if end == 0 else seq[start:end]
+                seq = self.sub_string(seq, start, end)
+                # specific length
+                if len(seq) < self.len_min:
+                    continue
+
                 if qual is None: # fasta
                     w.write('\n'.join(['>'+name, seq]) + '\n')
                 else:
-                    qual = qual[start:] if end == 0 else qual[start:end]
+                    qual = self.sub_string(qual, start, end)
                     w.write('\n'.join(['@'+name, seq, '+', qual]) + '\n')
+
+
+    def subseq_pe(self, input2, out1, out2, region=None):
+        """
+        Get subseq by region, for paired end reads; filter by length
+
+        The region cloud be: 1-indexed
+        1:20,   0:20 , the first 20 bases
+        -20:-1, -21: , the last 20 bases
+        1:-1,   0:   , the full length
+        """
+        start, end = self.region_to_pos(region)
+
+        with xopen(self.input) as r1, xopen(input2) as r2, \
+            xopen(out1, 'wt') as w1, xopen(out2, 'wt') as w2:
+            for read1, read2 in zip(self.readfq(r1), self.readfq(r2)):
+                name1, seq1, qual1 = read1
+                name2, seq2, qual2 = read2
+                seq1 = self.sub_string(seq1, start, end)
+                seq2 = self.sub_string(seq2, start, end)
+
+                # specific length
+                if len(seq1) < self.len_min or len(seq2) < self.len_min:
+                    continue
+
+                # write
+                if qual1 is None: # fa
+                    w1.write('\n'.join(['>' + name1, seq1]) + '\n')
+                    w2.write('\n'.join(['>' + name2, seq2]) + '\n')
+                else:
+                    qual1 = self.sub_string(qual1, start, end)
+                    qual2 = self.sub_string(qual2, start, end)
+                    w1.write('\n'.join(['@' + name1, seq1, '+', qual1]) + '\n')
+                    w2.write('\n'.join(['@' + name2, seq2, '+', qual2]) + '\n')
 
 
     # Deprecated: (see: subseq)
@@ -597,7 +672,11 @@ class Fastx(object):
             ])
 
         print(msg)
-        return d
+
+        # sort
+        ds = sorted(d.items(), key=lambda kv: kv[1])
+        dd = collections.OrderedDict(ds)
+        return dd
 
 
 

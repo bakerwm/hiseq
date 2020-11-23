@@ -20,7 +20,7 @@ from multiprocessing import Pool
 from .utils.argsParser import *
 from .demx.demx import Demx
 from .qc.fastqc import Fastqc
-from .trim.trimmer import Trimmer
+from .trim.trimmer import TrimRn
 from .align.alignment import Alignment
 from .atac.atac import Atac
 from .rnaseq.rnaseq import RNAseq
@@ -115,38 +115,47 @@ class Hiseq(object):
 
 
     def trim(self):
-        """Quality control,
-        cutadapt  : Trimming adapters from reads
-        trim_ends : Python scripts to trim ends of reads, usually, the barcode sequences
-        fastqc    : Create fastqc report the raw and clean files
+        """
+        Trim adapters
         """
         parser = add_trim_args()
-        args = parser.parse_args(sys.argv[2:])
-        args = vars(args) # convert to dict
+        args = vars(parser.parse_args(sys.argv[2:]))
+        TrimRn(**args).run()
 
-        # custom args
-        fq1_list = args.get('fq1', None) # list
-        outdir = args.get('outdir', None)
 
-        ## iterate all fq1
-        kwargs = args.copy()
-        if kwargs['fq2'] is None:
-            # SE mode
-            for fq1 in fq1_list:
-                kwargs['fq1'] = fq1
-                kwargs['fq2'] = None
-                kwargs['outdir'] = args.get('outdir', None)
-                Trimmer(**kwargs).run()
-        else:
-            # PE mode
-            if not len(fq1_list) == len(args['fq2']):
-                log.error('-i, --fq2 not in the same length')
+    # def trim(self):
+    #     """Quality control,
+    #     cutadapt  : Trimming adapters from reads
+    #     trim_ends : Python scripts to trim ends of reads, usually, the barcode sequences
+    #     fastqc    : Create fastqc report the raw and clean files
+    #     """
+    #     parser = add_trim_args()
+    #     args = parser.parse_args(sys.argv[2:])
+    #     args = vars(args) # convert to dict
 
-            for fq1, fq2 in zip(fq1_list, args['fq2']):
-                kwargs['fq1'] = fq1
-                kwargs['fq2'] = fq2
-                kwargs['outdir'] = args.get('outdir', None)
-                Trimmer(**kwargs).run()
+    #     # custom args
+    #     fq1_list = args.get('fq1', None) # list
+    #     outdir = args.get('outdir', None)
+
+    #     ## iterate all fq1
+    #     kwargs = args.copy()
+    #     if kwargs['fq2'] is None:
+    #         # SE mode
+    #         for fq1 in fq1_list:
+    #             kwargs['fq1'] = fq1
+    #             kwargs['fq2'] = None
+    #             kwargs['outdir'] = args.get('outdir', None)
+    #             Trimmer(**kwargs).run()
+    #     else:
+    #         # PE mode
+    #         if not len(fq1_list) == len(args['fq2']):
+    #             log.error('-i, --fq2 not in the same length')
+
+    #         for fq1, fq2 in zip(fq1_list, args['fq2']):
+    #             kwargs['fq1'] = fq1
+    #             kwargs['fq2'] = fq2
+    #             kwargs['outdir'] = args.get('outdir', None)
+    #             Trimmer(**kwargs).run()
 
 
     def align(self):
