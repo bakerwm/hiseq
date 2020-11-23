@@ -1516,7 +1516,7 @@ class CnR1Config(object):
             'peak_seacr_top001': self.peak_dir + '/' + self.project_name + '.top0.01.stringent.bed',
             'bw': self.bw_dir + '/' + self.project_name + '.bigWig',
 
-            'trim_stat_txt': self.clean_dir + '/' + self.project_name + '.qc.stat',
+            'trim_stat_txt': self.clean_dir + '/' + self.project_name + '/' + self.project_name + '.trim.stat',
             'align_scale_txt': self.align_dir + '/' + 'scale.txt',
             'align_flagstat': self.align_dir + '/' + self.smp_name + '.flagstat',
             'align_stat': self.align_dir + '/' + self.smp_name + '.bowtie2.stat',
@@ -2600,16 +2600,6 @@ class CnR1(object):
         file_symlink(self.fq1, raw_fq1, absolute_path=True)
         file_symlink(self.fq2, raw_fq2, absolute_path=True)
 
-        # copy
-        # if isinstance(cut_to_length, int) and cut_to_length in range(30, 150):
-        #     # region = '{}:{}'.format(1, cut_to_length)
-        #     # Fastx(self.fq1).subseq(raw_fq1, region=region)
-        #     # Fastx(self.fq2).subseq(raw_fq2, region=region)
-        #     # shutil.copy(self.fq1, raw_fq1)
-        #     # shutil.copy(self.fq2, raw_fq2)
-        # else:
-        #     pass
-
 
     def trim(self, trimmed=False):
         """
@@ -2641,7 +2631,8 @@ class CnR1(object):
                 'outdir': self.clean_dir,
                 'library_type': None,
                 'len_min': 20,
-                'cut_to_length': self.cut_to_length
+                'cut_to_length': self.cut_to_length,
+                'parallel_jobs': 1 # do not allowed > 1
             }
             args_local.update(args_init)
             trim = Trim(**args_local)
@@ -2887,25 +2878,28 @@ class CnR1(object):
     def qc_trim_summary(self):
         """
         reads trim off
-
+        
+        # version-1
         #sample input   output  percent
         fq_rep1      2234501 2234276 99.99%
 
+        # version-2
+        #name   total   too_short       dup     too_short2      clean   percent
         """
         if file_exists(self.trim_stat_txt):
             with open(self.trim_stat_txt, 'rt') as r:
                 lines = r.readlines()
             lines = [i for i in lines if not i.startswith('#')]
-            line = lines.pop()
-            fqname, n_input, n_output, n_pct = line.strip().split('\t')
-            n_pct = eval(n_pct.strip('%'))
-
+            line = lines.pop() # last line
+            tabs = line.strip().split('\t')
+            fqname, n_input = tabs[:2]
+            n_output, n_pct = tabs[-2:]
             d = {
                 'id': fqname,
                 'input': n_input,
                 'output': n_output,
                 'out_pct': n_pct,
-                'rm_pct': 100 - n_pct
+                'rm_pct': 100 - float(n_pct.strip())
             }
         else:
             d = {
