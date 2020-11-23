@@ -81,12 +81,13 @@ def add_trim_args():
         description='hiseq qc, trim adapters and qc')
     parser.add_argument('-1', '--fq1', nargs='+', required=True,
         help='reads in FASTQ files, support (*.gz), 1-4 files.')
+    parser.add_argument('-2', '--fq2', nargs='+', default=None,
+        help='The read2 of pair-end reads')
     parser.add_argument('-o', '--outdir', default=None,
         help='The directory to save results.')
 
-    parser.add_argument('--library-type', dest='library_type', default='unknown',
-        type=str, choices=['TruSeq', 'Nextera', 'smRNA', 'NSR', 'ChIPseq', 'iCLIP', 'eCLIP', 
-            'CLIP_NSR', 'smRNA_NSR', 'unknown'],
+    parser.add_argument('--library-type', dest='library_type', default=None,
+        type=str, choices=['TruSeq', 'Nextera', 'smRNA'],
         help='Type of the library structure, \
         TruSeq, TruSeq standard libraries \
         Nextera, Tn5 standard libraries, \
@@ -104,15 +105,15 @@ def add_trim_args():
     parser.add_argument('-m', '--len_min', default=15, metavar='len_min',
         type=int, help='Minimum length of reads after trimming, defualt [15]')
     parser.add_argument('-a', '--adapter3', metavar='adapter', type=str,
-        default='AGATCGGAAGAGCACACGTCTGAACTCCAGTCAC',
-        help='3-Adapter, default: [AGATCGGAAGAGCACACGTCTGAACTCCAGTCAC].')
+        default='AGATCGGAAGAGC',
+        help='3-Adapter, default: [AGATCGGAAGAGC].')
     parser.add_argument('-g', '--adapter5', default='',
         help='5-Adapter, default: None')
-    parser.add_argument('--read12', type=int, default=1,
-        help='which one of PE reads, 1=read1, 2=read2, default: 1')
 
-    parser.add_argument('--threads', default=1, type=int,
+    parser.add_argument('-p', '--threads', default=1, type=int,
         help='Number of threads to launch, default [1]')
+    parser.add_argument('-j', '--parallel-jobs', dest='parallel_jobs', default=1, 
+        type=int, help='Number of jobs to run in parallel, default [1]')
     parser.add_argument('--overwrite', action='store_true',
         help='if spcified, overwrite exists file')
 
@@ -125,13 +126,20 @@ def add_trim_args():
         help='Maximum allowed error rate, default [0.1]')
     parser.add_argument('-O', '--overlap', default=3, type=int,
         help='Required N bases overlap between reads and adapter, default [3]')
-    parser.add_argument('-p', '--percent', default=80, type=int,
-        help='minimum percent of bases that must have -q quality, default [80]')
+
+    ## specific
     parser.add_argument('--rm-untrim', action='store_true', dest='rm_untrim',
         help='if specified, discard reads without adapter')
-    parser.add_argument('--keep-name', action='store_true', dest='keep_name',
-        help='if specified, do not change file names')
-
+    parser.add_argument('--rmdup', action='store_true', dest='rmdup',
+        help='if specified, remove duplicated reads' )
+    parser.add_argument('--cut-to-length', default=0, metavar='max-length',
+        dest='cut_to_length', type=int,
+        help='cut reads to specific length from right\
+              default: [0], full length')
+    parser.add_argument('--cut-after-trim', default='0', metavar='cut_after_trim',
+        dest='cut_after_trim',
+        help='cut n-bases after trimming adapter; positive value, cut from left; \
+        minus value, cut from right, eg: 3 or -4 or 3,-4, default [0]')    
     ## extra arguments
     parser.add_argument('--adapter-sliding', dest='adapter_sliding',
         action='store_true',
@@ -140,31 +148,17 @@ def add_trim_args():
         default=1, help='Trim adapter from reads by N times, default:1')
     parser.add_argument('--double-trim', action='store_true',
         dest='double_trim', help='if specified, trim adapters twice')
-    parser.add_argument('--rmdup', action='store_true', dest='rmdup',
-        help='if specified, remove duplicated reads' )
     parser.add_argument('--cut-before-trim', default='0', metavar='cut1',
         dest='cut_before_trim',
         help='cut bases before trimming adapter, Number of bases to cut \
               from each read, plus on 5-prime end, minus on 3-prime end, \
               could be single, or double numbers, eg: 3 or -4 or 3,-4, \
               default [0]')
-    parser.add_argument('--cut-after-trim', default='0', metavar='cut2',
-        dest='cut_after_trim',
-        help='cut bases after trimming adapter, Number of bases to cut \
-              from each read, plus on 5-prime end, minus on 3-prime end, \
-              could be single, or double numbers, eg: 3 or -4 or 3,-4, \
-              default [0]')
-    parser.add_argument('--trim-to-length', default=0, metavar='max-length',
-        dest='trim_to_length', type=int,
-        help='trim reads from right, save the specific length of reads. \
-              default: [0], 0=the full length')
 
     ## PE arguments
-    parser.add_argument('-2', '--fq2', nargs='+', default=None,
-        help='The read2 of pair-end reads')
-    parser.add_argument('-A', '--AD3', default='AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT',
+    parser.add_argument('-A', '--Adapter3', default='AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT',
         help='The 3 adapter of read2, default: AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT')
-    parser.add_argument('-G', '--AD5', default=None,
+    parser.add_argument('-G', '--Adapter5', default=None,
         help='The 5 adapter of read1, default: None')
     return parser
 
@@ -587,6 +581,67 @@ def add_chipseq_args():
         help='whether copy the raw fastq files to output')
     return parser
 
+
+def add_cnr_args():
+    """
+    Arguments for CnR pipeline
+    """
+    parser = argparse.ArgumentParser(
+        description='CUT&RUN pipeline')
+    parser.add_argument('-b', '--build-design', dest='build_design', 
+        action='store_true',
+        help='Create design for fastq files')
+    parser.add_argument('-d', '--design', default=None,
+        help='design for RNAseq, json format, ignore fq1, fq2')
+    parser.add_argument('--ip', nargs='+', default=None,
+        help='fastq for IP of ChIPseq, read1 of PE')
+    parser.add_argument('--input', nargs='+', default=None,
+        help='fastq for Input of ChIPseq, read1 of PE')
+    parser.add_argument('--ip-fq2', nargs='+', dest='ip_fq2', default=None,
+        help='fastq for IP of ChIPseq, read2 of PE, optional')
+    parser.add_argument('--input-fq2', nargs='+', dest='input_fq2', default=None,
+        help='fastq for Input of ChIPseq, read2 of PE, optional')
+
+    parser.add_argument('-o', '--outdir', default=str(pathlib.Path.cwd()),
+        help='The directory to save results, default, \
+        current working directory.')
+    parser.add_argument('-g', '--genome', default=None,
+        choices=['dm3', 'dm6', 'hg19', 'hg38', 'mm9', 'mm10'],
+        help='Reference genome : dm3, dm6, hg19, hg39, mm9, mm10, default: hg19')
+    parser.add_argument('--spikein', default=None,
+        choices=['dm3', 'dm6', 'hg19', 'hg38', 'mm9', 'mm10'],
+        help='Reference genome : dm3, dm6, hg19, hg39, mm9, mm10, default: hg19')
+    parser.add_argument('--spikein-index', dest='spikein_index', default=None,
+        help='Index for Spikein')
+
+    parser.add_argument('--cut-to-length', dest='cut_to_length', default=0, type=int,
+        help='cut the read to specific length, from right, default: [0], not cut')
+    parser.add_argument('--trimmed', action='store_true',
+        help='specify if input files are trimmed')
+    parser.add_argument('--gene-bed', dest='gene_bed', default=None,
+        help='The BED or GTF of genes')
+
+    # optional arguments - 1
+    parser.add_argument('-p', '--threads', default=1, type=int,
+        help='Number of threads to launch, default [1]')
+    parser.add_argument('-j', '--parallel-jobs', default=1, type=int, 
+        dest='parallel_jobs',
+        help='Number of jobs run in parallel, default: [1]')
+    parser.add_argument('--overwrite', action='store_true',
+        help='if spcified, overwrite exists file')
+
+    ## extra: index
+    parser.add_argument('--aligner', default='bowtie2',
+        help='The alignment tool for CnR pipeline, default: [bowtie2]')
+    parser.add_argument('-x', '--extra-index', dest="extra_index",
+        help='Provide alignment index(es) for alignment, support multiple\
+        indexes. if specified, ignore -g, -k')
+
+    ## extra: para
+    parser.add_argument('--extra-para', dest='extra_para', default=None,
+        help='Extra parameters for aligner, eg: -X 2000 for bowtie2. default: [None]')
+
+    return parser
 
 ##################################
 ## Utils

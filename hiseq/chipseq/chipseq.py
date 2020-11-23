@@ -155,11 +155,7 @@ class ChIPseqR1Config(object):
         """
         args_init = {
             'is_ip': True,
-<<<<<<< HEAD
-            'trimmed': True,
-=======
             'trimmed': False,
->>>>>>> atac-fix
             'smp_name': None,
             'fq1': None,
             'fq2': None,
@@ -1285,14 +1281,8 @@ class ChIPseqRn(object):
         args_tmp = self.__dict__.copy()
         # required args
         args_required = ['align_to_chrM', 'aligner', 'fq1', 'fq2', 'genome', 
-<<<<<<< HEAD
-            'genome_size', 'gsize_file', 'is_ip', 'is_trimmed', 'outdir', 
-            'overwrite', 'extra_index', 'extra_para', 'parallel_jobs', 
-            'threads']
-=======
             'genome_size', 'is_ip', 'trimmed', 'outdir', 'overwrite', 
             'parallel_jobs', 'threads']
->>>>>>> atac-fix
         args_local = dict((k, args_tmp[k]) for k in args_required 
             if k in args_tmp)
 

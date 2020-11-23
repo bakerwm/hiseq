@@ -11,7 +11,7 @@ import sys
 import re
 from xopen import xopen
 import collections # Fastx().collapse()
-from .helper import *
+from hiseq.utils.helper import *
 
 
 class Fastx(object):
@@ -26,14 +26,13 @@ class Fastx(object):
     7. sample: [seqkit sample -n]
     ...    
     """
-
     def __init__(self, input, **kwargs):
         """
         read fastq/a file
         """
+        self = update_obj(self, kwargs, force=True)
         self.input = input
         self.format = self.fx_type(input)
-        self.count = self.fq_counter(input) if self.format == 'fastq' else self.fa_counter(input)
         self.cat = 'zcat' if input.endswith('.gz') else 'cat'
 
 
@@ -300,7 +299,7 @@ class Fastx(object):
         Count fastq records
         N = (total lines) / 4
         """
-        return self.count(x) / 4
+        return int(self.count(x) / 4)
 
 
     def fa_counter(self, x):
@@ -318,6 +317,124 @@ class Fastx(object):
             return sum(buf.count(b'\n>') for buf in _make_gen(fh.read))
 
 
+    def number_of_seq(self):
+        """
+        Number of sequences
+        fa, fq
+        """
+        return self.fq_counter(self.input) if self.format == 'fastq' else self.fa_counter(self.input)
+
+
+    def region_to_pos(self, region=None):
+        """
+        Extract substring by region: 
+        Convert 1-indexed region to 0-indexed python style
+        The region cloud be: 1-indexed
+        1:20,   the first 20 bases
+        -20:-1, the last 20 bases
+        1:-1,   the full length
+        """
+        if region is None:
+            region = '1:-1' # the full length
+        # convert "7,-7" to "7:-7"
+        region = region.replace(',', ":")
+
+        p = re.compile('^(-?\d+):(-?\d+)$')
+        m = p.search(region)
+        if m:
+            pass
+        else:
+            log.error('unknown region format, expect: 1:-1, got: {}'.format(region))
+
+        # 0-indexed
+        start = int(m.group(1))
+        end = int(m.group(2))
+        if start > 0:
+            start = start - 1
+
+        if end < 0:
+            end = end + 1
+
+        return (start, end)
+
+
+    def sub_string(self, s, start, end):
+        """
+        Extract substring, by start, end (0-index)
+        convert to python style
+        """
+        if start == 0 and end == 0:
+            pass
+        elif start == 0:
+            s = s[:end]
+        elif end == 0:
+            s = s[start:]
+        else:
+            s = s[start:end]
+
+        return s
+
+
+    def subseq(self, out, region=None):
+        """
+        Get subseq by region
+
+        The region cloud be: 1-indexed
+        1:20,   the first 20 bases
+        -20:-1, the last 20 bases
+        1:-1,   the full length
+        """
+        start, end = self.region_to_pos(region)
+
+        with xopen(self.input) as r, xopen(out, 'wt') as w:
+            for name, seq, qual in self.readfq(r):
+                seq = self.sub_string(seq, start, end)
+                # specific length
+                if len(seq) < self.len_min:
+                    continue
+
+                if qual is None: # fasta
+                    w.write('\n'.join(['>'+name, seq]) + '\n')
+                else:
+                    qual = self.sub_string(qual, start, end)
+                    w.write('\n'.join(['@'+name, seq, '+', qual]) + '\n')
+
+
+    def subseq_pe(self, input2, out1, out2, region=None):
+        """
+        Get subseq by region, for paired end reads; filter by length
+
+        The region cloud be: 1-indexed
+        1:20,   0:20 , the first 20 bases
+        -20:-1, -21: , the last 20 bases
+        1:-1,   0:   , the full length
+        """
+        start, end = self.region_to_pos(region)
+
+        with xopen(self.input) as r1, xopen(input2) as r2, \
+            xopen(out1, 'wt') as w1, xopen(out2, 'wt') as w2:
+            for read1, read2 in zip(self.readfq(r1), self.readfq(r2)):
+                name1, seq1, qual1 = read1
+                name2, seq2, qual2 = read2
+                seq1 = self.sub_string(seq1, start, end)
+                seq2 = self.sub_string(seq2, start, end)
+
+                # specific length
+                if len(seq1) < self.len_min or len(seq2) < self.len_min:
+                    continue
+
+                # write
+                if qual1 is None: # fa
+                    w1.write('\n'.join(['>' + name1, seq1]) + '\n')
+                    w2.write('\n'.join(['>' + name2, seq2]) + '\n')
+                else:
+                    qual1 = self.sub_string(qual1, start, end)
+                    qual2 = self.sub_string(qual2, start, end)
+                    w1.write('\n'.join(['@' + name1, seq1, '+', qual1]) + '\n')
+                    w2.write('\n'.join(['@' + name2, seq2, '+', qual2]) + '\n')
+
+
+    # Deprecated: (see: subseq)
     def cut(self, out, len_min=15, **kwargs):
         """
         Cut bases from either ends of fasta/q
@@ -364,6 +481,19 @@ class Fastx(object):
                     return x
             else:
                 raise Exception('unknown format, cut_to_length={}'.format(cut_to_length))
+            # if isinstance(cut_to_length, int):
+            #     if cut_to_length > 0: # cut from 3' end
+            #         x2 = x[:cut_to_length]
+            #     else: # cut from 5' end
+            #         n = len(x) - abs(cut_to_length)
+            #         if n < 0:
+            #             n = 0
+            #         x2 = x[n:]
+            #     return x2
+            # else:
+            #     log.error('unknown x, expect int, got {}'.format(cut_to_length))
+            #     return x
+
 
         # merge two funcs
         def cut_cut(x):
@@ -389,6 +519,7 @@ class Fastx(object):
                     w.write('\n'.join(['@'+name, seq, '+', qual]) + '\n')
 
 
+    # Deprecated: (see: subseq)
     def cut_pe(self, input2, out1, out2, len_min=15, **kwargs):
         """
         Cut bases from either ends of fasta/q
@@ -495,5 +626,62 @@ class Fastx(object):
                     w.write('\n'.join(['@'+name, key, '+', qual]) + '\n')
                 else:
                     w.write('\n'.join(['>'+name, key]) + '\n')
+
+
+    def detect_adapter(self):
+        """
+        Guess adapters, sampling the first 1000000 records
+        TruSeq    AGATCGGAAGAGC
+        Nextera   CTGTCTCTTATACACATCT
+        smallRNA  TGGAATTCTCGG
+
+        to-do
+        specific type of adapters
+        """
+        ad = {
+            'truseq': 'AGATCGGAAGAGC',
+            'nextera': 'CTGTCTCTTATA',
+            'smallrna': 'TGGAATTCTCGG'
+        }
+
+        # count 
+        d = {}
+        n_max = 1000000
+        n = 0
+        with xopen(self.input) as r:
+            for _, seq, _ in self.readfq(r):
+                n += 1
+                if n > n_max:
+                    break
+                # check
+                if ad['truseq'] in seq:
+                    d['truseq'] = d.get('truseq', 0) + 1
+                elif ad['nextera'] in seq:
+                    d['nextera'] = d.get('nextera', 0) + 1
+                elif ad['smallrna'] in seq:
+                    d['smallrna'] = d.get('smallrna', 0) + 1
+                else:
+                    continue
+
+        # summary
+        msg = '\n'.join([
+            '{}\t{}\t{}\t{}\t{}'.format('Type', 'sequence', 'total', 'count', 'percent'),
+            '{}\t{}\t{}\t{}\t{:.2f}%'.format('TruSeq', ad['truseq'], n_max, d.get('truseq', 0), d.get('truseq', 0)/n_max * 100),
+            '{}\t{}\t{}\t{}\t{:.2f}%'.format('Nextera', ad['nextera'], n_max, d.get('nextera', 0), d.get('nextera', 0)/n_max * 100),
+            '{}\t{}\t{}\t{}\t{:.2f}%'.format('smallRNA', ad['smallrna'], n_max, d.get('smallrna', 0), d.get('smallrna', 0)/n_max * 100)
+            ])
+
+        print(msg)
+
+        # sort
+        ds = sorted(d.items(), key=lambda kv: kv[1])
+        dd = collections.OrderedDict(ds)
+        return dd
+
+
+
+
+
+
 
 
