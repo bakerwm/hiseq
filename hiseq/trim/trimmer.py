@@ -18,6 +18,7 @@ import sys
 import re
 import shutil
 import logging
+import pandas as pd
 from multiprocessing import Pool
 from hiseq.utils.args import args_init, ArgumentsInit, Adapter
 from hiseq.utils.seq import Fastx
@@ -181,6 +182,10 @@ class Trim(object):
         self.init_args()
         self.init_files()
 
+        ## save arguments
+        args_checker(self.__dict__, self.config_pickle)
+        args_logger(self.__dict__, self.config_txt)
+
 
     def init_args(self):
         args_init = {
@@ -193,7 +198,8 @@ class Trim(object):
             'rmdup': False,
             'cut_after_trim': 0,
             'keep_tmp': False,
-            'overwrite': False
+            'overwrite': False,
+            'recursive': False
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'hiseq_r1' # 
@@ -561,7 +567,8 @@ class Cutadapt(object):
             'save_too_long': False,
             'cut_before_trim': 0,
             'threads': 4,
-            'overwrite': False
+            'overwrite': False,
+            'recursive': False
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'hiseq_r1' # 
@@ -604,25 +611,25 @@ class Cutadapt(object):
         3. guess from the first 1M reads
         """
         lib = {
-                'truseq': 'AGATCGGAAGAGC',
-                'nextera': 'CTGTCTCTTATACACATCT',
-                'smallrna': 'TGGAATTCTCGG'
+                # 'truseq': 'AGATCGGAAGAGC',
+                # 'nextera': 'CTGTCTCTTATACACATCT',
+                # 'smallrna': 'TGGAATTCTCGG'
+                'truseq': ['AGATCGGAAGAGCACACGT', 'AGATCGGAAGAGCGTCGTG'],
+                'nextera': ['CTGTCTCTTATACACATCT', 'CTGTCTCTTATACACATCT'],
+                'smallrna': ['TGGAATTCTCGGGTGCCAAGG', 'TGGAATTCTCGGGTGCCAAGG']
             }
         if isinstance(self.library_type, str):
             self.library_type = self.library_type.lower()
-            self.adapter3 = lib.get(self.library_type, None)
-            self.Adapter3 = self.adapter3
+            self.adapter3, self.Adapter3 = lib.get(self.library_type, [None, None])
         elif isinstance(self.adapter3, str):
             pass
 
         else:
             log.info('Auto detect the adapters:')
             d = Fastx(self.fq1).detect_adapter()
-            # top hits
-            d1 = [i for i in d.items() if i[1] > 0]
-            self.library_type = d1[0][0] if len(d1) > 0 else None
-            self.adapter3 = lib.get(self.library_type, None)
-            self.Adapter3 = self.adapter3
+            df = pd.DataFrame.from_dict(d, orient='index').sort_values(0, ascending=False)
+            self.library_type = df.index.to_list()[0] # first one
+            self.adapter3, self.Adapter3 = lib.get(self.library_type, [None, None])
 
 
     def init_files(self):
@@ -658,6 +665,21 @@ class Cutadapt(object):
         check_path(self.config_dir)
 
 
+    def get_ad3(self):
+        """
+        If recursive, 0, 1, 2, 3, 4
+        """
+        # adapter3
+        if self.recursive:
+            ad3_list = [self.adapter3[i:] for i in range(0, 10)]
+            Ad3_list = [self.Adapter3[i:] for i in range(0, 10)]
+        else:
+            ad3_list = [self.adapter3]
+            Ad3_list = [self.Adapter3]
+
+        return (ad3_list, Ad3_list)
+
+
     def init_cmd_se(self):
         """
         cutadapt 
@@ -678,10 +700,16 @@ class Cutadapt(object):
         self.arg_adapter_5 = '-g {}'.format(self.adapter5) if self.adapter5 else ''
         self.arg_Adapter_5 = '-G {}'.format(self.Adapter5) if self.Adapter5 else ''
 
+        ## adapter3
+        ad3_list, _ = self.get_ad3()
+        ad3_arg = ' '.join([
+            '-a {}'.format(i) for i in ad3_list])
+
         cmd = ' '.join([
             '{}'.format(shutil.which('cutadapt')),
             '-j {}'.format(self.threads),
-            '-a {}'.format(self.adapter3),
+            ad3_arg,
+            # '-a {}'.format(self.adapter3),
             '-j {}'.format(self.threads),
             '-m {}'.format(self.len_min),
             '-q {}'.format(self.qual_min),
@@ -691,7 +719,7 @@ class Cutadapt(object):
             r'-a "G{150}"',
             r'-a "T{150}"',
             '-e {}'.format(self.error_rate),
-            '-n 5 --trim-n --max-n=0.1',
+            '-n 3 --trim-n --max-n=0.1',
             self.arg_save_untrim,
             self.arg_rm_untrim,
             self.arg_too_short,
@@ -725,11 +753,20 @@ class Cutadapt(object):
         self.arg_adapter_5 = '-g {}'.format(self.adapter5) if self.adapter5 else ''
         self.arg_Adapter_5 = '-G {}'.format(self.Adapter5) if self.Adapter5 else ''
 
+        ## adapter3
+        ad3_list, Ad3_list = self.get_ad3()
+        ad3_arg = ' '.join([
+            '-a {}'.format(i) for i in ad3_list])
+        Ad3_arg = ' '.join([
+            '-A {}'.format(i) for i in Ad3_list])
+
         cmd = ' '.join([
             '{}'.format(shutil.which('cutadapt')),
             '-j {}'.format(self.threads),
-            '-a {}'.format(self.adapter3),
-            '-A {}'.format(self.Adapter3),
+            # '-a {}'.format(self.adapter3),
+            # '-A {}'.format(self.Adapter3),
+            ad3_arg,
+            Ad3_arg,
             self.arg_adapter_5,
             self.arg_Adapter_5,
             '-j {}'.format(self.threads),
@@ -741,7 +778,7 @@ class Cutadapt(object):
             r'-a "G{150}"',
             r'-a "T{150}"',
             '-e {}'.format(self.error_rate),
-            '-n 5 --trim-n --max-n=0.1',
+            '-n 3 --trim-n --max-n=0.1',
             self.arg_save_untrim,
             self.arg_rm_untrim,
             self.arg_too_short,
@@ -775,6 +812,10 @@ class Cutadapt(object):
         """
         p = re.compile('processed:\s+([\d,]+).*\n.*passing filters\):\s+([\d,]+)', re.DOTALL)
 
+        n_total = 0
+        n_clean = 0
+        n_pct = 0
+
         if file_exists(self.log):
             with open(self.log, 'rt') as r:
                 log_txt = r.read()
@@ -785,9 +826,6 @@ class Cutadapt(object):
                 n_total = int(m.group(1).replace(',', ''))
                 n_clean = int(m.group(2).replace(',', ''))
                 n_pct = '{:.2f}'.format(n_clean/n_total*100)
-
-        else:
-            n_total = n_clean = n_pct = 0
 
         # save to stat
         with open(self.stat, 'wt') as w:

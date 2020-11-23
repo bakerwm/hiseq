@@ -788,7 +788,8 @@ class CnRConfig(object):
             'genome_size': 0,
             'trimmed': False,
             'keep_tmp': False,
-            'cut_to_length': 0
+            'cut_to_length': 0,
+            'recursive': False
         }
         self = update_obj(self, args_init, force=False)
 
@@ -909,7 +910,8 @@ class CnRxConfig(object):
             'gene_bed': None,
             'keep_tmp': False,
             'trimmed': False,
-            'cut_to_length': 0
+            'cut_to_length': 0,
+            'recursive': False
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'hiseq_rx' # 
@@ -1146,7 +1148,8 @@ class CnRnConfig(object):
             'gsize_file': None,
             'keep_tmp': False,
             'trimmed': False,
-            'cut_to_length': 0
+            'cut_to_length': 0,
+            'recursive': False
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'hiseq_rn' # 
@@ -1371,7 +1374,8 @@ class CnR1Config(object):
             'gene_bed': None,
             'keep_tmp': False,
             'trimmed': False,
-            'cut_to_length': 0 
+            'cut_to_length': 0,
+            'recursive': False 
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'hiseq_r1' # 
@@ -2477,7 +2481,7 @@ class CnRn(object):
         args_required = ['aligner', 'fq1', 'fq2', 'genome', 'gene_bed',
             'genome_size', 'is_ip', 'trimmed', 'outdir', 'overwrite', 
             'parallel_jobs', 'threads', 'spikein', 'spikein_index',
-            'extra_index', 'cut_to_length']
+            'extra_index', 'cut_to_length', 'recursive']
         args_local = dict((k, args_tmp[k]) for k in args_required 
             if k in args_tmp)
 
@@ -2632,6 +2636,7 @@ class CnR1(object):
                 'library_type': None,
                 'len_min': 20,
                 'cut_to_length': self.cut_to_length,
+                'recursive': self.recursive,
                 'parallel_jobs': 1 # do not allowed > 1
             }
             args_local.update(args_init)

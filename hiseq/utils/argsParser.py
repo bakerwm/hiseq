@@ -89,26 +89,18 @@ def add_trim_args():
     parser.add_argument('--library-type', dest='library_type', default=None,
         type=str, choices=['TruSeq', 'Nextera', 'smRNA'],
         help='Type of the library structure, \
-        TruSeq, TruSeq standard libraries \
-        Nextera, Tn5 standard libraries, \
-        NSR, (TruSeq), cut 7-nt at the left-end of both reads, \
-        eCLIP, (TruSeq), cut 10-nt at left-end, 7-nt at-right end of read1, \
-                 cut 7-nt at left-end and 10-nt at right-end of read2, \
-                 This is Yulab version eCLIP, random barcode (N10) at P5, \
-                 and barcode (6-nt + 1A) at P7 end. \
-        iCLIP, (TruSeq), cut 9-nt at left-end of read1 (barcode) \
-        determine the way to trim the raw reads, default: [unknown] \
-        ignore --cut-after-trim \
-        the following arguments are masked, if --library-type is not unknown: \
-        --adapter3, --adapter5, --AD3, --AD5, --len-min, --rmdup, --cut-after-trim, ...')
-
+        TruSeq, TruSeq standard library \
+        Nextera, Tn5 standard library, \
+        smRNA, small RNA library')
     parser.add_argument('-m', '--len_min', default=15, metavar='len_min',
         type=int, help='Minimum length of reads after trimming, defualt [15]')
     parser.add_argument('-a', '--adapter3', metavar='adapter', type=str,
-        default='AGATCGGAAGAGC',
-        help='3-Adapter, default: [AGATCGGAAGAGC].')
+        default=None,
+        help='3-Adapter sequence, default [].')
     parser.add_argument('-g', '--adapter5', default='',
         help='5-Adapter, default: None')
+    parser.add_argument('--recursive', action='store_true',
+        help='generate adapter list, by trim from left end, 1bp step')
 
     parser.add_argument('-p', '--threads', default=1, type=int,
         help='Number of threads to launch, default [1]')
@@ -129,35 +121,29 @@ def add_trim_args():
 
     ## specific
     parser.add_argument('--rm-untrim', action='store_true', dest='rm_untrim',
-        help='if specified, discard reads without adapter')
+        help='discard reads without adapter')
+    parser.add_argument('--save-untrim', action='store_true', dest='save_untrim',
+        help='Save untrim reads to file')
+    parser.add_argument('--save-too-short', action='store_true', dest='save_too_short',
+        help='Save too short reads to file')
+    parser.add_argument('--save-too-long', action='store_true', dest='save_too_long',
+        help='Save too short reads to file')
+
     parser.add_argument('--rmdup', action='store_true', dest='rmdup',
         help='if specified, remove duplicated reads' )
-    parser.add_argument('--cut-to-length', default=0, metavar='max-length',
-        dest='cut_to_length', type=int,
-        help='cut reads to specific length from right\
-              default: [0], full length')
-    parser.add_argument('--cut-after-trim', default='0', metavar='cut_after_trim',
-        dest='cut_after_trim',
+
+    parser.add_argument('--cut-to-length', default=0, dest='cut_to_length', type=int,
+        help='cut reads to specific length from right default: [0], full length')
+    parser.add_argument('--cut-before-trim', default='0', dest='cut_before_trim',
+        help='cut n-bases before trimming adapter; positive value, cut from left; \
+        minus value, cut from right, eg: 3 or -4 or 3,-4, default [0]') 
+    parser.add_argument('--cut-after-trim', default='0', dest='cut_after_trim',
         help='cut n-bases after trimming adapter; positive value, cut from left; \
         minus value, cut from right, eg: 3 or -4 or 3,-4, default [0]')    
-    ## extra arguments
-    parser.add_argument('--adapter-sliding', dest='adapter_sliding',
-        action='store_true',
-        help='Trim reads by sliding windows on adapter')
-    parser.add_argument('--trim-times', dest='trim_times', type=int,
-        default=1, help='Trim adapter from reads by N times, default:1')
-    parser.add_argument('--double-trim', action='store_true',
-        dest='double_trim', help='if specified, trim adapters twice')
-    parser.add_argument('--cut-before-trim', default='0', metavar='cut1',
-        dest='cut_before_trim',
-        help='cut bases before trimming adapter, Number of bases to cut \
-              from each read, plus on 5-prime end, minus on 3-prime end, \
-              could be single, or double numbers, eg: 3 or -4 or 3,-4, \
-              default [0]')
-
+    
     ## PE arguments
-    parser.add_argument('-A', '--Adapter3', default='AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT',
-        help='The 3 adapter of read2, default: AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT')
+    parser.add_argument('-A', '--Adapter3', default=None,
+        help='The 3 adapter of read2, default []')
     parser.add_argument('-G', '--Adapter5', default=None,
         help='The 5 adapter of read1, default: None')
     return parser
@@ -235,9 +221,9 @@ def add_align_args():
 
     parser.add_argument('--overwrite', action='store_true',
         help='if spcified, overwrite exists file')
-    parser.add_argument('--threads', default=1, type=int,
+    parser.add_argument('-p', '--threads', default=1, type=int,
         help='Number of threads for each job, default: [1]')
-    parser.add_argument('--parallel-jobs', default=1, type=int, 
+    parser.add_argument('-j', '--parallel-jobs', default=1, type=int, 
         dest='parallel_jobs',
         help='Number of jobs run in parallel, only for multiple fastq files, default: [1]')
     return parser
@@ -636,12 +622,15 @@ def add_cnr_args():
     parser.add_argument('-x', '--extra-index', dest="extra_index",
         help='Provide alignment index(es) for alignment, support multiple\
         indexes. if specified, ignore -g, -k')
+    parser.add_argument('--recursive', action='store_true',
+        help='trim adapter recursively')
 
     ## extra: para
     parser.add_argument('--extra-para', dest='extra_para', default=None,
         help='Extra parameters for aligner, eg: -X 2000 for bowtie2. default: [None]')
 
     return parser
+
 
 ##################################
 ## Utils
