@@ -96,7 +96,7 @@ import glob
 from multiprocessing import Pool
 from Levenshtein import distance
 from hiseq.utils.helper import *
-from hiseq.trim.trimmer import Trimmer
+from hiseq.trim.trimmer import Trim
 from hiseq.align.alignment import Alignment, AlignIndex
 from hiseq.peak.call_peak import Macs2
 from hiseq.atac.atac_utils import *
@@ -2597,16 +2597,18 @@ class CnR1(object):
         self.fq1, self.fq2 => raw_fq_list
         """
         raw_fq1, raw_fq2 = self.raw_fq_list
+        file_symlink(self.fq1, raw_fq1, absolute_path=True)
+        file_symlink(self.fq2, raw_fq2, absolute_path=True)
+
         # copy
-        if isinstance(cut_to_length, int) and cut_to_length in range(30, 150):
-            region = '{}:{}'.format(1, cut_to_length)
-            Fastx(self.fq1).subseq(raw_fq1, region=region)
-            Fastx(self.fq2).subseq(raw_fq2, region=region)
-            # shutil.copy(self.fq1, raw_fq1)
-            # shutil.copy(self.fq2, raw_fq2)
-        else:
-            file_symlink(self.fq1, raw_fq1, absolute_path=True)
-            file_symlink(self.fq2, raw_fq2, absolute_path=True)
+        # if isinstance(cut_to_length, int) and cut_to_length in range(30, 150):
+        #     # region = '{}:{}'.format(1, cut_to_length)
+        #     # Fastx(self.fq1).subseq(raw_fq1, region=region)
+        #     # Fastx(self.fq2).subseq(raw_fq2, region=region)
+        #     # shutil.copy(self.fq1, raw_fq1)
+        #     # shutil.copy(self.fq2, raw_fq2)
+        # else:
+        #     pass
 
 
     def trim(self, trimmed=False):
@@ -2622,41 +2624,32 @@ class CnR1(object):
         else:
             copy/links
         """
-        args_trim = self.__dict__.copy()
         fq1, fq2 = self.raw_fq_list
         clean_fq1, clean_fq2 = self.clean_fq_list
 
-        # update args
-        args_init = {
-            'fq1': fq1,
-            'fq2': fq2,
-            'outdir': self.clean_dir,
-            'library_type': 'Nextera'
-        }
-        args_trim.update(args_init)
-        
-        if trimmed is True:
-            ## fq1
-            if is_gz(fq1):
-                file_symlink(fq1, clean_fq1)
-            else:
-                gzip_cmd(fq1, clean_fq1, decompress=False, rm=False)
-            ## fq2
-            if not fq2 is None:
-                if is_gz(fq2):
-                    file_symlink(fq2, clean_fq2)
-                else:
-                    gzip_cmd(fq2, clean_fq2, decompress=False, rm=False)
+        # whether to trim or not
+        if trimmed:
+            ## copy files
+            file_symlink(fq1, clean_fq1)
+            file_symlink(fq2, clean_fq2)        
         else:
-            if check_file(self.clean_fq_list[0]):
-                log.info('trim() skipped, file exists: {}'.format(
-                    self.clean_fq_list))
-            else:
-                trimmer = Trimmer(**args_trim)
-                trimmer.run()
-                fq1, fq2 = trimmer.out_files
-                file_symlink(fq1, clean_fq1)
-                file_symlink(fq2, clean_fq2)
+            # update args
+            args_local = self.__dict__.copy()
+            args_init = {
+                'fq1': fq1,
+                'fq2': fq2,
+                'outdir': self.clean_dir,
+                'library_type': None,
+                'len_min': 20,
+                'cut_to_length': self.cut_to_length
+            }
+            args_local.update(args_init)
+            trim = Trim(**args_local)
+            trim.run()
+
+            ## copy files
+            file_symlink(trim.clean_fq1, clean_fq1)
+            file_symlink(trim.clean_fq2, clean_fq2)
 
 
     def align_genome(self):
