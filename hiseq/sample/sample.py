@@ -64,6 +64,7 @@ class FxSample(object):
         if not isinstance(self.outdir, str):
             self.outdir = str(pathlib.Path.cwd())
         self.outdir = file_abspath(self.outdir)
+        check_path(self.outdir)
 
 
     def sampleR1(self, fx):
@@ -82,7 +83,7 @@ class FxSample(object):
                 Fastx(fx).sample_random(fx_out, n=self.number)
             else:
                 log.info('extract {} records from: {}'.format(self.number, fx))
-                Fastx(fx).sample(self.outdir, sample_size=self.number, gzipped=True)
+                Fastx(fx).sample(fx_out, n=self.number)
 
 
     def sampleRn(self):

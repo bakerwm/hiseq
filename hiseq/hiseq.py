@@ -35,7 +35,9 @@ from .atac.atac_utils import Bam2bw, Bam2cor, PeakIDR, BedOverlap
 from .utils.helper import *
 from .fragsize.fragsize import BamPEFragSize2
 from .get_trackhub.get_trackhub import TrackHub 
-from .peak.call_peak import Macs2
+# from .peak.call_peak import Macs2
+from hiseq.peak.call_peak import Macs2
+from hiseq.sample.sample import FxSample
 
 
 class Hiseq(object):
