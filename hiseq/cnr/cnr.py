@@ -2282,11 +2282,11 @@ class CnRn(object):
 
         if len(self.frip_list) > 0:
             with open(self.frip_txt, 'wt') as w:
-                w.write('\t'.join(['FRiP', 'peak_reads', 'total_reads', 'id']) + '\n')
+                w.write('\t'.join(['total', 'peak_reads', 'FRiP', 'id']) + '\n')
                 for f in self.frip_list:
                     with open(f) as r:
                         for line in r:
-                            if line.startswith('FRiP'):
+                            if 'FRiP' in line:
                                 continue
                             w.write(line)
 
@@ -2299,15 +2299,17 @@ class CnRn(object):
             log.info('qc_frip() skipped, file exists: {}'.format(
                 self.frip_txt))
         else:
-            frip, n, total = peak_FRiP(self.peak, self.bam, threads=1) # threads > 1, not allowed,
+            # total, n, frip
+            s = PeakFRiP(peak=self.peak, bam=self.bam, method='featureCounts').run()
+            s.append(self.project_name)
+            s = list(map(str, s))
 
-            hd = ['FRiP', "peak_reads", "total_reads", "id"]
-            n = list(map(str, [frip, n, total]))
-            # n.append('self.config.fqname')
-            n.append(self.project_name)
+            hd = ['total', 'peak_reads', 'FRiP', 'id']
             with open(self.frip_txt, 'wt') as w:
-                w.write('\t'.join(hd) + '\n')
-                w.write('\t'.join(n) + '\n')
+                w.write('\n'.join([
+                    '\t'.join(hd),
+                    '\t'.join(s)
+                    ])+'\n')
 
 
     def qc_align_txt(self):
@@ -2525,7 +2527,7 @@ class CnRn(object):
             self.qc_bam_cor()
             self.qc_peak_overlap()
             self.qc_peak_idr()
-            self.get_peak_frip()
+            # self.get_peak_frip()
             self.qc_frip()
             self.qc_align_txt()
             self.qc_tss_enrich()
@@ -2967,14 +2969,18 @@ class CnR1(object):
             log.info('qc_frip() skipped, file exists: {}'.format(
                 self.frip_txt))
         else:
-            frip, n, total = peak_FRiP(self.peak, self.bam, threads=1)
+            # total, n, frip
+            s = PeakFRiP(peak=self.peak, bam=self.bam, method='featureCounts').run()
+            s.append(self.project_name)
+            s = list(map(str, s))
 
-            hd = ['FRiP', "peak_reads", "total_reads", "id"]
-            n = list(map(str, [frip, n, total]))
-            n.append(self.project_name)
+            hd = ['total', 'peak_reads', 'FRiP', 'id']
+
             with open(self.frip_txt, 'wt') as w:
-                w.write('\t'.join(hd) + '\n')
-                w.write('\t'.join(n) + '\n')
+                w.write('\n'.join([
+                    '\t'.join(hd),
+                    '\t'.join(s)
+                    ])+'\n')
 
 
     def qc_mito(self):

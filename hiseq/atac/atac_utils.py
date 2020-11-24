@@ -1396,7 +1396,7 @@ class PeakFRiP(object):
 
         # output
         if total > 0:
-            frip = round(rip/total*100, 2) #  '{:.2f}'.format(rip/total*100)
+            frip = round(rip/total, 4) #  '{:.2f}'.format(rip/total*100)
         else:
             frip = 0
 

@@ -2159,9 +2159,9 @@ class FeatureCounts(object):
             df.columns = list(map(os.path.basename, df.columns.to_list()))
             total = df.sum(axis=0, skipna=True)
             assign = df.loc['Assigned', ]
-            assign_pct = assign / total * 100
-            assign_pct = assign_pct.round(decimals=2)
-            assign_df = assign_pct.to_frame('assigned%')
+            assign_pct = assign / total
+            assign_pct = assign_pct.round(decimals=4)
+            assign_df = assign_pct.to_frame('assigned')
             # save to json
             assign_df.to_csv(self.stat, sep='\t', index=True, header=False)
             assign_df.to_json(self.stat)
@@ -2175,7 +2175,7 @@ class FeatureCounts(object):
             log.warning('reading file failed: {}'.format(self.summary))
             total, assign_pct, assign_df = [1, 0, None]
 
-        df = pd.DataFrame(total, assign, assign_pct).T
+        df = pd.DataFrame([total, assign, assign_pct]).T
         df.columns = ['total', 'map', 'FRiP']
         return df
 
