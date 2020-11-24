@@ -1435,6 +1435,40 @@ class Bam(object):
         return outfile
 
 
+    def subset(self, size=20000, subdir=None):
+        """
+        Extract N reads from bam list
+        """
+        if subdir is None:
+            subdir = self._tmp(delete=False)
+        check_path(self.subdir)
+
+        # src, dest
+        dest = os.path.join(subdir, os.path.basename(self.bam))
+        
+        # run
+        self.index()        
+        srcfile = pysam.AlignmentFile(self.bam, 'rb')
+        destfile = pysam.AlignmentFile(dest, 'wb', template=srcfile)
+        # counter
+        i = 0
+        for read in srcfile.fetch():
+            i +=1
+            if i > size:
+                break
+            destfile.write(read)
+
+        return dest
+
+
+    def _tmp(self, delete=True):
+        """
+        Create a tmp filename
+        """
+        tmp = tempfile.NamedTemporaryFile(prefix='tmp', delete=delete)
+        return tmp.name
+
+
     ##########################################
     ## code from cgat: BEGIN
     ##########################################
@@ -1917,4 +1951,250 @@ def design_combinations(seq, n=2, return_index=True):
         return index_pairs if return_index else item_pairs
     else:
         return []
+
+
+class FeatureCounts(object):
+    """
+    Run featureCounts for GTF + BAM(s)
+    mission()
+    count.txt
+    determin: library type: +-/-+; -+/+-;
+    map reads, scale
+    FPKM/RPKM;
+    
+    gene file format: bed, gtf, saf
+    
+    bed_to_saf
+    """
+    def __init__(self, **kwargs):
+        """
+        arguments:
+        gtf:
+        bam_list: (index)
+        outdir:
+        strandness: 0=no, 1=sens, 2=anti, 3=both
+        smpname: count.txt default
+        threads: 4
+        overwrite: False
+        """
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+        self.init_files()
+        args_checker(self.__dict__, self.config_pickle)
+        args_logger(self.__dict__, self.config_txt)
+
+
+    def init_args(self):
+        args_init = {
+            'gtf': None,
+            'bam_list': None,
+            'outdir': None,
+            'prefix': None,
+            'strandness': 0,
+            'threads': 4,
+            'overwrite': False
+        }
+        self = update_obj(self, args_init, force=False)
+
+        # gtf/bed/saf
+        if not isinstance(self.gtf, str):
+            raise ValueError('--gtf, expect str, got {}'.format(
+                type(self.gtf).__name__))
+
+        if not file_exists(self.gtf):
+            raise ValueError('--gtf, file not exists {}'.format(self.gtf))
+
+        # bam files
+        if not file_exists(self.bam_list):
+            raise ValueError('--bam-list, file not exists:')
+        # index
+        [Bam(i).index() for i in self.bam_list]
+
+        # output
+        if not isinstance(self.outdir, str):
+            self.outdir = str(pathlib.Path.cwd())
+        check_path(self.outdir)
+
+        # prefix
+        if not isinstance(self.prefix, str):
+            self.prefix = 'count.txt'
+
+        # abs path
+        self.gtf = file_abspath(self.gtf)
+        self.bam_list = file_abspath(self.bam_list)
+        self.outdir = file_abspath(self.outdir)
+
+
+    def init_files(self):
+        self.config_dir = os.path.join(self.outdir, 'config')
+
+        default_files = {
+            'config_txt': self.config_dir + '/config.txt',
+            'config_pickle': self.config_dir + '/config.pickle',
+            'config_json': self.config_dir + '/config.json',
+            'count_txt': self.outdir + '/' + self.prefix,
+            'summary': self.outdir + '/' + self.prefix + '.summary',
+            'log': self.outdir + '/' + self.prefix + '.featureCounts.log',
+            'stat': self.outdir + '/' + self.prefix + '.featureCounts.stat'
+        }
+        self = update_obj(self, default_files, force=True) # key
+        check_path(self.config_dir)
+
+        # check GTF/SAF file
+        # Convert BED to SAF
+        self.gtf_ext = os.path.splitext(self.gtf)[1].lower()
+        if self.gtf_ext in ['.bed', '.narrowpeak', '.broadpeak']:
+            self.saf = os.path.join(self.outdir, file_prefix(self.gtf)[0] + '.saf')
+            self.bed_to_saf(self.gtf, self.saf)
+
+
+    def subset_bam(self, size=20000, subdir=None):
+        """
+        Extract N reads from bam list
+        """
+        if subdir is None:
+            subdir = self._tmp(delete=False)
+        check_path(self.subdir)
+
+        # subset
+        return [Bam(i).subset(size=20000, subdir=subdir) for i in self.bam_list]
+
+
+    def is_pe(self):
+        """
+        Check whether the input bam files are Paired or Single file
+        Bam().isPaired()
+        """
+        return all([Bam(i).isPaired() for i in self.bam_list])
+
+
+    def bed_to_saf(self, bed_in, saf_out):
+        """
+        SAF format: 
+        GeneID Chr Start End Strand
+
+        see: https://www.biostars.org/p/228636/#319624
+        """
+        if file_exists(saf_out) and not self.overwrite:
+            log.info('bed_to_saf() skipped, file exists: {}'.format(saf_out))
+        else:
+            try:
+                with open(bed_in, 'rt') as r, open(saf_out, 'wt') as w:
+                    for line in r:
+                        tabs = line.strip().split('\t')
+                        chr, start, end = tabs[:3]
+                        # strand
+                        strand = '.'
+                        if len(tabs) > 5:
+                            s = tabs[5]
+                            if s in ['+', '-', '.']:
+                                strand = s
+                        # id
+                        if len(tabs) > 3:
+                            name = os.path.basename(tabs[3])
+                        else:
+                            name = '_'.join([chr, start, end, strand])
+                        # output
+                        w.write('\t'.join([name, chr, start, end, strand])+'\n')
+            except:
+                log.error('bed_to_saf() failed, see: {}'.format(saf_out))
+
+
+    def get_arg_gtf(self):
+        """
+        gtf
+        saf
+        bed -> saf
+        """
+        # check gtf or saf or bed
+        if self.gtf_ext in ['.gtf']:
+            arg = '-a {} -F GTF -t exon -g gene_id '.format(self.gtf)
+        elif self.gtf_ext in ['.bed', '.narrowpeak', '.broadpeak']:
+            arg = '-a {} -F SAF'.format(self.saf) # SAF
+        elif self.gtf_ext in ['.saf']:
+            arg = '-a {} -F SAF'.format(self.gtf)
+        else:
+            arg = ''
+
+        return arg
+
+
+    def get_arg_pe(self):
+        """
+        arguments for Paired-End fq
+        """
+        return '-p -C -B' if self.is_pe() else ''
+
+
+    def get_cmd(self):
+        """
+        prepare args for featureCounts
+        """
+        return ' '.join([
+            '{}'.format(shutil.which('featureCounts')),
+            self.get_arg_gtf(),
+            self.get_arg_pe(),
+            '-o {}'.format(self.count_txt),
+            '-T {}'.format(self.threads),
+            '-M -O --fraction',
+            ' '.join(self.bam_list),
+            '2> {}'.format(self.log)
+            ])
+
+
+    def wrap_log(self):
+        """
+        save output file to log,
+        """
+        try:
+            df = pd.read_csv(self.summary, '\t', index_col=0)
+            df.columns = list(map(os.path.basename, df.columns.to_list()))
+            total = df.sum(axis=0, skipna=True) 
+            assign_pct = df.loc['Assigned', ] / total * 100
+            assign_pct = assign_pct.round(decimals=2)
+            assign_df = assign_pct.to_frame('assigned%')
+            # save to json
+            assign_df.to_csv(self.stat, sep='\t', index=True, header=False)
+            assign_df.to_json(self.stat)
+            # mimimal value
+            assign_min = assign_pct.min()
+            if assign_min < 50:
+                log.warning('Caution: -s {}, {:.2f}% assigned, see {}'.format(
+                    self.strandness, assign_min, self.summary))
+            print(assign_df)
+        except:
+            log.warning('reading file failed: {}'.format(self.summary))
+            total, assign_pct, assign_df = [1, 0, None]
+
+        return [total, assign_pct, assign_df]
+
+
+    def _tmp(self, delete=True):
+        """
+        Create a tmp filename
+        """
+        tmp = tempfile.NamedTemporaryFile(prefix='tmp', delete=delete)
+        return os.path.basename(tmp.name)
+
+
+    def run(self):
+        """
+        run featureCounts
+        """
+        cmd = self.get_cmd()
+
+        # save cmd
+        cmd_txt = os.path.join(self.outdir, 'cmd.sh')
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+
+        if file_exists(self.count_txt) and not self.overwrite:
+            log.info("FeatureCounts() skippped, file exists: {}".format(
+                self.count_txt))
+        else:
+            try:
+                run_shell_cmd(cmd)
+                self.wrap_log()
+            except:
+                log.error('FeatureCounts() failed, see: {}'.format(self.log))
 
