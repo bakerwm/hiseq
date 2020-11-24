@@ -2005,14 +2005,23 @@ class FeatureCounts(object):
             raise ValueError('--gtf, file not exists {}'.format(self.gtf))
 
         # bam files
-        if not file_exists(self.bam_list):
+        if isinstance(self.bam_list, str):
+            self.bam_list = [self.bam_list]
+        elif isinstance(self.bam_list, list):
+            pass
+        else:
+            raise ValueError('bam_list, str or list, got {}'.format(
+                type(self.bam_list).__name__))
+
+        if not all(file_exists(self.bam_list)):
             raise ValueError('--bam-list, file not exists:')
         # index
         [Bam(i).index() for i in self.bam_list]
 
         # output
         if not isinstance(self.outdir, str):
-            self.outdir = str(pathlib.Path.cwd())
+            # self.outdir = str(pathlib.Path.cwd())
+            self.outdir = self._tmp(dir=True)
         check_path(self.outdir)
 
         # prefix
@@ -2048,16 +2057,15 @@ class FeatureCounts(object):
             self.bed_to_saf(self.gtf, self.saf)
 
 
-    def subset_bam(self, size=20000, subdir=None):
+    def _tmp(self, dir=False):
         """
-        Extract N reads from bam list
+        Create a tmp file to save json object
         """
-        if subdir is None:
-            subdir = self._tmp(delete=False)
-        check_path(self.subdir)
-
-        # subset
-        return [Bam(i).subset(size=20000, subdir=subdir) for i in self.bam_list]
+        if dir:
+            tmp = tempfile.TemporaryDirectory()
+        else:
+            tmp = tempfile.NamedTemporaryFile(prefix='tmp', delete=False)
+        return tmp.name
 
 
     def is_pe(self):
@@ -2149,8 +2157,9 @@ class FeatureCounts(object):
         try:
             df = pd.read_csv(self.summary, '\t', index_col=0)
             df.columns = list(map(os.path.basename, df.columns.to_list()))
-            total = df.sum(axis=0, skipna=True) 
-            assign_pct = df.loc['Assigned', ] / total * 100
+            total = df.sum(axis=0, skipna=True)
+            assign = df.loc['Assigned', ]
+            assign_pct = assign / total * 100
             assign_pct = assign_pct.round(decimals=2)
             assign_df = assign_pct.to_frame('assigned%')
             # save to json
@@ -2166,15 +2175,9 @@ class FeatureCounts(object):
             log.warning('reading file failed: {}'.format(self.summary))
             total, assign_pct, assign_df = [1, 0, None]
 
-        return [total, assign_pct, assign_df]
-
-
-    def _tmp(self, delete=True):
-        """
-        Create a tmp filename
-        """
-        tmp = tempfile.NamedTemporaryFile(prefix='tmp', delete=delete)
-        return os.path.basename(tmp.name)
+        df = pd.DataFrame(total, assign, assign_pct).T
+        df.columns = ['total', 'map', 'FRiP']
+        return df
 
 
     def run(self):
