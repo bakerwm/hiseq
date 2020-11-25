@@ -9,6 +9,7 @@ Functions for sequence, fastx
 import os
 import sys
 import re
+import shutil
 from xopen import xopen
 import collections # Fastx().collapse()
 from hiseq.utils.helper import *
@@ -152,58 +153,54 @@ class Fastx(object):
         """
         assert isinstance(n, int)
         assert isinstance(p, float)
-
-        seqkit_exe = which('seqkit')
-        if seqkit_exe is None:
-            raise Exception('command not found in $PATH: seqkit')
-
-        # log.info('extracting sub-sample: n=%d' % n)
+        outdir = os.path.dirname(out)
+        check_path(outdir)
 
         ## warning
-        if n > 1000000 or p > 0.1:
-            log.warning('choose a smaller number.')
+        if n > 1000000:
+            log.warning('too-big n={}, change to 1000000'.format(n))
+            n = 1000000
+        if p > 0.1:
+            p = 0.1
+            
+        ## cmd
+        cmd = ' '.join([
+            '{}'.format(shutil.which('seqkit')),
+            'sample -n {}'.format(n),
+            '-o {}'.format(out),
+            '{}'.format(self.input)
+            ])
 
-        cmd = '{} | {} sample -n {} > {}'.format(
-            self.cat,
-            self.input,
-            seqkit_exe,
-            n,
-            out)
-
-        run_shell_cmd(cmd)
-
-        return self.output
+        try:
+            run_shell_cmd(cmd)
+        except:
+            log.error('sample_random() faied, {}'.format(self.input))
 
 
-    def sample(self, outdir, sample_size=1000000, gzipped=True):
+    def sample(self, out, n=1000):
         """
         Create a subsample of input fastq files, default: 1M reads
         Run the whole process for demostration
         """
-        s = 4 if self.format == 'fastq' else 2
-        nsize = s * sample_size
-
-        # update args
+        outdir = os.path.dirname(out)
         check_path(outdir)
         
-        # subsample
-        fx_out = os.path.join(outdir, os.path.basename(self.input))
-        
-        # gzip output
-        if not self.input.endswith('.gz') and gzipped:
-            fx_out += '.gz'
-
-        # run
-        if os.path.exists(fx_out):
-            log.info('file eixsts, {}'.format(fx_out))
+        if file_exists(out):
+            log.info('file eixsts, {}'.format(out))
         else:
-            with xopen(self.input, 'rt') as r, xopen(fx_out, 'wt') as w:
-                i = 0 # counter
-                for line in r:
+            i = 0
+            with xopen(self.input, 'rt') as r, xopen(out, 'wt') as w:
+                for name, seq, qual in self.readfq(r):
                     i += 1
-                    if i > nsize: # fastq file: 4 lines per read
+                    if i > n:
                         break
-                    w.write(line)
+                    if self.format == 'fastq':
+                        fx = '@{}\n{}\n+\n{}'.format(name, seq, qual)
+                    elif self.format == 'fasta':
+                        fx = '>{}\n{}'.format(name, seq)
+                    else:
+                        continue
+                    w.write(fx+'\n')
 
 
     def fa2fq(self, out):

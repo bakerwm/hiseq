@@ -1338,6 +1338,110 @@ class PeakIDR(object):
                 self.idr(peakA, peakB)
     
 
+class PeakFRiP(object):
+    """
+    Calculate the FRiP 
+    see ENCODE: https://www.encodeproject.org/data-standards/terms/#enrichment
+
+    1. bedtools intersect
+    2. featureCounts
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+
+
+    def init_args(self):
+        args_init = {
+            'peak': None,
+            'bam': None,
+            'method': 'bedtools', # featureCounts
+            'gsize': None
+        }
+        self = update_obj(self, args_init, force=False)
+
+        if not file_exists(self.peak):
+            raise ValueError('peak, file not exists: {}'.format(self.peak))
+
+        if not file_exists(self.bam):
+            raise ValueError('bam, file not exists: {}'.format(self.bam))
+
+        if not self.method in ['bedtools', 'featureCounts']:
+            self.method = 'bedtools' # default
+
+
+    def run_bedtools(self):
+        """
+        see: https://www.biostars.org/p/337872/#338646
+
+        sort -k1 -k2,2n -o peak.bed peak.bed
+        bedtools intersect -c -a peak.bed -b file.bam -sorted -g ref | awk '{i+=$n}END{print i}'
+        """
+        # total reads
+        total = Bam(self.bam).count()
+
+        # peak reads
+        rip_txt = self._tmp(delete=False)
+        cmd = ' '.join([
+            'sort -k1,1 -k2,2n -o {} {}'.format(self.peak, self.peak),
+            '&& bedtools intersect -c -a {} -b {} -g {}'.format(
+                self.peak, self.bam, self.gsize),
+            r"| awk '{i+=$NF}END{print i}'",
+            ' > {}'.format(rip_txt)
+            ])
+        run_shell_cmd(cmd)
+
+        with open(rip_txt, 'rt') as r:
+            rip = int(r.read().strip())
+
+        # output
+        if total > 0:
+            frip = round(rip/total, 4) #  '{:.2f}'.format(rip/total*100)
+        else:
+            frip = 0
+
+        # fragments (PE)
+        if Bam(self.bam).isPaired():
+            total = int(total / 2.0)
+            rip = int(rip / 2.0)
+
+        # remove temp file
+        file_remove(rip_txt, ask=False)
+        return (total, rip, frip)
+
+
+    def run_featureCounts(self):
+        """
+        see: https://www.biostars.org/p/337872/#337890
+
+        -p , fragments
+        """
+        fc = FeatureCounts(gtf=self.peak, bam_list=self.bam)
+        fc.run()
+        df = fc.wrap_log()
+        # df = pd.DataFrame(stat).T
+        # df.columns = ['total', 'map', 'FRiP']
+        return df.values.tolist()[0] # list
+
+
+    def _tmp(self, delete=True):
+        """
+        Create a tmp filename
+        """
+        tmp = tempfile.NamedTemporaryFile(prefix='tmp', suffix='.txt', delete=delete)
+        return tmp.name
+
+
+    def run(self):
+        if self.method == 'bedtools':
+            return self.run_bedtools()
+        elif self.method == 'featureCounts':
+            return self.run_featureCounts()
+        else:
+            log.error('method, unknown, [bedtools|featureCounts], got {}'.format(
+                self.method))
+
+
 class BedOverlap(object):
     """
     pybedtools API, to calculate the overlaps between bed files
