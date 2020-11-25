@@ -1629,7 +1629,7 @@ class CnR(object):
         """
         Run multiple samples, rep_list
         """
-        CnRRn(**self.__dict__).run()
+        CnRn(**self.__dict__).run()
 
 
     def run_CnR_from_design(self):
@@ -1693,7 +1693,7 @@ class CnR(object):
         elif self.hiseq_type == 'hiseq_rx':
             self.run_CnR_rx()
         else:
-            raise ValueError('unknown hiseqtype: {}'.format(self.hiseq_type))
+            raise ValueError('unknown hiseq_type: {}'.format(self.hiseq_type))
 
 
 class CnRx(object):
