@@ -13,6 +13,7 @@ import re
 import gzip
 import shutil
 import json
+import signal
 import pickle
 import fnmatch
 import tempfile
@@ -626,12 +627,9 @@ def run_shell_cmd(cmd):
         try:
             os.killpg(pgid, signal.SIGKILL)
         except:
-            pass
-        finally:
-            raise Exception(err_str)
-    else:
-        log.info(err_str)
-    return (stdout.strip('\n'), stderr.strip('\n'))
+            log.error(err_str)
+
+    return (rc, stdout.strip('\n'), stderr.strip('\n'))
 
 
 def gzip_cmd(src, dest, decompress=True, rm=True):

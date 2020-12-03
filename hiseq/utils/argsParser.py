@@ -465,9 +465,17 @@ def add_atac_args():
     parser.add_argument('-g', '--genome', default=None,
         choices=['dm3', 'dm6', 'hg19', 'hg38', 'mm9', 'mm10'],
         help='Reference genome : dm3, dm6, hg19, hg39, mm9, mm10, default: hg19')
+    parser.add_argument('--spikein', default=None,
+        choices=['dm3', 'dm6', 'hg19', 'hg38', 'mm9', 'mm10'],
+        help='Reference genome : dm3, dm6, hg19, hg39, mm9, mm10, default: hg19')
+    parser.add_argument('--spikein-index', dest='spikein_index', default=None,
+        help='Index for Spikein')
+    parser.add_argument('-x', '--extra-index', dest="extra_index",
+        help='Provide alignment index(es) for alignment, support multiple\
+        indexes. if specified, ignore -g, -k')
 
-    parser.add_argument('--trimmed', action='store_true',
-        help='specify if input files are trimmed')
+    parser.add_argument('--gene-bed', dest='gene_bed', default=None,
+        help='The BED or GTF of genes')
 
     # optional arguments - 1
     parser.add_argument('-p', '--threads', default=1, type=int,
@@ -478,40 +486,13 @@ def add_atac_args():
     parser.add_argument('--overwrite', action='store_true',
         help='if spcified, overwrite exists file')
 
-    # optional arguments - 2
-    parser.add_argument('-m', '--len_min', default=15, metavar='len_min',
-        type=int, help='Minimum length of reads after trimming, defualt [15]')
-    parser.add_argument('-a', '--adapter3', metavar='adapter', type=str,
-        default='CTGTCTCTTATACACATCT',
-        help='3-Adapter, default: [CTGTCTCTTATACACATCT].')
-    ## extra arguments - 3
-    parser.add_argument('--cut-before-trim', default='0', metavar='cut1',
-        dest='cut_before_trim',
-        help='cut bases before trimming adapter, Number of bases to cut \
-              from each read, plus on 5-prime end, minus on 3-prime end, \
-              could be single, or double numbers, eg: 3 or -4 or 3,-4, \
-              default [0]')
-    parser.add_argument('--cut-after-trim', default='0', metavar='cut2',
-        dest='cut_after_trim',
-        help='cut bases after trimming adapter, Number of bases to cut \
-              from each read, plus on 5-prime end, minus on 3-prime end, \
-              could be single, or double numbers, eg: 3 or -4 or 3,-4, \
-              default [0]')
+    parser.add_argument('--cut-to-length', dest='cut_to_length', default=0, type=int,
+        help='cut the read to specific length, from right, default: [0], not cut')
+    parser.add_argument('--trimmed', action='store_true',
+        help='specify if input files are trimmed')
+    parser.add_argument('--recursive', action='store_true',
+        help='trim adapter recursively')
 
-    ## extra: index
-    parser.add_argument('-k', '--spikein', default=None,
-        choices=[None, 'dm3', 'hg19', 'hg38', 'mm10'],
-        help='Spike-in genome : dm3, hg19, hg38, mm10, default: None')
-    parser.add_argument('-x', '--ext-index', nargs='+', dest="extra_index",
-        help='Provide alignment index(es) for alignment, support multiple\
-        indexes. if specified, ignore -g, -k')
-
-    ## extra: para
-    parser.add_argument('--extra-para', dest='extra_para', default=None,
-        help='Extra parameters for aligner, eg: -X 2000 for bowtie2. default: [None]')
-    parser.add_argument('--copy-raw-fq', dest='copy_raw_data',
-        action='store_true',
-        help='whether copy the raw fastq files to output')
     return parser
 
 
