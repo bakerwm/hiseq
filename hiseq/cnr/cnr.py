@@ -205,1385 +205,6 @@ def fq_paired(fq1, fq2):
     return flag
 
 
-class Align(object):
-    """
-    Alignment reads for CUT&RUN, CUT&TAG
-    suppose paired end reads
-    --local --very-sensitive --no-mixed --no-discordant --phred33 -I 10 -X 700
-    
-    Input: fq, genome_index, outputdir, stat/log
-    """
-    def __init__(self, **kwargs):
-        self = update_obj(self, kwargs, force=True)
-        self.init_args()
-        self.init_index()
-        self.init_files()        
-        self.prep_cmd()
-
-
-    def init_args(self):
-        """
-        ATACseq, max_fragment = 2000
-        CUT&RUN, max_fragment = 700
-        CUT&TAG, max_fragment = 700
-        """
-        default_args = {
-            'fq1': None,
-            'fq2': None,
-            'index': None,
-            'genome': None,
-            'extra_index': None,
-            'outdir': None,
-            'aligner': 'bowtie2',
-            'threads': 1,
-            'overwrite': False,
-            'max_fragment': 700,
-            'remove_unmap': False,
-            'hiseq_type': 'hiseq_alignment',
-            'keep_tmp': False
-            }
-        self = update_obj(self, default_args, force=False)
-
-        # outdir
-        if not isinstance(self.outdir, str):
-            self.outdir = str(pathlib.Path.cwd())
-            log.warning('set pwd as outdir: {}'.format(self.outdir))
-        self.outdir = file_abspath(self.outdir)
-        # check_path(self.outdir)
-
-        # fq1
-        if isinstance(self.fq1, str):
-            if check_file(self.fq1):
-                self.fq1 = file_abspath(self.fq1)
-                self.fq_check = 0
-            else:
-                log.error('--fq1, file not exists, {}'.format(self.fq1))
-                self.fq_check = 1
-        else:
-            log.error('--fq1, str expected, got {}'.format(
-                type(self.fq1).__name__))
-            self.fq_check = 1
-
-        # fq2
-        if isinstance(self.fq2, str):
-            if check_file(self.fq2):
-                self.fq2 = file_abspath(self.fq2)
-                self.fq_check = 0
-            else:
-                log.error('--fq2, file not exists, {}'.format(self.fq1))
-                self.fq_check = 1
-        else:
-            log.error('--fq2, str expected, got {}'.format(
-                type(self.fq2).__name__))
-            self.fq_check = 1
-
-        # prefix
-        self.smp_name = fq_name(self.fq1, pe_fix=True)
-
-
-    def init_index(self):
-        """
-        Determine the index
-        """
-        if isinstance(self.extra_index, str):
-            self.index = self.extra_index
-            self.index_check = 0 if AlignIndex(
-                index=self.extra_index, aligner=self.aligner).is_index() else 1
-        elif isinstance(self.index, str):
-            self.index_check = 0 if AlignIndex(
-                index=self.index, aligner=self.aligner).is_index() else 1
-        elif isinstance(self.genome, str):
-            self.index = AlignIndex(aligner=self.aligner).search(
-                genome=self.genome, group = 'genome')
-            self.index_check = 1 if self.index is None else 0
-        else:
-            log.error('-g, --index, failed')
-            self.index_check = 1
-
-        # index name
-        if isinstance(self.index, str):
-            self.index_name = AlignIndex(index=self.index).index_name()
-        else:
-            self.index_name = None
-
-
-    def init_files(self):
-        """
-        default files for output
-        bam, sam, log, unmap, ...
-        """
-        # subdir
-        subdir = os.path.join(self.outdir, self.smp_name, self.index_name)
-        check_path(subdir)
-
-        # output files
-        prefix = os.path.join(subdir, self.smp_name)
-        default_files = {
-            'subdir': subdir,
-            'config_pickle': os.path.join(subdir, 'config.pickle'),
-            'cmd_shell': os.path.join(subdir, 'cmd.txt'),
-            'bam': prefix + '.bam',
-            'sam': prefix + '.sam',
-            'unmap': prefix + '.unmap.fastq',
-            'unmap1': prefix + '.unmap.1.fastq',
-            'unmap2': prefix + '.unmap.2.fastq',
-            'align_log': prefix + '.bowtie2.log',
-            'align_stat': prefix + '.bowtie2.stat',
-            'align_json': prefix + '.bowtie2.json',
-            'align_flagstat': prefix + '.flagstat',
-            'rmdup_bam': prefix + '.rmdup.bam',
-            'rmdup_matrix': prefix + '.rmdup.matrix.txt'
-        }
-        self = update_obj(self, default_files, force=True)
-
-
-    def prep_cmd(self):
-        """
-        Alignment for CUT&RUN, CUT&TAG, ATACseq, ...
-        """
-        self.cmd = ' '.join([
-            '{}'.format(shutil.which('bowtie2')),
-            '--mm -p {}'.format(self.threads),
-            '--local --very-sensitive --no-mixed --no-discordant -I 10',
-            '-X {}'.format(self.max_fragment),
-            '-x {}'.format(self.index),
-            '-1 {} -2 {}'.format(self.fq1, self.fq2),
-            '--un-conc {}'.format(self.unmap),
-            '1> {} 2> {}'.format(self.sam, self.align_log),
-            '&& samtools view -@ {} -bS'.format(self.threads),
-            '<(samtools view -H {} ;'.format(self.sam),
-            "samtools view -F 2048 {} | grep 'YT:Z:CP')".format(self.sam),
-            '| samtools sort -@ {} -o {} -'.format(self.threads, self.bam),
-            '&& samtools index {}'.format(self.bam),
-            '&& samtools flagstat {} > {}'.format(self.bam, self.align_flagstat),
-            '&& [[ -f {} ]] && rm {}'.format(self.sam, self.sam)
-            ])
-        
-        # save cmd txt
-        cmd_txt = self.subdir + '/cmd.txt'
-        with open(cmd_txt, 'wt') as w:
-            w.write(self.cmd + '\n')
-
-
-    def parse_align(self, to_json=None):
-        """
-        Parsing the log of bowtie2
-        """
-        """
-        Wrapper bowtie2 log
-        Bowtie2:
-
-        SE:
-        10000 reads; of these:
-          10000 (100.00%) were unpaired; of these:
-            166 (1.66%) aligned 0 times
-            2815 (28.15%) aligned exactly 1 time
-            7019 (70.19%) aligned >1 times
-        98.34% overall alignment rate
-
-        PE:
-        100000 reads; of these:
-          100000 (100.00%) were paired; of these:
-            92926 (92.93%) aligned concordantly 0 times
-            5893 (5.89%) aligned concordantly exactly 1 time
-            1181 (1.18%) aligned concordantly >1 times
-            ----
-            92926 pairs aligned concordantly 0 times; of these:
-              1087 (1.17%) aligned discordantly 1 time
-            ----
-            91839 pairs aligned 0 times concordantly or discordantly; of these:
-              183678 mates make up the pairs; of these:
-                183215 (99.75%) aligned 0 times
-                101 (0.05%) aligned exactly 1 time
-                362 (0.20%) aligned >1 times
-        8.39% overall alignment rate
-
-        unique, multiple, unmap, map, total
-        """
-        self.unique_only = False
-
-        dd = {}
-        se_tag = 1 #
-        with open(self.align_log, 'rt') as r:
-            for line in r:
-                value = line.strip().split(' ')[0]
-                if '%' in value:
-                    continue
-                if line.strip().startswith('----'):
-                    continue
-                value = int(value)
-
-                ## paired tag
-                if 'were paired; of these' in line:
-                    dd['total'] = value
-                    se_tag = 0
-                elif 'aligned concordantly 0 times' in line:
-                    dd['unmap'] = value
-                    se_tag = 0
-                elif 'aligned concordantly exactly 1 time' in line:
-                    dd['unique'] = value
-                    se_tag = 0
-                elif 'aligned concordantly >1 times' in line:
-                    dd['multiple'] = value
-                    se_tag = 0
-                elif 'reads; of these' in line and se_tag:
-                    dd['total'] = value
-                elif 'aligned 0 times' in line and se_tag:
-                    dd['unmap'] = value
-                elif 'aligned exactly 1 time' in line and se_tag:
-                    dd['unique'] = value
-                elif 'aligned >1 times' in line and se_tag:
-                    dd['multiple'] = value
-                else:
-                    pass
-
-        if self.unique_only:
-            dd['map'] = dd['unique']
-        else:
-            dd['map'] = dd['unique'] + dd['multiple']
-        dd['unmap'] = dd['total'] - dd['unique'] - dd['multiple']
-
-        # save fqname, indexname,
-        dd['fqname'] = self.smp_name
-        dd['index_name'] = self.index_name
-        self.log_dict = dd
-
-        # save dict to plaintext file
-        with open(self.align_stat, 'wt') as w:
-            groups = ['total', 'map', 'unique', 'multiple', 'unmap', 'fqname', 
-                'index_name']
-            h = '\t'.join(groups)
-            v = '\t'.join([str(dd.get(i, 0)) for i in groups])
-            w.write('#' + h + '\n')
-            w.write(v + '\n')
-
-        ## save to json
-        if to_json:
-            Json(dd).writer(self.align_json)
-
-        return dd['total'], dd['map'], dd['unique'], dd['multiple'], dd['unmap']
-
-
-    def run(self):
-        if self.fq_check > 0:
-            raise ValueError('--fq1, --fq2, illegal')
-        if self.index_check > 0:
-            raise ValueError('--index, --genome, illegal')
-
-        # prepare dirs
-        check_path(self.subdir)
-
-        # save config
-        dict2pickle(self.__dict__, self.config_pickle)
-
-        # run cmd
-        if file_exists(self.bam) and not self.overwrite:
-            log.info('align() skipped, file exists:{}'.format(self.bam))
-        else:
-            try:
-                run_shell_cmd(self.cmd)
-            except:
-                log.error('align() failed, check {}'.format(self.align_log))
-
-        # read log
-        if file_exists(self.align_log):
-            self.parse_align(to_json=True)
-
-        # temp files
-        del_list = [self.sam, self.unmap1, self.unmap2]
-        if not self.keep_tmp:
-            file_remove(del_list, ask=False)
-
-
-class CallPeak(object):
-    """
-    Call peaks using MACS2, or SEACR
-
-    MACS2: 
-    macs2 callpeak -t ip.bam -c input.bam \
-      -g hs -f BAMPE -n macs2_peak_q0.1 \
-      --outdir outdir -q 0.1 
-      --keep-dup all 
-      2>log.txt
-    """
-    def __init__(self, **kwargs):
-        self = update_obj(self, kwargs, force=True)
-        self.init_args()
-        self.init_files()
-
-
-    def init_args(self):
-        default_args = {
-            'method': 'macs2',
-            'ip': None,
-            'input': None,
-            'genome': None,
-            'genome_size': None,
-            'genome_size_file': None,
-            'prefix': None,
-            'outdir': None,
-            'overwrite': False,
-            'hiseq_type': 'macs2_call_peak',
-            'keep_tmp': False
-            }
-        self = update_obj(self, default_args, force=False)
-
-        # outdir
-        if not isinstance(self.outdir, str):
-            self.outdir = str(pathlib.Path.cwd())
-            log.warning('set pwd as outdir: {}'.format(self.outdir))
-        self.outdir = file_abspath(self.outdir)
-        check_path(self.outdir)
-
-        # bam files
-        if not file_exists(self.ip):
-            raise ValueError('ip, required')
-
-        self.ip = file_abspath(self.ip)
-        self.input = file_abspath(self.input)
-
-        # file name
-        self.ip_name = os.path.splitext(os.path.basename(self.ip))[0]
-        if self.input is None:
-            self.input_name = ''
-        else:
-            self.input_name = os.path.splitext(os.path.basename(self.input))[0]
-        
-        # prefix
-        if not isinstance(self.prefix, str):
-            self.prefix = self.ip_name
-
-        self.prefix_top001 = self.prefix + '.top0.01'
-
-
-    def init_genome(self):
-        """
-        Determine the genome_size, genome_size_file
-        """
-        # genome
-        g = {
-          'dm6': 'dm',
-          'dm3': 'dm',
-          'mm9': 'mm',
-          'mm10': 'mm',
-          'hg19': 'hs',
-          'hg38': 'hs'
-        }
-
-        if isinstance(self.genome, str):
-            self.genome_size = g.get(self.genome, 0)
-            self.genome_size_file = Genome(genome=self.genome).get_fasize()
-
-            if self.genome_size is None:
-                raise ValueError('unknown genome: {}'.format(self.genome))
-
-        elif isinstance(self.genome_size, int):
-            if self.genome_size < 1:
-                raise ValueError('genome_size, failed, {}'.format(
-                    self.genome_size))
-            elif not isinstance(self.genome_size_file, str):
-                raise ValueError('genome_size_file, failed, {}'.format(
-                    self.genome_size_file))
-            else:
-                pass
-        
-        else:
-            raise ValueError('--genome, --genome-size, required')
-
-
-    def init_files(self):
-        # files
-        default_files = {
-            'config_pickle': self.outdir + '/config.pickle',
-            'macs2_peak': self.outdir + '/' + self.prefix + '_peaks.narrowPeak',
-            'macs2_log': self.outdir + '/' + self.prefix + '.callpeak.log',
-            'macs2_peak_xls': self.outdir + '/' + self.prefix + '_peaks.xls',
-            'ip_bed': self.outdir + '/' + self.ip_name + '.frag.bed',
-            'ip_bg': self.outdir + '/' + self.ip_name + '.frag.bg',
-            'input_bed': self.outdir + '/' + self.input_name + '.frag.bed',
-            'input_bg': self.outdir + '/' + self.input_name + '.frag.bg',
-            'seacr_peak': self.outdir + '/' + self.prefix + '.stringent.bed',
-            'seacr_peak_top': self.outdir + '/' + self.prefix_top001 + '.stringent.bed'
-        }
-        self = update_obj(self, default_files, force=True) # key
-
-        ## gsize
-        # self.genome_size_file = Genome(genome=self.genome).get_fasize()
-        
-
-    def run_macs2(self):
-        input_arg = '' if self.input is None else '-c {}'.format(self.input)
-
-        cmd = ' '.join([
-            '{} callpeak'.format(shutil.which('macs2')),
-            '-t {} {}'.format(self.ip, input_arg),
-            '-g {} -f BAMPE'.format(self.genome_size),
-            '-n {}'.format(self.outdir + '/' + self.prefix),
-            '-q 0.1 --keep-dup all',
-            '--nomodel --extsize 150',
-            '2> {}'.format(self.macs2_log)
-            ])
-
-        # save cmd
-        cmd_txt = self.outdir + '/' + self.prefix + '.macs2.cmd.sh'
-        with open(cmd_txt, 'wt') as w:
-            w.write(cmd + '\n')
-
-        # run
-        if file_exists(self.macs2_peak) and not self.overwrite:
-            log.info('run_macs2() skipped, file exists:{}'.format(
-                self.macs2_peak))
-        else:
-            try:
-                run_shell_cmd(cmd)
-            except:
-                log.error('run_macs2() failed, check {}'.format(
-                    self.macs2_log))
-
-
-    def bampe_to_bg(self, bam, bg):
-        """
-        Convert bam to bed
-        bedpe, sort -n (by name)
-        """
-        bam_sorted = os.path.splitext(bg)[0] + '.sorted_by_name.bam'
-        bed = os.path.splitext(bg)[0] + '.bed'
-
-        cmd = ' '.join([
-            'samtools sort -@ 4 -n -o {} {}'.format(bam_sorted, bam),
-            '&& bedtools bamtobed -bedpe -i {}'.format(bam_sorted),
-            "| awk '$1==$4 && $6-$2 < 1000 {print $0}'",
-            '| cut -f 1,2,6',
-            '| sort -k1,1 -k2,2n > {}'.format(bed),
-            '&& bedtools genomecov -bg -i {}'.format(bed),
-            '-g {}'.format(self.genome_size_file),
-            '> {}'.format(bg)
-        ])
-
-        # save cmd
-        cmd_txt = self.outdir + '/' + self.prefix + '.bam2bg.cmd.sh'
-        with open(cmd_txt, 'wt') as w:
-            w.write(cmd + '\n')
-
-        # run
-        if file_exists(bg) and not self.overwrite:
-            log.info('bampe_to_bg() skipped, file exists:{}'.format(bg))
-        else:
-            try:
-                run_shell_cmd(cmd)
-            except:
-                log.error('bampe_to_bg() failed, check {}'.format(bg))
-
-        # temp files
-        del_list = [bam_sorted, bed]
-        if not self.keep_tmp:
-            file_remove(del_list, ask=False)
-
-
-    def run_seacr(self):
-        """
-        bash $seacr ip.bedgraph input.bedgraph \
-        non stringent output
-    
-        see: https://github.com/FredHutch/SEACR
-        1. bam-to-bed
-        bedtools bamtobed -bedpe -i in.bam > out.bed
-        awk '$1==$4 && $6-$2 < 1000 {print $0}' out.bed > out.clean.bed
-        cut -f1,2,6 out.clean.bed | sort -k1,1 -k2,2n -k3,3n > out.fragments.bed
-        bedtools genomecov -bg -i out.fragments.bed -g genome > out.fragments.bg
-        
-        2. call peak
-        bash seacr out.fragments.bg IgG.bg non stringent output
-        bash seacr out.fragments.bg 0.01 non 0.01 non stringent top0.01.peaks
-        """
-        self.bampe_to_bg(self.ip, self.ip_bg)
-        cmd = ' '.join([
-            'bash {}'.format(shutil.which('SEACR_1.3.sh')),
-            '{} 0.01'.format(self.ip_bg),
-            'non stringent {}'.format(self.outdir + '/' + self.prefix_top001)
-        ])
-
-        if not self.input is None:
-            self.bampe_to_bg(self.input, self.input_bg)
-
-            cmd = ' '.join([
-                '{} &&'.format(cmd),
-                'bash {}'.format(shutil.which('SEACR_1.3.sh')),
-                '{} {}'.format(self.ip_bg, self.input_bg),
-                'non stringent {}'.format(self.outdir + '/' + self.prefix)            
-            ])
-
-        # save cmd
-        cmd_txt = self.outdir + '/' + self.prefix + '.SEACR.cmd.sh'
-        with open(cmd_txt, 'wt') as w:
-            w.write(cmd + '\n')
-
-        # run
-        if file_exists(self.seacr_peak_top) and not self.overwrite:
-            log.info('run_seacr() skipped, file exists:{}'.format(
-                self.seacr_peak))
-        else:
-            try:
-                run_shell_cmd(cmd)
-            except:
-                log.error('run_seacr() failed, check {}'.format(
-                    self.seacr_peak))
-
-
-    def run(self):
-        # save config
-        dict2pickle(self.__dict__, self.config_pickle)
-
-        # generate cmd
-        if self.method.lower() == 'macs2':
-            self.run_macs2()
-        elif self.method.lower() == 'seacr':
-            self.run_seacr()
-        else:
-            raise ValueError('unknown method: {macs2|seacr}, got {}'.format(
-                self.method))
-
-        # remove files
-        del_list = []
-
-
-class CnRConfig(object):
-    """
-    Global config for CnR analysis
-    """
-    def __init__(self, **kwargs):
-        self = update_obj(self, kwargs, force=True)
-        self.init_args()
-        self.init_files()
-        self.init_fq()
-        self.init_mission()
-
-
-    def init_args(self):
-        """
-        required arguments for ChIPseq analysis
-        """
-        args_init = {
-            'build_design': False,
-            'design': None,
-            'rep_list': None,
-            'ip_dir': None,
-            'input_dir': None,
-            'ip': None,
-            'input': None,
-            'ip_fq2': None,
-            'input_fq2': None,
-            'fq1': None,
-            'fq2': None,
-            'genome': None,
-            'outdir': None,
-            'aligner': 'bowtie2',
-            'spikein': None,
-            'spikein_index': None,
-            'extra_index': None,
-            'threads': 1,
-            'parallel_jobs': 1,
-            'overwrite': False,
-            'binsize': 50,
-            'genome_size': 0,
-            'trimmed': False,
-            'keep_tmp': False,
-            'cut_to_length': 0,
-            'recursive': False
-        }
-        self = update_obj(self, args_init, force=False)
-
-        if self.outdir is None:
-          self.outdir = str(pathlib.Path.cwd())
-        self.outdir = file_abspath(self.outdir)
-
-        # aligner
-        if self.aligner is None:
-            self.aligner = 'bowtie2'
-
-        # threads
-        self.threads, self.parallel_jobs = init_cpu(self.threads, 
-            self.parallel_jobs)
-
-
-    def init_files(self, create_dirs=True):
-        """
-        Prepare directories, files
-        """
-        # path, files
-        self.project_dir = self.outdir
-        self.config_dir = self.project_dir + '/config'
-
-        # files
-        default_files = {
-            'config_txt': self.config_dir + '/config.txt',
-            'config_pickle': self.config_dir + '/config.pickle',
-            'config_json': self.config_dir + '/config.json'
-        }
-        self = update_obj(self, default_files, force=True) # key
-
-        if create_dirs:
-            check_path(self.config_dir)
-
-
-    def init_fq(self):
-        """
-        Check fastq files
-        IP, Input
-        """
-        chk1 = fq_paired(self.ip, self.ip_fq2)
-        chk2 = fq_paired(self.input, self.input_fq2)
-
-
-    def init_mission(self):
-        """
-        Determine the type of CnR analysis
-        1. build_design
-        2. Single: IP/Input pair
-        3. Multiple: IP/Input pair
-        4. x, ip vs input
-        """
-        self.hiseq_type = None
-
-        # 1st level
-        if self.build_design:
-            self.hiseq_type = 'build_design'
-        elif file_exists(self.design):
-            self.hiseq_type = 'hiseq_from_design'
-        elif isinstance(self.ip_dir, str) and isinstance(self.input_dir, str):
-            self.hiseq_type = 'hiseq_rx'
-        elif all([not i is None for i in [self.ip, self.input]]):
-            self.hiseq_type = 'hiseq_rx'
-        elif isinstance(self.rep_list, list) or isinstance(self.fq1, list):
-            self.hiseq_type = 'hiseq_rn'
-        elif isinstance(self.fq1, str):
-            self.hiseq_type = 'hiseq_r1'
-        else:
-            raise ValueError('unknown CnR type')
-
-        # check
-        if self.hiseq_type is None:
-            raise ValueError('unknown CnR')
-
-
-class CnRxConfig(object):
-    """
-    Prepare directories for Rx: IP vs Input
-
-    require: ip_dir, input_dir
-    or:
-    ip,ip-fq2, input,input-fq2
-    """
-    def __init__(self, **kwargs):
-        self = update_obj(self, kwargs, force=True)
-        self.init_args()
-        self.init_fq()
-        self.init_index()
-        self.init_files()
-
-
-    def init_args(self):
-        """
-        required arguments for CnR analysis
-        """
-        args_init = {
-            'outdir': None,
-            'ip_dir': None,
-            'input_dir': None,
-            'ip': None,
-            'ip_fq2': None,
-            'input': None,
-            'input_fq2': None,
-            'smp_name': None,
-            'genome': None,
-            'genome_index': None,
-            'spikein': None,
-            'spikein_index': None,
-            'aligner': 'bowtie2',
-            'extra_index': None,
-            'threads': 1,
-            'parallel_jobs': 1,
-            'overwrite': False,
-            'binsize': 50,
-            'genome_size': 0,
-            'genome_size_file': None,
-            'gene_bed': None,
-            'keep_tmp': False,
-            'trimmed': False,
-            'cut_to_length': 0,
-            'recursive': False
-        }
-        self = update_obj(self, args_init, force=False)
-        self.hiseq_type = 'hiseq_rx' # 
-
-        # aligner
-        if self.aligner is None:
-            self.aligner = 'bowtie2'
-
-        # threads
-        self.threads, self.parallel_jobs = init_cpu(self.threads, 
-            self.parallel_jobs)
-
-        self.outdir = file_abspath(self.outdir)
-
-
-    def init_fq(self):
-        """
-        Support fastq files
-        ip, input
-        """
-        if isinstance(self.ip, list) and isinstance(self.input, list):
-            self.ip = file_abspath(self.ip)
-            self.ip_fq2 = file_abspath(self.ip_fq2)
-            self.input = file_abspath(self.input)
-            self.input_fq2 = file_abspath(self.input_fq2)
-
-            # file exists
-            if not all(file_exists(self.ip)):
-                raise ValueError('--ip, file not exists: {}'.format(
-                    self.ip))
-
-            if not all(file_exists(self.input)):
-                raise ValueError('--input, file not exists: {}'.format(
-                    self.ip))
-
-            # check, ip,input name
-            ip_names = set(map(fq_name_rmrep, self.ip))
-            input_names = set(map(fq_name_rmrep, self.input))
-            if len(ip_names) > 1:
-                raise ValueError('--ip failed, filename differ: {}'.format(
-                    ip_names))
-
-            if len(input_names) > 1:
-                raise ValueError('--input failed, filename differ: {}'.format(
-                    input_names))
-
-            # check paired
-            ip_pe = fq_paired(self.ip, self.ip_fq2)
-            input_pe = fq_paired(self.input, self.input_fq2)
-            if not ip_pe:
-                raise ValueError('--ip, --ip-fq2, not paired: {}, {}'.format(
-                    self.ip, self.ip_fq2))
-
-            if not input_pe:
-                raise ValueError('--input, --input-fq2, not paired: \
-                    {}, {}'.format(self.input, self.input_fq2))
-
-            # update ip_dir, input_dir
-            self.ip_name = ip_names.pop()
-            self.input_name = input_names.pop()
-            self.ip_dir = self.outdir + '/' + self.ip_name
-            self.input_dir = self.outdir + '/' + self.input_name
-
-        elif isinstance(self.ip_dir, str) and isinstance(self.input_dir, str):
-            self.ip_dir = file_abspath(self.ip_dir)
-            self.input_dir = file_abspath(self.input_dir)
-            
-            c_ip = CnRReader(self.ip_dir)
-            c_input = CnRReader(self.input_dir)
-
-            if not c_ip.is_hiseq_rn or not c_input.is_hiseq_rn:
-                raise ValueError('ip_dir, input_dir failed: {}, {}'.format(
-                    self.ip_dir, self.input_dir))
-
-            self.ip_name = c_ip.args.get('smp_name', None)
-            self.input_name = c_input.args.get('smp_name', None)
-
-        else:
-            raise ValueError('--ip, --input, or --ip-dir, --input-dir failed')
-
-        # update smp_name
-        self.smp_name = '{}.vs.{}'.format(self.ip_name, self.input_name)
-
-
-    def init_files(self, create_dirs=True):
-        """
-        Prepare directories, files
-        """
-        # path, files
-        self.project_name = self.smp_name
-        self.project_dir = self.outdir + '/' + self.project_name
-        self.config_dir = self.project_dir + '/config'
-
-        default_dirs = {
-            'bam_dir': 'bam_files',
-            'bw_dir': 'bw_files',
-            'peak_dir': 'peak',
-            'motif_dir': 'motif',
-            'qc_dir': 'qc',
-            'report_dir': 'report'
-        }
-        # convert to path
-        for k, v in default_dirs.items():
-            default_dirs[k] = os.path.join(self.project_dir, v)
-        self = update_obj(self, default_dirs, force=True) # key
-
-        # files
-        default_files = {
-            'config_txt': self.config_dir + '/config.txt',
-            'config_pickle': self.config_dir + '/config.pickle',
-            'config_json': self.config_dir + '/config.json',
-            'ip_bam': self.bam_dir + '/' + self.ip_name + '.bam',
-            'ip_bw': self.bw_dir + '/' + self.ip_name + '.bigWig',
-            'input_bam': self.bam_dir + '/' + self.input_name + '.bam',
-            'input_bw': self.bw_dir + '/' + self.input_name + '.bigWig',
-            'peak': self.peak_dir + '/' + self.project_name + '_peaks.narrowPeak',
-            'peak_seacr': self.peak_dir + '/' + self.project_name + '.stringent.bed',
-            'peak_seacr_top001': self.peak_dir + '/' + self.project_name + '.top0.01.stringent.bed',
-
-            'ip_over_input_bw': self.bw_dir + '/' + self.ip_name + '.ip_over_input.bigWig',
-            'bw': self.bw_dir + '/' + self.ip_name + '.bigWig',
-            'tss_enrich_matrix': self.qc_dir + '/04.tss_enrich.mat.gz',
-            'tss_enrich_matrix_log': self.qc_dir + '/04.tss_enrich.log',
-            'tss_enrich_png': self.qc_dir + '/04.tss_enrich.png',
-            'tss_enrich_cmd': self.qc_dir + '/04.tss_enrich.cmd.sh',
-            'genebody_enrich_matrix': self.qc_dir + '/05.genebody_enrich.mat.gz',
-            'genebody_enrich_matrix_log': self.qc_dir + '/05.genebody_enrich.log',
-            'genebody_enrich_png': self.qc_dir + '/05.genebody_enrich.png',
-            'genebody_enrich_cmd': self.qc_dir + '/05.genebody_enrich.cmd.sh',
-            'bam_fingerprint': self.qc_dir + '/09.fingerprint.png'
-        }
-        self = update_obj(self, default_files, force=True) # key
-
-        if create_dirs:
-            check_path([
-                self.project_dir, 
-                self.config_dir, 
-                self.bam_dir, 
-                self.bw_dir, 
-                self.peak_dir, 
-                self.motif_dir,
-                self.qc_dir, 
-                self.report_dir])
-
-
-    def init_index(self):
-        """
-        alignment index
-        genome, extra_index, genome_index
-
-        output: genome_index, spikein_index
-        """
-        # check genome size
-        if isinstance(self.extra_index, str):
-            self.genome_index = self.extra_index
-
-        ## check genome index
-        if isinstance(self.genome_index, str):
-            ai = AlignIndex(index=self.genome_index)
-
-            if self.genome_size < 1:
-                self.genome_size = ai.index_size()
-
-            if not isinstance(self.genome_size_file, str): 
-                self.genome_size_file = ai.index_size(return_file=True)
-
-        elif isinstance(self.genome, str):
-            self.genome_index = AlignIndex(aligner=self.aligner).search(
-                genome=self.genome, group='genome')
-
-            self.genome_size_file = Genome(genome=self.genome).get_fasize()
-
-            with open(self.genome_size_file, 'rt') as r:
-                s = [i.strip().split('\t')[1] for i in r.readlines()]
-            
-            if self.genome_size < 1:
-                self.genome_size = sum(map(int, s))
-            
-        else:
-            raise ValueError('index failed, extra_index, genome, genome_index')
-
-        # check spikein index
-        if isinstance(self.spikein_index, str):
-            ai = AlignIndex(index=self.spikein_index, aligner=self.aligner)
-
-            if not ai.is_index():
-                raise ValueError('spikein_index failed, {}'.format(
-                    self.spikein_index))
-
-        elif isinstance(self.spikein, str):
-            self.spikein_index = AlignIndex(aligner=self.aligner).search(
-                genome=self.spikein, group='genome')
-
-        else:
-            self.spikein_index = None
-
-
-class CnRnConfig(object):
-    """
-    Prepare directories for R1 single replicates
-
-    require: fq1/fq2, outdir, ...
-    """
-    def __init__(self, **kwargs):
-        self = update_obj(self, kwargs, force=True)
-        self.init_args()
-        self.init_fq()
-        self.init_index()
-        self.init_files()
-
-
-    def init_args(self):
-        """
-        required arguments for CnR analysis
-        """
-        args_init = {
-            'is_ip': True,
-            'rep_list': None,
-            'fq1': None,
-            'fq2': None,
-            'genome': None,
-            'outdir': None,
-            'aligner': 'bowtie2',
-            'smp_name': None,
-            'genome_index': None,
-            'spikein': None,
-            'spikein_index': None,
-            'extra_index': None,
-            'threads': 1,
-            'parallel_jobs': 1,
-            'overwrite': False,
-            'binsize': 50,
-            'genome_size': 0,
-            'gsize_file': None,
-            'keep_tmp': False,
-            'trimmed': False,
-            'cut_to_length': 0,
-            'recursive': False
-        }
-        self = update_obj(self, args_init, force=False)
-        self.hiseq_type = 'hiseq_rn' # 
-
-        # aligner
-        if self.aligner is None:
-            self.aligner = 'bowtie2'
-
-        # threads
-        self.threads, self.parallel_jobs = init_cpu(self.threads, 
-            self.parallel_jobs)
-
-        self.outdir = file_abspath(self.outdir)
-
-
-    def init_fq(self):
-        """
-        Support fastq files
-        fq1 (required)
-        fq2 (optional)
-        """
-        # rep_list
-        if isinstance(self.rep_list, list):
-            pass
-
-        elif isinstance(self.fq1, list):
-            self.fq1 = file_abspath(self.fq1)
-
-            # file exists
-            if not file_exists(self.fq1):
-                raise ValueError('--fq1, file not exists: {}'.format(self.fq1))
-
-            # rep list
-            q_names = [fq_name(i, pe_fix=True) for i in self.fq1]
-            self.rep_list = [self.outdir + '/' + i for i in q_names]
-
-            # fq2
-            if isinstance(self.fq2, list):
-                self.fq2 = file_abspath(self.fq2)
-
-                if not file_exists(self.fq2):
-                    raise ValueError('--fq2, file not exists: {}'.format(
-                        self.fq2))
-
-                # paired
-                if not fq_paired(self.fq1, self.fq2):
-                    raise ValueError('--fq1, --fq2, file not paired')
-        else:
-            raise ValueError('rep_list, fq1,fq2 required')
-
-        # smp_name
-        self.smp_name = fq_name_rmrep(self.rep_list).pop()
-
-
-    def init_index(self):
-        """
-        alignment index
-        genome, extra_index, genome_index
-
-        output: genome_index, spikein_index
-        """
-        # check genome size
-        if isinstance(self.extra_index, str):
-            self.genome_index = self.extra_index
-
-        ## check genome index
-        if isinstance(self.genome_index, str):
-            ai = AlignIndex(index=self.genome_index)
-
-            if self.genome_size < 1:
-                self.genome_size = ai.index_size()
-
-            if not isinstance(self.genome_size_file, str): 
-                self.genome_size_file = ai.index_size(return_file=True)
-
-        elif isinstance(self.genome, str):
-            self.genome_index = AlignIndex(aligner=self.aligner).search(
-                genome=self.genome, group='genome')
-
-            self.genome_size_file = Genome(genome=self.genome).get_fasize()
-
-            with open(self.genome_size_file, 'rt') as r:
-                s = [i.strip().split('\t')[1] for i in r.readlines()]
-            
-            if self.genome_size < 1:
-                self.genome_size = sum(map(int, s))
-            
-        else:
-            raise ValueError('index failed, extra_index, genome, genome_index')
-
-        # check spikein index
-        if isinstance(self.spikein_index, str):
-            ai = AlignIndex(index=self.spikein_index, aligner=self.aligner)
-
-            if not ai.is_index():
-                raise ValueError('spikein_index failed, {}'.format(
-                    self.spikein_index))
-
-        elif isinstance(self.spikein, str):
-            self.spikein_index = AlignIndex(aligner=self.aligner).search(
-                genome=self.spikein, group='genome')
-
-        else:
-            self.spikein_index = None
-
-
-    def init_files(self, create_dirs=True):
-        """
-        Prepare directories, files
-        """
-        # path, files
-        self.project_name = self.smp_name
-        self.project_dir = os.path.join(self.outdir, self.project_name)
-        self.config_dir = os.path.join(self.project_dir, 'config')
-
-        default_dirs = {
-            'align_dir': 'align',
-            'bam_dir': 'bam_files',
-            'bw_dir': 'bw_files',
-            'bg_dir': 'bg_files',
-            'peak_dir': 'peak',
-            'motif_dir': 'motif',
-            'qc_dir': 'qc',
-            'report_dir': 'report'
-        }
-        # convert to path
-        for k, v in default_dirs.items():
-            default_dirs[k] = os.path.join(self.project_dir, v)
-        self = update_obj(self, default_dirs, force=True) # key
-
-        # files
-        default_files = {
-            'config_txt': self.config_dir + '/config.txt',
-            'config_pickle': self.config_dir + '/config.pickle',
-            'config_json': self.config_dir + '/config.json',
-            'bam_rmdup': self.bam_dir + '/' + self.smp_name + '.rmdup.bam',
-            'bam_proper_pair': self.bam_dir + '/' + self.smp_name + '.proper_pair.bam',
-            'bam': self.bam_dir + '/' + self.project_name + '.bam',
-            'bed': self.bam_dir + '/' + self.project_name + '.bed',
-            'peak': self.peak_dir + '/' + self.project_name + '_peaks.narrowPeak',            
-            'peak_seacr': self.peak_dir + '/' + self.project_name + '.stringent.bed',
-            'peak_seacr_top001': self.peak_dir + '/' + self.project_name + '.top0.01.stringent.bed',
-            'bg': self.bg_dir + '/' + self.project_name + '.bedGraph',
-            'bw': self.bw_dir + '/' + self.project_name + '.bigWig',
-            'align_scale_txt': self.align_dir + '/' + 'scale.txt',
-            'align_flagstat': self.align_dir + '/' + self.smp_name + '.flagstat',
-            'align_stat': self.align_dir + '/' + self.smp_name + '.bowtie2.stat',
-            'align_json': self.align_dir + '/' + self.smp_name + '.bowtie2.json',
-
-            'align_summary_json': self.qc_dir + '/01.alignment_summary.json',
-            'lendist_txt': self.qc_dir + '/02.length_distribution.txt',
-            'lendist_pdf': self.qc_dir + '/02.length_distribution.pdf',
-            'frip_txt': self.qc_dir + '/03.FRiP.txt',
-            'tss_enrich_matrix': self.qc_dir + '/04.tss_enrich.mat.gz',
-            'tss_enrich_matrix_log': self.qc_dir + '/04.tss_enrich.log',
-            'tss_enrich_png': self.qc_dir + '/04.tss_enrich.png',
-            'tss_enrich_cmd': self.qc_dir + '/04.tss_enrich.cmd.sh',
-            'genebody_enrich_matrix': self.qc_dir + '/05.genebody_enrich.mat.gz',
-            'genebody_enrich_matrix_log': self.qc_dir + '/05.genebody_enrich.log',
-            'genebody_enrich_png': self.qc_dir + '/05.genebody_enrich.png',
-            'genebody_enrich_cmd': self.qc_dir + '/05.genebody_enrich.cmd.sh',
-            'bam_cor_npz': self.qc_dir + '/06.bam_cor.npz',
-            'bam_cor_counts': self.qc_dir + '/06.bam_cor.counts.tab',
-            'bam_cor_heatmap_png': self.qc_dir + '/06.bam_cor.cor_heatmap.png',
-            'bam_cor_pca_png': self.qc_dir + '/06.bam_cor.cor_PCA.png',
-            'peak_idr_png': self.qc_dir + '/07.peak_idr.png',
-            'peak_idr_txt': self.qc_dir + '/07.peak_idr.txt',
-            'peak_overlap_png': self.qc_dir + '/08.peak_overlap.png',
-            'peak_overlap_tiff': self.qc_dir + '/08.peak_overlap.tiff',
-            'bam_fingerprint': self.qc_dir + '/09.fingerprint.png'
-        }
-        self = update_obj(self, default_files, force=True) # key
-
-        if create_dirs:
-            check_path([
-                self.config_dir,
-                self.align_dir,
-                self.bam_dir, 
-                self.bw_dir, 
-                self.bg_dir,
-                self.peak_dir, 
-                self.motif_dir,
-                self.qc_dir, 
-                self.report_dir])
-
-
-class CnR1Config(object):
-    """
-    Prepare directories for R1 single replicates
-
-    require: fq1/fq2, outdir, ...
-    """
-    def __init__(self, **kwargs):
-        self = update_obj(self, kwargs, force=True)
-        self.init_args()
-        self.init_fq()
-        self.init_index()
-        self.init_files()
-
-
-    def init_args(self):
-        """
-        required arguments for CnR analysis
-        """
-        args_init = {
-            'is_ip': True,
-            'fq1': None,
-            'fq2': None,
-            'genome': None,
-            'outdir': None,
-            'smp_name': None,
-            'aligner': 'bowtie2',
-            'genome_index': None,
-            'spikein': None,
-            'spikein_index': None,
-            'extra_index': None,
-            'threads': 1,
-            'overwrite': False,
-            'binsize': 50,
-            'genome_size': 0,
-            'genome_size_file': None,
-            'gene_bed': None,
-            'keep_tmp': False,
-            'trimmed': False,
-            'cut_to_length': 0,
-            'recursive': False 
-        }
-        self = update_obj(self, args_init, force=False)
-        self.hiseq_type = 'hiseq_r1' # 
-
-        # aligner
-        if self.aligner is None:
-            self.aligner = 'bowtie2'
-
-        # smp_name
-        if not isinstance(self.smp_name, str):
-            self.smp_name = fq_name(self.fq1, pe_fix=True) # the first one
-
-        self.outdir = file_abspath(self.outdir)
-
-
-    def init_fq(self):
-        """
-        Support fastq files
-        fq1 (required)
-        fq2 (optional)
-        """
-        # fq1
-        if not isinstance(self.fq1, str):
-            raise ValueError('--fq1, str expected, got {}'.format(
-                type(self.fq1).__name__))
-
-        # abs
-        self.fq1 = file_abspath(self.fq1)
-
-        # file exists
-        if not file_exists(self.fq1):
-            raise ValueError('--fq1, file not exists: {}'.format(self.fq1))
-
-        # fq2
-        if not self.fq2 is None:
-            if not isinstance(self.fq2, str):
-                raise ValueError('--fq2, None or str expected, got {}'.format(
-                    type(self.fq2).__name__))
-
-            # abs
-            self.fq2 = file_abspath(self.fq2)
-
-            if not file_exists(self.fq2):
-                raise ValueError('--fq2, file not exists: {}'.format(self.fq2))
-
-            # paired
-            if not fq_paired(self.fq1, self.fq2):
-                raise ValueError('--fq1, --fq2, file not paired')
-
-
-    def init_index(self):
-        """
-        alignment index
-        genome, extra_index, genome_index
-
-        output: genome_index, spikein_index
-        """
-        # check genome size
-        if isinstance(self.extra_index, str):
-            self.genome_index = self.extra_index
-
-        ## check genome index
-        if isinstance(self.genome_index, str):
-            ai = AlignIndex(index=self.genome_index)
-
-            if self.genome_size < 1:
-                self.genome_size = ai.index_size()
-
-            if not isinstance(self.genome_size_file, str): 
-                self.genome_size_file = ai.index_size(return_file=True)
-
-        elif isinstance(self.genome, str):
-            self.genome_index = AlignIndex(aligner=self.aligner).search(
-                genome=self.genome, group='genome')
-
-            self.genome_size_file = Genome(genome=self.genome).get_fasize()
-
-            with open(self.genome_size_file, 'rt') as r:
-                s = [i.strip().split('\t')[1] for i in r.readlines()]
-            
-            if self.genome_size < 1:
-                self.genome_size = sum(map(int, s))
-
-        else:
-            raise ValueError('index failed, extra_index, genome, genome_index')
-
-        # check spikein index
-        if isinstance(self.spikein_index, str):
-            ai = AlignIndex(index=self.spikein_index, aligner=self.aligner)
-
-            if not ai.is_index():
-                raise ValueError('spikein_index failed, {}'.format(
-                    self.spikein_index))
-
-        elif isinstance(self.spikein, str):
-            self.spikein_index = AlignIndex(aligner=self.aligner).search(
-                genome=self.spikein, group='genome')
-
-        else:
-            self.spikein_index = None
-
-
-    def init_files(self, create_dirs=True):
-        """
-        Prepare directories, files
-        """
-        # path, files
-        self.project_name = self.smp_name
-        self.project_dir = os.path.join(self.outdir, self.project_name)
-        self.config_dir = os.path.join(self.project_dir, 'config')
-
-        default_dirs = {
-            'raw_dir': 'raw_data',
-            'clean_dir': 'clean_data',
-            'align_dir': 'align',
-            'spikein_dir': 'spikein',
-            'bam_dir': 'bam_files',
-            'bg_dir': 'bg_files',
-            'bw_dir': 'bw_files',
-            'peak_dir': 'peak',
-            'motif_dir': 'motif',
-            'qc_dir': 'qc',
-            'report_dir': 'report'
-        }
-        # convert to path
-        for k, v in default_dirs.items():
-            default_dirs[k] = os.path.join(self.project_dir, v)
-        self = update_obj(self, default_dirs, force=True) # key
-
-        # files
-        default_files = {
-            'config_txt': self.config_dir + '/config.txt',
-            'config_pickle': self.config_dir + '/config.pickle',
-            'config_json': self.config_dir + '/config.json',
-            'bam_rmdup': self.bam_dir + '/' + self.smp_name + '.rmdup.bam',
-            'bam_proper_pair': self.bam_dir + '/' + self.smp_name + '.proper_pair.bam',
-            'bam': self.bam_dir + '/' + self.project_name + '.bam',
-            'bed': self.bam_dir + '/' + self.project_name + '.bed',
-            'bg': self.bg_dir + '/' + self.project_name + '.bedGraph',
-            'peak': self.peak_dir + '/' + self.project_name + '_peaks.narrowPeak',
-            'peak_seacr': self.peak_dir + '/' + self.project_name + '.stringent.bed',
-            'peak_seacr_top001': self.peak_dir + '/' + self.project_name + '.top0.01.stringent.bed',
-            'bw': self.bw_dir + '/' + self.project_name + '.bigWig',
-
-            'trim_stat_txt': self.clean_dir + '/' + self.project_name + '/' + self.project_name + '.trim.stat',
-            'align_scale_txt': self.align_dir + '/' + 'scale.txt',
-            'align_flagstat': self.align_dir + '/' + self.smp_name + '.flagstat',
-            'align_stat': self.align_dir + '/' + self.smp_name + '.bowtie2.stat',
-            'align_json': self.align_dir + '/' + self.smp_name + '.bowtie2.json',
-            'spikein_bam': self.spikein_dir + '/' + 'spikein.bam',
-            'spikein_scale_txt': self.spikein_dir + '/' + 'scale.txt',
-            'spikein_flagstat': self.spikein_dir + '/' + 'spikein.flagstat',
-            'spikein_stat': self.spikein_dir + '/' + 'spikein.align.stat',
-            'spikein_json': self.spikein_dir + '/' + 'spikein.align.json',
-
-            'trim_summary_json': self.qc_dir + '/00.trim_summary.json',
-            'align_summary_json': self.qc_dir + '/01.alignment_summary.json',
-            'lendist_txt': self.qc_dir + '/02.length_distribution.txt',
-            'lendist_pdf': self.qc_dir + '/02.length_distribution.pdf',
-            'frip_txt': self.qc_dir + '/03.FRiP.txt',
-            'tss_enrich_matrix': self.qc_dir + '/04.tss_enrich.mat.gz',
-            'tss_enrich_matrix_log': self.qc_dir + '/04.tss_enrich.log',
-            'tss_enrich_png': self.qc_dir + '/04.tss_enrich.png',
-            'tss_enrich_cmd': self.qc_dir + '/04.tss_enrich.cmd.sh',
-            'genebody_enrich_matrix': self.qc_dir + '/05.genebody_enrich.mat.gz',
-            'genebody_enrich_matrix_log': self.qc_dir + '/05.genebody_enrich.log',
-            'genebody_enrich_png': self.qc_dir + '/05.genebody_enrich.png',
-            'genebody_enrich_cmd': self.qc_dir + '/05.genebody_enrich.cmd.sh',
-            'bam_cor_heatmap_png': self.qc_dir + '/06.bam_cor.cor_heatmap.png',
-            'bam_cor_pca_png': self.qc_dir + '/06.bam_cor.cor_PCA.png',
-            'peak_idr_png': self.qc_dir + '/07.peak_idr.png',
-            'peak_overlap_png': self.qc_dir + '/08.peak_overlap.png',
-            'bam_fingerprint': self.qc_dir + '/09.fingerprint.png'
-        }
-        self = update_obj(self, default_files, force=True) # key
-
-        # raw data
-        self.raw_fq_list = [self.raw_dir + '/' + os.path.basename(self.fq1)]
-        if isinstance(self.fq2, str):
-            self.raw_fq_list.append(self.raw_dir + '/' + \
-                os.path.basename(self.fq2))
-
-        ## clean data
-        self.clean_fq_list = [self.clean_dir + '/' + os.path.basename(self.fq1)]
-        if isinstance(self.fq2, str):
-            self.clean_fq_list.append(self.clean_dir + '/' + \
-                os.path.basename(self.fq2))
-
-        if create_dirs:
-            check_path([
-                self.config_dir, 
-                self.raw_dir,
-                self.clean_dir,
-                self.align_dir,
-                self.spikein_dir,
-                self.bam_dir, 
-                self.bg_dir,
-                self.bw_dir, 
-                self.peak_dir, 
-                self.motif_dir,
-                self.qc_dir, 
-                self.report_dir])
-
-
-class CnRtConfig(object):
-    pass
-
-
 class CnR(object):
     """
     Main port for CnR analysis
@@ -1632,6 +253,18 @@ class CnR(object):
         CnRn(**self.__dict__).run()
 
 
+    def run_CnR_rx_single(self, d):
+        """
+        parsing arguments as dict
+        run CnRx
+        """
+        args_local = self.__dict__
+        args_local['parallel_jobs'] = 1 # force
+        args_local.update(d)
+        CnRx(**args_local).run()
+        # print('!AAAA-1', args_local.get('parallel_jobs', 1))
+
+
     def run_CnR_from_design(self):
         """
         Run ChIPseq, multiple group
@@ -1640,11 +273,17 @@ class CnR(object):
         """
         design = Json(self.design).reader()
 
-        for k, v in design.items():
-            project_name = k
-            args_local = v
-            self = update_obj(self, args_local, force=True)
-            CnRx(**self.__dict__).run()
+        if len(design) > 1 and self.parallel_jobs > 1:
+            # run Rx in parallel
+            with Pool(processes=self.parallel_jobs) as pool:
+                pool.map(self.run_CnR_rx_single, list(design.values()))
+        else:
+            # run Rn in parallel
+            for k, v in design.items():
+                args_local = self.__dict__ # init
+                args_local.update(v) # update
+                CnRx(**self.__dict__).run()
+                # print('!AAAA-2', args_local.get('parallel_jobs', 1))
 
 
     def run_CnR_rx(self):
@@ -2508,8 +1147,15 @@ class CnRn(object):
         # run each fq
         if isinstance(self.fq1, list):
             i_list = list(range(len(self.fq1)))
-            with Pool(processes=self.parallel_jobs) as pool:
-                pool.map(self.run_fq_single, i_list)
+
+            # in parallel
+            if self.parallel_jobs > 1:
+                with Pool(processes=self.parallel_jobs) as pool:
+                    pool.map(self.run_fq_single, i_list)
+            # in sequential
+            else:
+                for i in i_list:
+                    self.run_fq_single(i)
 
             # # # alternative
             # for i in i_list:
@@ -3195,6 +1841,843 @@ class CnRt(object):
     pass
 
 
+class CnRConfig(object):
+    """
+    Global config for CnR analysis
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+        self.init_files()
+        self.init_fq()
+        self.init_mission()
+
+
+    def init_args(self):
+        """
+        required arguments for ChIPseq analysis
+        """
+        args_init = {
+            'build_design': False,
+            'design': None,
+            'rep_list': None,
+            'ip_dir': None,
+            'input_dir': None,
+            'ip': None,
+            'input': None,
+            'ip_fq2': None,
+            'input_fq2': None,
+            'fq1': None,
+            'fq2': None,
+            'genome': None,
+            'outdir': None,
+            'aligner': 'bowtie2',
+            'spikein': None,
+            'spikein_index': None,
+            'extra_index': None,
+            'threads': 1,
+            'parallel_jobs': 1,
+            'overwrite': False,
+            'binsize': 50,
+            'genome_size': 0,
+            'trimmed': False,
+            'keep_tmp': False,
+            'cut_to_length': 0,
+            'recursive': False
+        }
+        self = update_obj(self, args_init, force=False)
+
+        if self.outdir is None:
+          self.outdir = str(pathlib.Path.cwd())
+        self.outdir = file_abspath(self.outdir)
+
+        # aligner
+        if self.aligner is None:
+            self.aligner = 'bowtie2'
+
+        # threads
+        self.threads, self.parallel_jobs = init_cpu(self.threads, 
+            self.parallel_jobs)
+
+
+    def init_files(self, create_dirs=True):
+        """
+        Prepare directories, files
+        """
+        # path, files
+        self.project_dir = self.outdir
+        self.config_dir = self.project_dir + '/config'
+
+        # files
+        default_files = {
+            'config_txt': self.config_dir + '/config.txt',
+            'config_pickle': self.config_dir + '/config.pickle',
+            'config_json': self.config_dir + '/config.json'
+        }
+        self = update_obj(self, default_files, force=True) # key
+
+        if create_dirs:
+            check_path(self.config_dir)
+
+
+    def init_fq(self):
+        """
+        Check fastq files
+        IP, Input
+        """
+        chk1 = fq_paired(self.ip, self.ip_fq2)
+        chk2 = fq_paired(self.input, self.input_fq2)
+
+
+    def init_mission(self):
+        """
+        Determine the type of CnR analysis
+        1. build_design
+        2. Single: IP/Input pair
+        3. Multiple: IP/Input pair
+        4. x, ip vs input
+        """
+        self.hiseq_type = None
+
+        # 1st level
+        if self.build_design:
+            self.hiseq_type = 'build_design'
+        elif file_exists(self.design):
+            self.hiseq_type = 'hiseq_from_design'
+        elif isinstance(self.ip_dir, str) and isinstance(self.input_dir, str):
+            self.hiseq_type = 'hiseq_rx'
+        elif all([not i is None for i in [self.ip, self.input]]):
+            self.hiseq_type = 'hiseq_rx'
+        elif isinstance(self.rep_list, list) or isinstance(self.fq1, list):
+            self.hiseq_type = 'hiseq_rn'
+        elif isinstance(self.fq1, str):
+            self.hiseq_type = 'hiseq_r1'
+        else:
+            raise ValueError('unknown CnR type')
+
+        # check
+        if self.hiseq_type is None:
+            raise ValueError('unknown CnR')
+
+
+class CnRxConfig(object):
+    """
+    Prepare directories for Rx: IP vs Input
+
+    require: ip_dir, input_dir
+    or:
+    ip,ip-fq2, input,input-fq2
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+        self.init_fq()
+        self.init_index()
+        self.init_files()
+
+
+    def init_args(self):
+        """
+        required arguments for CnR analysis
+        """
+        args_init = {
+            'outdir': None,
+            'ip_dir': None,
+            'input_dir': None,
+            'ip': None,
+            'ip_fq2': None,
+            'input': None,
+            'input_fq2': None,
+            'smp_name': None,
+            'genome': None,
+            'genome_index': None,
+            'spikein': None,
+            'spikein_index': None,
+            'aligner': 'bowtie2',
+            'extra_index': None,
+            'threads': 1,
+            'parallel_jobs': 1,
+            'overwrite': False,
+            'binsize': 50,
+            'genome_size': 0,
+            'genome_size_file': None,
+            'gene_bed': None,
+            'keep_tmp': False,
+            'trimmed': False,
+            'cut_to_length': 0,
+            'recursive': False
+        }
+        self = update_obj(self, args_init, force=False)
+        self.hiseq_type = 'hiseq_rx' # 
+
+        # aligner
+        if self.aligner is None:
+            self.aligner = 'bowtie2'
+
+        # threads
+        self.threads, self.parallel_jobs = init_cpu(self.threads, 
+            self.parallel_jobs)
+
+        self.outdir = file_abspath(self.outdir)
+
+
+    def init_fq(self):
+        """
+        Support fastq files
+        ip, input
+        """
+        if isinstance(self.ip, list) and isinstance(self.input, list):
+            self.ip = file_abspath(self.ip)
+            self.ip_fq2 = file_abspath(self.ip_fq2)
+            self.input = file_abspath(self.input)
+            self.input_fq2 = file_abspath(self.input_fq2)
+
+            # file exists
+            if not all(file_exists(self.ip)):
+                raise ValueError('--ip, file not exists: {}'.format(
+                    self.ip))
+
+            if not all(file_exists(self.input)):
+                raise ValueError('--input, file not exists: {}'.format(
+                    self.ip))
+
+            # check, ip,input name
+            ip_names = set(map(fq_name_rmrep, self.ip))
+            input_names = set(map(fq_name_rmrep, self.input))
+            if len(ip_names) > 1:
+                raise ValueError('--ip failed, filename differ: {}'.format(
+                    ip_names))
+
+            if len(input_names) > 1:
+                raise ValueError('--input failed, filename differ: {}'.format(
+                    input_names))
+
+            # check paired
+            ip_pe = fq_paired(self.ip, self.ip_fq2)
+            input_pe = fq_paired(self.input, self.input_fq2)
+            if not ip_pe:
+                raise ValueError('--ip, --ip-fq2, not paired: {}, {}'.format(
+                    self.ip, self.ip_fq2))
+
+            if not input_pe:
+                raise ValueError('--input, --input-fq2, not paired: \
+                    {}, {}'.format(self.input, self.input_fq2))
+
+            # update ip_dir, input_dir
+            self.ip_name = ip_names.pop()
+            self.input_name = input_names.pop()
+            self.ip_dir = self.outdir + '/' + self.ip_name
+            self.input_dir = self.outdir + '/' + self.input_name
+
+        elif isinstance(self.ip_dir, str) and isinstance(self.input_dir, str):
+            self.ip_dir = file_abspath(self.ip_dir)
+            self.input_dir = file_abspath(self.input_dir)
+            
+            c_ip = CnRReader(self.ip_dir)
+            c_input = CnRReader(self.input_dir)
+
+            if not c_ip.is_hiseq_rn or not c_input.is_hiseq_rn:
+                raise ValueError('ip_dir, input_dir failed: {}, {}'.format(
+                    self.ip_dir, self.input_dir))
+
+            self.ip_name = c_ip.args.get('smp_name', None)
+            self.input_name = c_input.args.get('smp_name', None)
+
+        else:
+            raise ValueError('--ip, --input, or --ip-dir, --input-dir failed')
+
+        # update smp_name
+        self.smp_name = '{}.vs.{}'.format(self.ip_name, self.input_name)
+
+
+    def init_files(self, create_dirs=True):
+        """
+        Prepare directories, files
+        """
+        # path, files
+        self.project_name = self.smp_name
+        self.project_dir = self.outdir + '/' + self.project_name
+        self.config_dir = self.project_dir + '/config'
+
+        default_dirs = {
+            'bam_dir': 'bam_files',
+            'bw_dir': 'bw_files',
+            'peak_dir': 'peak',
+            'motif_dir': 'motif',
+            'qc_dir': 'qc',
+            'report_dir': 'report'
+        }
+        # convert to path
+        for k, v in default_dirs.items():
+            default_dirs[k] = os.path.join(self.project_dir, v)
+        self = update_obj(self, default_dirs, force=True) # key
+
+        # files
+        default_files = {
+            'config_txt': self.config_dir + '/config.txt',
+            'config_pickle': self.config_dir + '/config.pickle',
+            'config_json': self.config_dir + '/config.json',
+            'ip_bam': self.bam_dir + '/' + self.ip_name + '.bam',
+            'ip_bw': self.bw_dir + '/' + self.ip_name + '.bigWig',
+            'input_bam': self.bam_dir + '/' + self.input_name + '.bam',
+            'input_bw': self.bw_dir + '/' + self.input_name + '.bigWig',
+            'peak': self.peak_dir + '/' + self.project_name + '_peaks.narrowPeak',
+            'peak_seacr': self.peak_dir + '/' + self.project_name + '.stringent.bed',
+            'peak_seacr_top001': self.peak_dir + '/' + self.project_name + '.top0.01.stringent.bed',
+
+            'ip_over_input_bw': self.bw_dir + '/' + self.ip_name + '.ip_over_input.bigWig',
+            'bw': self.bw_dir + '/' + self.ip_name + '.bigWig',
+            'tss_enrich_matrix': self.qc_dir + '/04.tss_enrich.mat.gz',
+            'tss_enrich_matrix_log': self.qc_dir + '/04.tss_enrich.log',
+            'tss_enrich_png': self.qc_dir + '/04.tss_enrich.png',
+            'tss_enrich_cmd': self.qc_dir + '/04.tss_enrich.cmd.sh',
+            'genebody_enrich_matrix': self.qc_dir + '/05.genebody_enrich.mat.gz',
+            'genebody_enrich_matrix_log': self.qc_dir + '/05.genebody_enrich.log',
+            'genebody_enrich_png': self.qc_dir + '/05.genebody_enrich.png',
+            'genebody_enrich_cmd': self.qc_dir + '/05.genebody_enrich.cmd.sh',
+            'bam_fingerprint': self.qc_dir + '/09.fingerprint.png'
+        }
+        self = update_obj(self, default_files, force=True) # key
+
+        if create_dirs:
+            check_path([
+                self.project_dir, 
+                self.config_dir, 
+                self.bam_dir, 
+                self.bw_dir, 
+                self.peak_dir, 
+                self.motif_dir,
+                self.qc_dir, 
+                self.report_dir])
+
+
+    def init_index(self):
+        """
+        alignment index
+        genome, extra_index, genome_index
+
+        output: genome_index, spikein_index
+        """
+        # check genome size
+        if isinstance(self.extra_index, str):
+            self.genome_index = self.extra_index
+
+        ## check genome index
+        if isinstance(self.genome_index, str):
+            ai = AlignIndex(index=self.genome_index)
+
+            if self.genome_size < 1:
+                self.genome_size = ai.index_size()
+
+            if not isinstance(self.genome_size_file, str): 
+                self.genome_size_file = ai.index_size(return_file=True)
+
+        elif isinstance(self.genome, str):
+            self.genome_index = AlignIndex(aligner=self.aligner).search(
+                genome=self.genome, group='genome')
+
+            self.genome_size_file = Genome(genome=self.genome).get_fasize()
+
+            with open(self.genome_size_file, 'rt') as r:
+                s = [i.strip().split('\t')[1] for i in r.readlines()]
+            
+            if self.genome_size < 1:
+                self.genome_size = sum(map(int, s))
+            
+        else:
+            raise ValueError('index failed, extra_index, genome, genome_index')
+
+        # check spikein index
+        if isinstance(self.spikein_index, str):
+            ai = AlignIndex(index=self.spikein_index, aligner=self.aligner)
+
+            if not ai.is_index():
+                raise ValueError('spikein_index failed, {}'.format(
+                    self.spikein_index))
+
+        elif isinstance(self.spikein, str):
+            self.spikein_index = AlignIndex(aligner=self.aligner).search(
+                genome=self.spikein, group='genome')
+
+        else:
+            self.spikein_index = None
+
+
+class CnRnConfig(object):
+    """
+    Prepare directories for R1 single replicates
+
+    require: fq1/fq2, outdir, ...
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+        self.init_fq()
+        self.init_index()
+        self.init_files()
+
+
+    def init_args(self):
+        """
+        required arguments for CnR analysis
+        """
+        args_init = {
+            'is_ip': True,
+            'rep_list': None,
+            'fq1': None,
+            'fq2': None,
+            'genome': None,
+            'outdir': None,
+            'aligner': 'bowtie2',
+            'smp_name': None,
+            'genome_index': None,
+            'spikein': None,
+            'spikein_index': None,
+            'extra_index': None,
+            'threads': 1,
+            'parallel_jobs': 1,
+            'overwrite': False,
+            'binsize': 50,
+            'genome_size': 0,
+            'gsize_file': None,
+            'keep_tmp': False,
+            'trimmed': False,
+            'cut_to_length': 0,
+            'recursive': False
+        }
+        self = update_obj(self, args_init, force=False)
+        self.hiseq_type = 'hiseq_rn' # 
+
+        # aligner
+        if self.aligner is None:
+            self.aligner = 'bowtie2'
+
+        # threads
+        self.threads, self.parallel_jobs = init_cpu(self.threads, 
+            self.parallel_jobs)
+
+        self.outdir = file_abspath(self.outdir)
+
+
+    def init_fq(self):
+        """
+        Support fastq files
+        fq1 (required)
+        fq2 (optional)
+        """
+        # rep_list
+        if isinstance(self.rep_list, list):
+            pass
+
+        elif isinstance(self.fq1, list):
+            self.fq1 = file_abspath(self.fq1)
+
+            # file exists
+            if not file_exists(self.fq1):
+                raise ValueError('--fq1, file not exists: {}'.format(self.fq1))
+
+            # rep list
+            q_names = [fq_name(i, pe_fix=True) for i in self.fq1]
+            self.rep_list = [self.outdir + '/' + i for i in q_names]
+
+            # fq2
+            if isinstance(self.fq2, list):
+                self.fq2 = file_abspath(self.fq2)
+
+                if not file_exists(self.fq2):
+                    raise ValueError('--fq2, file not exists: {}'.format(
+                        self.fq2))
+
+                # paired
+                if not fq_paired(self.fq1, self.fq2):
+                    raise ValueError('--fq1, --fq2, file not paired')
+        else:
+            raise ValueError('rep_list, fq1,fq2 required')
+
+        # smp_name
+        self.smp_name = fq_name_rmrep(self.rep_list).pop()
+
+
+    def init_index(self):
+        """
+        alignment index
+        genome, extra_index, genome_index
+
+        output: genome_index, spikein_index
+        """
+        # check genome size
+        if isinstance(self.extra_index, str):
+            self.genome_index = self.extra_index
+
+        ## check genome index
+        if isinstance(self.genome_index, str):
+            ai = AlignIndex(index=self.genome_index)
+
+            if self.genome_size < 1:
+                self.genome_size = ai.index_size()
+
+            if not isinstance(self.genome_size_file, str): 
+                self.genome_size_file = ai.index_size(return_file=True)
+
+        elif isinstance(self.genome, str):
+            self.genome_index = AlignIndex(aligner=self.aligner).search(
+                genome=self.genome, group='genome')
+
+            self.genome_size_file = Genome(genome=self.genome).get_fasize()
+
+            with open(self.genome_size_file, 'rt') as r:
+                s = [i.strip().split('\t')[1] for i in r.readlines()]
+            
+            if self.genome_size < 1:
+                self.genome_size = sum(map(int, s))
+            
+        else:
+            raise ValueError('index failed, extra_index, genome, genome_index')
+
+        # check spikein index
+        if isinstance(self.spikein_index, str):
+            ai = AlignIndex(index=self.spikein_index, aligner=self.aligner)
+
+            if not ai.is_index():
+                raise ValueError('spikein_index failed, {}'.format(
+                    self.spikein_index))
+
+        elif isinstance(self.spikein, str):
+            self.spikein_index = AlignIndex(aligner=self.aligner).search(
+                genome=self.spikein, group='genome')
+
+        else:
+            self.spikein_index = None
+
+
+    def init_files(self, create_dirs=True):
+        """
+        Prepare directories, files
+        """
+        # path, files
+        self.project_name = self.smp_name
+        self.project_dir = os.path.join(self.outdir, self.project_name)
+        self.config_dir = os.path.join(self.project_dir, 'config')
+
+        default_dirs = {
+            'align_dir': 'align',
+            'bam_dir': 'bam_files',
+            'bw_dir': 'bw_files',
+            'bg_dir': 'bg_files',
+            'peak_dir': 'peak',
+            'motif_dir': 'motif',
+            'qc_dir': 'qc',
+            'report_dir': 'report'
+        }
+        # convert to path
+        for k, v in default_dirs.items():
+            default_dirs[k] = os.path.join(self.project_dir, v)
+        self = update_obj(self, default_dirs, force=True) # key
+
+        # files
+        default_files = {
+            'config_txt': self.config_dir + '/config.txt',
+            'config_pickle': self.config_dir + '/config.pickle',
+            'config_json': self.config_dir + '/config.json',
+            'bam_rmdup': self.bam_dir + '/' + self.smp_name + '.rmdup.bam',
+            'bam_proper_pair': self.bam_dir + '/' + self.smp_name + '.proper_pair.bam',
+            'bam': self.bam_dir + '/' + self.project_name + '.bam',
+            'bed': self.bam_dir + '/' + self.project_name + '.bed',
+            'peak': self.peak_dir + '/' + self.project_name + '_peaks.narrowPeak',            
+            'peak_seacr': self.peak_dir + '/' + self.project_name + '.stringent.bed',
+            'peak_seacr_top001': self.peak_dir + '/' + self.project_name + '.top0.01.stringent.bed',
+            'bg': self.bg_dir + '/' + self.project_name + '.bedGraph',
+            'bw': self.bw_dir + '/' + self.project_name + '.bigWig',
+            'align_scale_txt': self.align_dir + '/' + 'scale.txt',
+            'align_flagstat': self.align_dir + '/' + self.smp_name + '.flagstat',
+            'align_stat': self.align_dir + '/' + self.smp_name + '.bowtie2.stat',
+            'align_json': self.align_dir + '/' + self.smp_name + '.bowtie2.json',
+
+            'align_summary_json': self.qc_dir + '/01.alignment_summary.json',
+            'lendist_txt': self.qc_dir + '/02.length_distribution.txt',
+            'lendist_pdf': self.qc_dir + '/02.length_distribution.pdf',
+            'frip_txt': self.qc_dir + '/03.FRiP.txt',
+            'tss_enrich_matrix': self.qc_dir + '/04.tss_enrich.mat.gz',
+            'tss_enrich_matrix_log': self.qc_dir + '/04.tss_enrich.log',
+            'tss_enrich_png': self.qc_dir + '/04.tss_enrich.png',
+            'tss_enrich_cmd': self.qc_dir + '/04.tss_enrich.cmd.sh',
+            'genebody_enrich_matrix': self.qc_dir + '/05.genebody_enrich.mat.gz',
+            'genebody_enrich_matrix_log': self.qc_dir + '/05.genebody_enrich.log',
+            'genebody_enrich_png': self.qc_dir + '/05.genebody_enrich.png',
+            'genebody_enrich_cmd': self.qc_dir + '/05.genebody_enrich.cmd.sh',
+            'bam_cor_npz': self.qc_dir + '/06.bam_cor.npz',
+            'bam_cor_counts': self.qc_dir + '/06.bam_cor.counts.tab',
+            'bam_cor_heatmap_png': self.qc_dir + '/06.bam_cor.cor_heatmap.png',
+            'bam_cor_pca_png': self.qc_dir + '/06.bam_cor.cor_PCA.png',
+            'peak_idr_png': self.qc_dir + '/07.peak_idr.png',
+            'peak_idr_txt': self.qc_dir + '/07.peak_idr.txt',
+            'peak_overlap_png': self.qc_dir + '/08.peak_overlap.png',
+            'peak_overlap_tiff': self.qc_dir + '/08.peak_overlap.tiff',
+            'bam_fingerprint': self.qc_dir + '/09.fingerprint.png'
+        }
+        self = update_obj(self, default_files, force=True) # key
+
+        if create_dirs:
+            check_path([
+                self.config_dir,
+                self.align_dir,
+                self.bam_dir, 
+                self.bw_dir, 
+                self.bg_dir,
+                self.peak_dir, 
+                self.motif_dir,
+                self.qc_dir, 
+                self.report_dir])
+
+
+class CnR1Config(object):
+    """
+    Prepare directories for R1 single replicates
+
+    require: fq1/fq2, outdir, ...
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+        self.init_fq()
+        self.init_index()
+        self.init_files()
+
+
+    def init_args(self):
+        """
+        required arguments for CnR analysis
+        """
+        args_init = {
+            'is_ip': True,
+            'fq1': None,
+            'fq2': None,
+            'genome': None,
+            'outdir': None,
+            'smp_name': None,
+            'aligner': 'bowtie2',
+            'genome_index': None,
+            'spikein': None,
+            'spikein_index': None,
+            'extra_index': None,
+            'threads': 1,
+            'overwrite': False,
+            'binsize': 50,
+            'genome_size': 0,
+            'genome_size_file': None,
+            'gene_bed': None,
+            'keep_tmp': False,
+            'trimmed': False,
+            'cut_to_length': 0,
+            'recursive': False 
+        }
+        self = update_obj(self, args_init, force=False)
+        self.hiseq_type = 'hiseq_r1' # 
+
+        # aligner
+        if self.aligner is None:
+            self.aligner = 'bowtie2'
+
+        # smp_name
+        if not isinstance(self.smp_name, str):
+            self.smp_name = fq_name(self.fq1, pe_fix=True) # the first one
+
+        self.outdir = file_abspath(self.outdir)
+
+
+    def init_fq(self):
+        """
+        Support fastq files
+        fq1 (required)
+        fq2 (optional)
+        """
+        # fq1
+        if not isinstance(self.fq1, str):
+            raise ValueError('--fq1, str expected, got {}'.format(
+                type(self.fq1).__name__))
+
+        # abs
+        self.fq1 = file_abspath(self.fq1)
+
+        # file exists
+        if not file_exists(self.fq1):
+            raise ValueError('--fq1, file not exists: {}'.format(self.fq1))
+
+        # fq2
+        if not self.fq2 is None:
+            if not isinstance(self.fq2, str):
+                raise ValueError('--fq2, None or str expected, got {}'.format(
+                    type(self.fq2).__name__))
+
+            # abs
+            self.fq2 = file_abspath(self.fq2)
+
+            if not file_exists(self.fq2):
+                raise ValueError('--fq2, file not exists: {}'.format(self.fq2))
+
+            # paired
+            if not fq_paired(self.fq1, self.fq2):
+                raise ValueError('--fq1, --fq2, file not paired')
+
+
+    def init_index(self):
+        """
+        alignment index
+        genome, extra_index, genome_index
+
+        output: genome_index, spikein_index
+        """
+        # check genome size
+        if isinstance(self.extra_index, str):
+            self.genome_index = self.extra_index
+
+        ## check genome index
+        if isinstance(self.genome_index, str):
+            ai = AlignIndex(index=self.genome_index)
+
+            if self.genome_size < 1:
+                self.genome_size = ai.index_size()
+
+            if not isinstance(self.genome_size_file, str): 
+                self.genome_size_file = ai.index_size(return_file=True)
+
+        elif isinstance(self.genome, str):
+            self.genome_index = AlignIndex(aligner=self.aligner).search(
+                genome=self.genome, group='genome')
+
+            self.genome_size_file = Genome(genome=self.genome).get_fasize()
+
+            with open(self.genome_size_file, 'rt') as r:
+                s = [i.strip().split('\t')[1] for i in r.readlines()]
+            
+            if self.genome_size < 1:
+                self.genome_size = sum(map(int, s))
+
+        else:
+            raise ValueError('index failed, extra_index, genome, genome_index')
+
+        # check spikein index
+        if isinstance(self.spikein_index, str):
+            ai = AlignIndex(index=self.spikein_index, aligner=self.aligner)
+
+            if not ai.is_index():
+                raise ValueError('spikein_index failed, {}'.format(
+                    self.spikein_index))
+
+        elif isinstance(self.spikein, str):
+            self.spikein_index = AlignIndex(aligner=self.aligner).search(
+                genome=self.spikein, group='genome')
+
+        else:
+            self.spikein_index = None
+
+
+    def init_files(self, create_dirs=True):
+        """
+        Prepare directories, files
+        """
+        # path, files
+        self.project_name = self.smp_name
+        self.project_dir = os.path.join(self.outdir, self.project_name)
+        self.config_dir = os.path.join(self.project_dir, 'config')
+
+        default_dirs = {
+            'raw_dir': 'raw_data',
+            'clean_dir': 'clean_data',
+            'align_dir': 'align',
+            'spikein_dir': 'spikein',
+            'bam_dir': 'bam_files',
+            'bg_dir': 'bg_files',
+            'bw_dir': 'bw_files',
+            'peak_dir': 'peak',
+            'motif_dir': 'motif',
+            'qc_dir': 'qc',
+            'report_dir': 'report'
+        }
+        # convert to path
+        for k, v in default_dirs.items():
+            default_dirs[k] = os.path.join(self.project_dir, v)
+        self = update_obj(self, default_dirs, force=True) # key
+
+        # files
+        default_files = {
+            'config_txt': self.config_dir + '/config.txt',
+            'config_pickle': self.config_dir + '/config.pickle',
+            'config_json': self.config_dir + '/config.json',
+            'bam_rmdup': self.bam_dir + '/' + self.smp_name + '.rmdup.bam',
+            'bam_proper_pair': self.bam_dir + '/' + self.smp_name + '.proper_pair.bam',
+            'bam': self.bam_dir + '/' + self.project_name + '.bam',
+            'bed': self.bam_dir + '/' + self.project_name + '.bed',
+            'bg': self.bg_dir + '/' + self.project_name + '.bedGraph',
+            'peak': self.peak_dir + '/' + self.project_name + '_peaks.narrowPeak',
+            'peak_seacr': self.peak_dir + '/' + self.project_name + '.stringent.bed',
+            'peak_seacr_top001': self.peak_dir + '/' + self.project_name + '.top0.01.stringent.bed',
+            'bw': self.bw_dir + '/' + self.project_name + '.bigWig',
+
+            'trim_stat_txt': self.clean_dir + '/' + self.project_name + '/' + self.project_name + '.trim.stat',
+            'align_scale_txt': self.align_dir + '/' + 'scale.txt',
+            'align_flagstat': self.align_dir + '/' + self.smp_name + '.flagstat',
+            'align_stat': self.align_dir + '/' + self.smp_name + '.bowtie2.stat',
+            'align_json': self.align_dir + '/' + self.smp_name + '.bowtie2.json',
+            'spikein_bam': self.spikein_dir + '/' + 'spikein.bam',
+            'spikein_scale_txt': self.spikein_dir + '/' + 'scale.txt',
+            'spikein_flagstat': self.spikein_dir + '/' + 'spikein.flagstat',
+            'spikein_stat': self.spikein_dir + '/' + 'spikein.align.stat',
+            'spikein_json': self.spikein_dir + '/' + 'spikein.align.json',
+
+            'trim_summary_json': self.qc_dir + '/00.trim_summary.json',
+            'align_summary_json': self.qc_dir + '/01.alignment_summary.json',
+            'lendist_txt': self.qc_dir + '/02.length_distribution.txt',
+            'lendist_pdf': self.qc_dir + '/02.length_distribution.pdf',
+            'frip_txt': self.qc_dir + '/03.FRiP.txt',
+            'tss_enrich_matrix': self.qc_dir + '/04.tss_enrich.mat.gz',
+            'tss_enrich_matrix_log': self.qc_dir + '/04.tss_enrich.log',
+            'tss_enrich_png': self.qc_dir + '/04.tss_enrich.png',
+            'tss_enrich_cmd': self.qc_dir + '/04.tss_enrich.cmd.sh',
+            'genebody_enrich_matrix': self.qc_dir + '/05.genebody_enrich.mat.gz',
+            'genebody_enrich_matrix_log': self.qc_dir + '/05.genebody_enrich.log',
+            'genebody_enrich_png': self.qc_dir + '/05.genebody_enrich.png',
+            'genebody_enrich_cmd': self.qc_dir + '/05.genebody_enrich.cmd.sh',
+            'bam_cor_heatmap_png': self.qc_dir + '/06.bam_cor.cor_heatmap.png',
+            'bam_cor_pca_png': self.qc_dir + '/06.bam_cor.cor_PCA.png',
+            'peak_idr_png': self.qc_dir + '/07.peak_idr.png',
+            'peak_overlap_png': self.qc_dir + '/08.peak_overlap.png',
+            'bam_fingerprint': self.qc_dir + '/09.fingerprint.png'
+        }
+        self = update_obj(self, default_files, force=True) # key
+
+        # raw data
+        self.raw_fq_list = [self.raw_dir + '/' + os.path.basename(self.fq1)]
+        if isinstance(self.fq2, str):
+            self.raw_fq_list.append(self.raw_dir + '/' + \
+                os.path.basename(self.fq2))
+
+        ## clean data
+        self.clean_fq_list = [self.clean_dir + '/' + os.path.basename(self.fq1)]
+        if isinstance(self.fq2, str):
+            self.clean_fq_list.append(self.clean_dir + '/' + \
+                os.path.basename(self.fq2))
+
+        if create_dirs:
+            check_path([
+                self.config_dir, 
+                self.raw_dir,
+                self.clean_dir,
+                self.align_dir,
+                self.spikein_dir,
+                self.bam_dir, 
+                self.bg_dir,
+                self.bw_dir, 
+                self.peak_dir, 
+                self.motif_dir,
+                self.qc_dir, 
+                self.report_dir])
+
+
+class CnRtConfig(object):
+    pass
+
+
 class CnRReader(object):
     """
     Read config.pickle from the local directory
@@ -3362,4 +2845,547 @@ class CnRDesign(object):
 
         # save to file
         Json(design_dict).writer(self.design)
+
+
+class Align(object):
+    """
+    Alignment reads for CUT&RUN, CUT&TAG
+    suppose paired end reads
+    --local --very-sensitive --no-mixed --no-discordant --phred33 -I 10 -X 700
+    
+    Input: fq, genome_index, outputdir, stat/log
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+        self.init_index()
+        self.init_files()        
+        self.prep_cmd()
+
+
+    def init_args(self):
+        """
+        ATACseq, max_fragment = 2000
+        CUT&RUN, max_fragment = 700
+        CUT&TAG, max_fragment = 700
+        """
+        default_args = {
+            'fq1': None,
+            'fq2': None,
+            'index': None,
+            'genome': None,
+            'extra_index': None,
+            'outdir': None,
+            'aligner': 'bowtie2',
+            'threads': 1,
+            'overwrite': False,
+            'max_fragment': 700,
+            'remove_unmap': False,
+            'hiseq_type': 'hiseq_alignment',
+            'keep_tmp': False
+            }
+        self = update_obj(self, default_args, force=False)
+
+        # outdir
+        if not isinstance(self.outdir, str):
+            self.outdir = str(pathlib.Path.cwd())
+            log.warning('set pwd as outdir: {}'.format(self.outdir))
+        self.outdir = file_abspath(self.outdir)
+        # check_path(self.outdir)
+
+        # fq1
+        if isinstance(self.fq1, str):
+            if check_file(self.fq1):
+                self.fq1 = file_abspath(self.fq1)
+                self.fq_check = 0
+            else:
+                log.error('--fq1, file not exists, {}'.format(self.fq1))
+                self.fq_check = 1
+        else:
+            log.error('--fq1, str expected, got {}'.format(
+                type(self.fq1).__name__))
+            self.fq_check = 1
+
+        # fq2
+        if isinstance(self.fq2, str):
+            if check_file(self.fq2):
+                self.fq2 = file_abspath(self.fq2)
+                self.fq_check = 0
+            else:
+                log.error('--fq2, file not exists, {}'.format(self.fq1))
+                self.fq_check = 1
+        else:
+            log.error('--fq2, str expected, got {}'.format(
+                type(self.fq2).__name__))
+            self.fq_check = 1
+
+        # prefix
+        self.smp_name = fq_name(self.fq1, pe_fix=True)
+
+
+    def init_index(self):
+        """
+        Determine the index
+        """
+        if isinstance(self.extra_index, str):
+            self.index = self.extra_index
+            self.index_check = 0 if AlignIndex(
+                index=self.extra_index, aligner=self.aligner).is_index() else 1
+        elif isinstance(self.index, str):
+            self.index_check = 0 if AlignIndex(
+                index=self.index, aligner=self.aligner).is_index() else 1
+        elif isinstance(self.genome, str):
+            self.index = AlignIndex(aligner=self.aligner).search(
+                genome=self.genome, group = 'genome')
+            self.index_check = 1 if self.index is None else 0
+        else:
+            log.error('-g, --index, failed')
+            self.index_check = 1
+
+        # index name
+        if isinstance(self.index, str):
+            self.index_name = AlignIndex(index=self.index).index_name()
+        else:
+            self.index_name = None
+
+
+    def init_files(self):
+        """
+        default files for output
+        bam, sam, log, unmap, ...
+        """
+        # subdir
+        subdir = os.path.join(self.outdir, self.smp_name, self.index_name)
+        check_path(subdir)
+
+        # output files
+        prefix = os.path.join(subdir, self.smp_name)
+        default_files = {
+            'subdir': subdir,
+            'config_pickle': os.path.join(subdir, 'config.pickle'),
+            'cmd_shell': os.path.join(subdir, 'cmd.txt'),
+            'bam': prefix + '.bam',
+            'sam': prefix + '.sam',
+            'unmap': prefix + '.unmap.fastq',
+            'unmap1': prefix + '.unmap.1.fastq',
+            'unmap2': prefix + '.unmap.2.fastq',
+            'align_log': prefix + '.bowtie2.log',
+            'align_stat': prefix + '.bowtie2.stat',
+            'align_json': prefix + '.bowtie2.json',
+            'align_flagstat': prefix + '.flagstat',
+            'rmdup_bam': prefix + '.rmdup.bam',
+            'rmdup_matrix': prefix + '.rmdup.matrix.txt'
+        }
+        self = update_obj(self, default_files, force=True)
+
+
+    def prep_cmd(self):
+        """
+        Alignment for CUT&RUN, CUT&TAG, ATACseq, ...
+        """
+        self.cmd = ' '.join([
+            '{}'.format(shutil.which('bowtie2')),
+            '--mm -p {}'.format(self.threads),
+            '--local --very-sensitive --no-mixed --no-discordant -I 10',
+            '-X {}'.format(self.max_fragment),
+            '-x {}'.format(self.index),
+            '-1 {} -2 {}'.format(self.fq1, self.fq2),
+            '--un-conc {}'.format(self.unmap),
+            '1> {} 2> {}'.format(self.sam, self.align_log),
+            '&& samtools view -@ {} -bS'.format(self.threads),
+            '<(samtools view -H {} ;'.format(self.sam),
+            "samtools view -F 2048 {} | grep 'YT:Z:CP')".format(self.sam),
+            '| samtools sort -@ {} -o {} -'.format(self.threads, self.bam),
+            '&& samtools index {}'.format(self.bam),
+            '&& samtools flagstat {} > {}'.format(self.bam, self.align_flagstat),
+            '&& [[ -f {} ]] && rm {}'.format(self.sam, self.sam)
+            ])
+        
+        # save cmd txt
+        cmd_txt = self.subdir + '/cmd.txt'
+        with open(cmd_txt, 'wt') as w:
+            w.write(self.cmd + '\n')
+
+
+    def parse_align(self, to_json=None):
+        """
+        Parsing the log of bowtie2
+        """
+        """
+        Wrapper bowtie2 log
+        Bowtie2:
+
+        SE:
+        10000 reads; of these:
+          10000 (100.00%) were unpaired; of these:
+            166 (1.66%) aligned 0 times
+            2815 (28.15%) aligned exactly 1 time
+            7019 (70.19%) aligned >1 times
+        98.34% overall alignment rate
+
+        PE:
+        100000 reads; of these:
+          100000 (100.00%) were paired; of these:
+            92926 (92.93%) aligned concordantly 0 times
+            5893 (5.89%) aligned concordantly exactly 1 time
+            1181 (1.18%) aligned concordantly >1 times
+            ----
+            92926 pairs aligned concordantly 0 times; of these:
+              1087 (1.17%) aligned discordantly 1 time
+            ----
+            91839 pairs aligned 0 times concordantly or discordantly; of these:
+              183678 mates make up the pairs; of these:
+                183215 (99.75%) aligned 0 times
+                101 (0.05%) aligned exactly 1 time
+                362 (0.20%) aligned >1 times
+        8.39% overall alignment rate
+
+        unique, multiple, unmap, map, total
+        """
+        self.unique_only = False
+
+        dd = {}
+        se_tag = 1 #
+        with open(self.align_log, 'rt') as r:
+            for line in r:
+                value = line.strip().split(' ')[0]
+                if '%' in value:
+                    continue
+                if line.strip().startswith('----'):
+                    continue
+                value = int(value)
+
+                ## paired tag
+                if 'were paired; of these' in line:
+                    dd['total'] = value
+                    se_tag = 0
+                elif 'aligned concordantly 0 times' in line:
+                    dd['unmap'] = value
+                    se_tag = 0
+                elif 'aligned concordantly exactly 1 time' in line:
+                    dd['unique'] = value
+                    se_tag = 0
+                elif 'aligned concordantly >1 times' in line:
+                    dd['multiple'] = value
+                    se_tag = 0
+                elif 'reads; of these' in line and se_tag:
+                    dd['total'] = value
+                elif 'aligned 0 times' in line and se_tag:
+                    dd['unmap'] = value
+                elif 'aligned exactly 1 time' in line and se_tag:
+                    dd['unique'] = value
+                elif 'aligned >1 times' in line and se_tag:
+                    dd['multiple'] = value
+                else:
+                    pass
+
+        if self.unique_only:
+            dd['map'] = dd['unique']
+        else:
+            dd['map'] = dd['unique'] + dd['multiple']
+        dd['unmap'] = dd['total'] - dd['unique'] - dd['multiple']
+
+        # save fqname, indexname,
+        dd['fqname'] = self.smp_name
+        dd['index_name'] = self.index_name
+        self.log_dict = dd
+
+        # save dict to plaintext file
+        with open(self.align_stat, 'wt') as w:
+            groups = ['total', 'map', 'unique', 'multiple', 'unmap', 'fqname', 
+                'index_name']
+            h = '\t'.join(groups)
+            v = '\t'.join([str(dd.get(i, 0)) for i in groups])
+            w.write('#' + h + '\n')
+            w.write(v + '\n')
+
+        ## save to json
+        if to_json:
+            Json(dd).writer(self.align_json)
+
+        return dd['total'], dd['map'], dd['unique'], dd['multiple'], dd['unmap']
+
+
+    def run(self):
+        if self.fq_check > 0:
+            raise ValueError('--fq1, --fq2, illegal')
+        if self.index_check > 0:
+            raise ValueError('--index, --genome, illegal')
+
+        # prepare dirs
+        check_path(self.subdir)
+
+        # save config
+        dict2pickle(self.__dict__, self.config_pickle)
+
+        # run cmd
+        if file_exists(self.bam) and not self.overwrite:
+            log.info('align() skipped, file exists:{}'.format(self.bam))
+        else:
+            try:
+                run_shell_cmd(self.cmd)
+            except:
+                log.error('align() failed, check {}'.format(self.align_log))
+
+        # read log
+        if file_exists(self.align_log):
+            self.parse_align(to_json=True)
+
+        # temp files
+        del_list = [self.sam, self.unmap1, self.unmap2]
+        if not self.keep_tmp:
+            file_remove(del_list, ask=False)
+
+
+class CallPeak(object):
+    """
+    Call peaks using MACS2, or SEACR
+
+    MACS2: 
+    macs2 callpeak -t ip.bam -c input.bam \
+      -g hs -f BAMPE -n macs2_peak_q0.1 \
+      --outdir outdir -q 0.1 
+      --keep-dup all 
+      2>log.txt
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+        self.init_files()
+
+
+    def init_args(self):
+        default_args = {
+            'method': 'macs2',
+            'ip': None,
+            'input': None,
+            'genome': None,
+            'genome_size': None,
+            'genome_size_file': None,
+            'prefix': None,
+            'outdir': None,
+            'overwrite': False,
+            'hiseq_type': 'macs2_call_peak',
+            'keep_tmp': False
+            }
+        self = update_obj(self, default_args, force=False)
+
+        # outdir
+        if not isinstance(self.outdir, str):
+            self.outdir = str(pathlib.Path.cwd())
+            log.warning('set pwd as outdir: {}'.format(self.outdir))
+        self.outdir = file_abspath(self.outdir)
+        check_path(self.outdir)
+
+        # bam files
+        if not file_exists(self.ip):
+            raise ValueError('ip, required')
+
+        self.ip = file_abspath(self.ip)
+        self.input = file_abspath(self.input)
+
+        # file name
+        self.ip_name = os.path.splitext(os.path.basename(self.ip))[0]
+        if self.input is None:
+            self.input_name = ''
+        else:
+            self.input_name = os.path.splitext(os.path.basename(self.input))[0]
+        
+        # prefix
+        if not isinstance(self.prefix, str):
+            self.prefix = self.ip_name
+
+        self.prefix_top001 = self.prefix + '.top0.01'
+
+
+    def init_genome(self):
+        """
+        Determine the genome_size, genome_size_file
+        """
+        # genome
+        g = {
+          'dm6': 'dm',
+          'dm3': 'dm',
+          'mm9': 'mm',
+          'mm10': 'mm',
+          'hg19': 'hs',
+          'hg38': 'hs'
+        }
+
+        if isinstance(self.genome, str):
+            self.genome_size = g.get(self.genome, 0)
+            self.genome_size_file = Genome(genome=self.genome).get_fasize()
+
+            if self.genome_size is None:
+                raise ValueError('unknown genome: {}'.format(self.genome))
+
+        elif isinstance(self.genome_size, int):
+            if self.genome_size < 1:
+                raise ValueError('genome_size, failed, {}'.format(
+                    self.genome_size))
+            elif not isinstance(self.genome_size_file, str):
+                raise ValueError('genome_size_file, failed, {}'.format(
+                    self.genome_size_file))
+            else:
+                pass
+        
+        else:
+            raise ValueError('--genome, --genome-size, required')
+
+
+    def init_files(self):
+        # files
+        default_files = {
+            'config_pickle': self.outdir + '/config.pickle',
+            'macs2_peak': self.outdir + '/' + self.prefix + '_peaks.narrowPeak',
+            'macs2_log': self.outdir + '/' + self.prefix + '.callpeak.log',
+            'macs2_peak_xls': self.outdir + '/' + self.prefix + '_peaks.xls',
+            'ip_bed': self.outdir + '/' + self.ip_name + '.frag.bed',
+            'ip_bg': self.outdir + '/' + self.ip_name + '.frag.bg',
+            'input_bed': self.outdir + '/' + self.input_name + '.frag.bed',
+            'input_bg': self.outdir + '/' + self.input_name + '.frag.bg',
+            'seacr_peak': self.outdir + '/' + self.prefix + '.stringent.bed',
+            'seacr_peak_top': self.outdir + '/' + self.prefix_top001 + '.stringent.bed'
+        }
+        self = update_obj(self, default_files, force=True) # key
+
+        ## gsize
+        # self.genome_size_file = Genome(genome=self.genome).get_fasize()
+        
+
+    def run_macs2(self):
+        input_arg = '' if self.input is None else '-c {}'.format(self.input)
+
+        cmd = ' '.join([
+            '{} callpeak'.format(shutil.which('macs2')),
+            '-t {} {}'.format(self.ip, input_arg),
+            '-g {} -f BAMPE'.format(self.genome_size),
+            '-n {}'.format(self.outdir + '/' + self.prefix),
+            '-q 0.1 --keep-dup all',
+            '--nomodel --extsize 150',
+            '2> {}'.format(self.macs2_log)
+            ])
+
+        # save cmd
+        cmd_txt = self.outdir + '/' + self.prefix + '.macs2.cmd.sh'
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+
+        # run
+        if file_exists(self.macs2_peak) and not self.overwrite:
+            log.info('run_macs2() skipped, file exists:{}'.format(
+                self.macs2_peak))
+        else:
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.error('run_macs2() failed, check {}'.format(
+                    self.macs2_log))
+
+
+    def bampe_to_bg(self, bam, bg):
+        """
+        Convert bam to bed
+        bedpe, sort -n (by name)
+        """
+        bam_sorted = os.path.splitext(bg)[0] + '.sorted_by_name.bam'
+        bed = os.path.splitext(bg)[0] + '.bed'
+
+        cmd = ' '.join([
+            'samtools sort -@ 4 -n -o {} {}'.format(bam_sorted, bam),
+            '&& bedtools bamtobed -bedpe -i {}'.format(bam_sorted),
+            "| awk '$1==$4 && $6-$2 < 1000 {print $0}'",
+            '| cut -f 1,2,6',
+            '| sort -k1,1 -k2,2n > {}'.format(bed),
+            '&& bedtools genomecov -bg -i {}'.format(bed),
+            '-g {}'.format(self.genome_size_file),
+            '> {}'.format(bg)
+        ])
+
+        # save cmd
+        cmd_txt = self.outdir + '/' + self.prefix + '.bam2bg.cmd.sh'
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+
+        # run
+        if file_exists(bg) and not self.overwrite:
+            log.info('bampe_to_bg() skipped, file exists:{}'.format(bg))
+        else:
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.error('bampe_to_bg() failed, check {}'.format(bg))
+
+        # temp files
+        del_list = [bam_sorted, bed]
+        if not self.keep_tmp:
+            file_remove(del_list, ask=False)
+
+
+    def run_seacr(self):
+        """
+        bash $seacr ip.bedgraph input.bedgraph \
+        non stringent output
+    
+        see: https://github.com/FredHutch/SEACR
+        1. bam-to-bed
+        bedtools bamtobed -bedpe -i in.bam > out.bed
+        awk '$1==$4 && $6-$2 < 1000 {print $0}' out.bed > out.clean.bed
+        cut -f1,2,6 out.clean.bed | sort -k1,1 -k2,2n -k3,3n > out.fragments.bed
+        bedtools genomecov -bg -i out.fragments.bed -g genome > out.fragments.bg
+        
+        2. call peak
+        bash seacr out.fragments.bg IgG.bg non stringent output
+        bash seacr out.fragments.bg 0.01 non 0.01 non stringent top0.01.peaks
+        """
+        self.bampe_to_bg(self.ip, self.ip_bg)
+        cmd = ' '.join([
+            'bash {}'.format(shutil.which('SEACR_1.3.sh')),
+            '{} 0.01'.format(self.ip_bg),
+            'non stringent {}'.format(self.outdir + '/' + self.prefix_top001)
+        ])
+
+        if not self.input is None:
+            self.bampe_to_bg(self.input, self.input_bg)
+
+            cmd = ' '.join([
+                '{} &&'.format(cmd),
+                'bash {}'.format(shutil.which('SEACR_1.3.sh')),
+                '{} {}'.format(self.ip_bg, self.input_bg),
+                'non stringent {}'.format(self.outdir + '/' + self.prefix)            
+            ])
+
+        # save cmd
+        cmd_txt = self.outdir + '/' + self.prefix + '.SEACR.cmd.sh'
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+
+        # run
+        if file_exists(self.seacr_peak_top) and not self.overwrite:
+            log.info('run_seacr() skipped, file exists:{}'.format(
+                self.seacr_peak))
+        else:
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.error('run_seacr() failed, check {}'.format(
+                    self.seacr_peak))
+
+
+    def run(self):
+        # save config
+        dict2pickle(self.__dict__, self.config_pickle)
+
+        # generate cmd
+        if self.method.lower() == 'macs2':
+            self.run_macs2()
+        elif self.method.lower() == 'seacr':
+            self.run_seacr()
+        else:
+            raise ValueError('unknown method: {macs2|seacr}, got {}'.format(
+                self.method))
+
+        # remove files
+        del_list = []
+
 
