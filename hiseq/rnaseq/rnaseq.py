@@ -344,31 +344,7 @@ class RNAseqRx(object):
         Create report for one sample
         html
         """
-        pkg_dir = os.path.dirname(hiseq.__file__)
-        qc_reportR = os.path.join(pkg_dir, 'bin', 'hiseq_report.R')
-        hiseq_report_html = os.path.join(self.report_dir, 'HiSeq_report.html')
-        hiseq_report_stdout = os.path.join(self.report_dir, 
-            'HiSeq_report.stdout')
-        hiseq_report_stderr = os.path.join(self.report_dir, 
-            'HiSeq_report.stderr')
-        cmd = 'Rscript {} {} {} 1> {} 2> {}'.format(
-            qc_reportR,
-            self.project_dir,
-            self.report_dir,
-            hiseq_report_stdout,
-            hiseq_report_stderr
-        )
-        cmd_shell = os.path.join(self.report_dir, 'cmd.sh')
-        with open(cmd_shell, 'wt') as w:
-            w.write(cmd + '\n')
-        if file_exists(hiseq_report_html):
-            log.info('report() skipped, file exists: {}'.format(
-                hiseq_report_html))
-        else:
-            try:
-                run_shell_cmd(cmd)
-            except:
-                log.error('report() failed, {}'.format(self.report_dir))
+        RNAseqRp(self.project_dir).run()
 
 
     def run(self):
@@ -599,31 +575,7 @@ class RNAseqRn(object):
         Create report for one sample
         html
         """
-        pkg_dir = os.path.dirname(hiseq.__file__)
-        qc_reportR = os.path.join(pkg_dir, 'bin', 'hiseq_report.R')
-        hiseq_report_html = os.path.join(self.report_dir, 'HiSeq_report.html')
-        hiseq_report_stdout = os.path.join(self.report_dir, 
-            'HiSeq_report.stdout')
-        hiseq_report_stderr = os.path.join(self.report_dir, 
-            'HiSeq_report.stderr')
-        cmd = 'Rscript {} {} {} 1> {} 2> {}'.format(
-            qc_reportR,
-            self.project_dir,
-            self.report_dir,
-            hiseq_report_stdout,
-            hiseq_report_stderr
-        )
-        cmd_shell = os.path.join(self.report_dir, 'cmd.sh')
-        with open(cmd_shell, 'wt') as w:
-            w.write(cmd + '\n')
-        if file_exists(hiseq_report_html):
-            log.info('report() skipped, file exists: {}'.format(
-                hiseq_report_html))
-        else:
-            try:
-                run_shell_cmd(cmd)
-            except:
-                log.error('report() failed, {}'.format(self.report_dir))
+        RNAseqRp(self.project_dir).report()
 
 
     def run_RNAseqR1(self, i):
@@ -1187,26 +1139,55 @@ class RNAseqR1(object):
         Create report for one sample
         html
         """
+        RNAseqRp(self.project_dir).report()
+
+
+    def run(self):
+        """
+        Run all steps for RNAseq pipeline
+        """
+        self.pipe_genome()
+        self.pipe_qc()
+        self.report()
+
+
+class RNAseqRp(object):
+    """
+    Run report for RNAseq dirs: R1, Rn, Rx, ...
+    input: project_dir
+    output: project_dir/report/
+    """
+    def __init__(self, project_dir=None, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.project_dir = project_dir
+        self.init_args()
+
+
+    def init_args(self):
+        obj_local = RNAseqRpConfig(**self.__dict__)
+        self = update_obj(self, obj_local.__dict__, force=True)
+
+
+    def report(self):
+        """
+        Create report for one sample
+        html
+        """
         pkg_dir = os.path.dirname(hiseq.__file__)
         qc_reportR = os.path.join(pkg_dir, 'bin', 'hiseq_report.R')
-        hiseq_report_html = os.path.join(self.report_dir, 'HiSeq_report.html')
-        hiseq_report_stdout = os.path.join(self.report_dir, 
-            'HiSeq_report.stdout')
-        hiseq_report_stderr = os.path.join(self.report_dir, 
-            'HiSeq_report.stderr')
         cmd = 'Rscript {} {} {} 1> {} 2> {}'.format(
             qc_reportR,
             self.project_dir,
             self.report_dir,
-            hiseq_report_stdout,
-            hiseq_report_stderr
+            self.report_stdout,
+            self.report_stderr
         )
         cmd_shell = os.path.join(self.report_dir, 'cmd.sh')
         with open(cmd_shell, 'wt') as w:
             w.write(cmd + '\n')
-        if file_exists(hiseq_report_html):
+        if file_exists(self.report_html):
             log.info('report() skipped, file exists: {}'.format(
-                hiseq_report_html))
+                self.report_html))
         else:
             try:
                 run_shell_cmd(cmd)
@@ -1216,10 +1197,8 @@ class RNAseqR1(object):
 
     def run(self):
         """
-        Run all steps for RNAseq pipeline
+        Create report for multiple samples (n groups)
         """
-        self.pipe_genome()
-        self.pipe_qc()
         self.report()
 
 
@@ -2030,6 +2009,27 @@ class RNAseqRpConfig(object):
     """
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
+        self.init_args()
+
+
+    def init_args(self):
+        """
+        required arguments for RNAseqRp report
+        """
+        # if not os.path.exists(self.project_dir):
+        #     raise Exception('project_dir, dir not exists: {}'.format(
+        #         self.project_dir))
+        self.hiseq_type = RNAseqReader(self.project_dir).hiseq_type #
+        if self.hiseq_type == None:
+            raise Exception('project_dir, not a hiseq_ dir: {}'.format(
+                self.project_dir))
+
+        # path, files
+        self.report_dir = os.path.join(self.project_dir, 'report')
+        self.report_html = os.path.join(self.report_dir, 'HiSeq_report.html')
+        self.report_stdout = os.path.join(self.report_dir, 'report.stdout')
+        self.report_stderr = os.path.join(self.report_dir, 'report.stderr')
+        check_path(self.report_dir)
 
 
 class RNAseqDesign(object):
