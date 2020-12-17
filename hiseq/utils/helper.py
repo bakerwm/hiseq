@@ -22,6 +22,7 @@ import tempfile
 import logging
 import functools
 import subprocess
+import collections
 import numpy
 import pysam
 import pybedtools
@@ -89,6 +90,41 @@ class Logger(object):
                 raise ex
             return result
         return decorated
+
+
+
+def check_fq(fq):
+    """
+    Make sure
+    fq: str or list, or None
+    """
+    if fq is None:
+        # raise ValueError('fq1 required, got None')
+        pass
+    elif isinstance(fq, list):
+        fq = file_abspath(fq)
+    elif isinstance(fq, str):
+        fq = [file_abspath(fq)]
+    else:
+        log.error('fq failed, Nont, str, list expected, got {}'.format(type(fq).__name__))
+
+    return fq
+
+
+def fq_paired(fq1, fq2):
+    """
+    Make sure fq1 and fq2, proper paired, by name: R1, R2
+    """
+    fq1 = check_fq(fq1)
+    fq2 = check_fq(fq2)
+
+    if isinstance(fq1, str) and isinstance(fq2, str):
+        return distance(fq1, fq2) == 1
+    elif isinstance(fq1, list) and isinstance(fq2, list):
+        return [distance(i, j) == 1 for i, j in zip(fq1, fq2)]
+    else:
+        log.warning('fq not paired: {}, {}'.format(fq1, fq2))
+        return False
 
 
 ## 1. files and path ##
@@ -380,22 +416,30 @@ def file_symlink(src, dest, absolute_path=False):
         src = os.path.abspath(os.path.expanduser(os.path.expandvars(src)))
         dest = os.path.abspath(os.path.expanduser(os.path.expandvars(dest)))
 
-        # target exists
-        if os.path.exists(dest):
-            log.info('symlink() skipped, dest exists: {}'.format(dest))
-        elif os.path.isdir(src):
-            if absolute_path:
-                os.symlink(src, dest)
+        if os.path.isdir(src):
+            # target exists
+            if os.path.exists(dest):
+                log.info('symlink() skipped, dest exists: {}'.format(dest))
             else:
-                rel_src = os.path.relpath(src, dest)
-                os.symlink(rel_src, dest)
+                if absolute_path:
+                    os.symlink(src, dest)
+                else:
+                    rel_src = os.path.relpath(src, dest)
+                    os.symlink(rel_src, dest)
 
-        elif os.path.isfile(src):  
+        elif os.path.isfile(src):
             src_filename = os.path.basename(src)
             src_dirname = os.path.dirname(src)
-            dest_dirname = os.path.dirname(dest)
 
-            if absolute_path:
+            if os.path.isdir(dest):
+                dest_dirname = dest
+                dest = os.path.join(dest_dirname, src_filename)
+            else:
+                dest_dirname = os.path.dirname(dest)
+
+            if os.path.exists(dest):
+                log.info('symlink() skipped, dest exists: {}'.format(dest))
+            elif absolute_path:
                 os.symlink(src, dest)
             else:
                 rel_src_dirname = os.path.relpath(src_dirname, dest_dirname)
@@ -423,14 +467,20 @@ def file_remove(x, ask=True):
             undel_list.append(x)
     elif isinstance(x, list):
         for f in x:
-            if os.path.isfile(f) and file_exists(x):
-                del_list.append(f)
+            if isinstance(f, str):
+                if os.path.isfile(f) and file_exists(f):
+                    del_list.append(f)
+                else:
+                    undel_list.append(f)
             else:
                 undel_list.append(f)
     elif isinstance(x, dict):
         for f in list(x.values()):
-            if os.path.isfile(f) and file_exists(x):
-                del_list.append(f)
+            if isinstance(f, str):
+                if os.path.isfile(f) and file_exists(f):
+                    del_list.append(f)
+                else:
+                    undel_list.append(f)
             else:
                 undel_list.append(f)
     else:
@@ -465,18 +515,21 @@ def file_copy(src, dest, force=False):
     if src is None:
         log.error('file_copy() skipped, src is NoneType')
     elif os.path.isfile(src):
-        if os.path.isdir(dest):
-            dest_file = os.path.join(dest, os.path.basename(src))
-            shutil.copy(src, dest_file)
-        elif os.path.isfile(dest):
-            if force:
+        if isinstance(dest, str):
+            if os.path.isdir(dest):
+                dest_file = os.path.join(dest, os.path.basename(src))
+                shutil.copy(src, dest_file)
+            elif os.path.isfile(dest):
+                if force:
+                    shutil.copy(src, dest)
+                else:
+                    log.warning('file_copy() skipped, dest exists: {}'.format(dest))
+            elif os.path.exists(os.path.dirname(dest)):
                 shutil.copy(src, dest)
             else:
-                log.error('file_copy() skipped, dest exists: {}'.format(dest))
-        elif os.path.exists(os.path.dirname(dest)):
-            shutil.copy(src, dest)
-        else:
-            log.error('file_copy() skipped, dest is not file or dir')
+                log.error('file_copy() skipped, dest is not file or dir')
+    else:
+        log.error('file_copy() skipped, src is not file')
 
 
 def path_remove(x, ask=True):
@@ -789,7 +842,7 @@ class Toml(object):
             x_fmt = self.guess_fmt(x)
             if x_fmt:
                 if x_fmt == 'dict':
-                    self.x_dict = x
+                    self.x_dict = collections.OrderedDict(sorted(x.items()))
                 elif x_fmt == 'JSON':
                     self.x_dict = self.from_json(x)
                 elif x_fmt == 'YAML':
@@ -878,7 +931,8 @@ class Toml(object):
         try:
             with open(x, 'r') as r:
                 if os.path.getsize(x) > 0:
-                    return json.load(r)
+                    d = json.load(r)
+                    return collections.OrderedDict(sorted(d.items()))
         except:
             log.warning('from_json() failed')
 
@@ -897,7 +951,8 @@ class Toml(object):
         """
         Parsing data from dict
         """
-        return x if isinstance(x, dict) else Noe
+        return collections.OrderedDict(sorted(x.items())) \
+            if isinstance(x, dict) else None
 
 
     def to_yaml(self, x):
@@ -913,10 +968,10 @@ class Toml(object):
 
                     return x
                 else:
-                    log.warning('to_json() failed, could not write to file: \
+                    log.warning('to_yaml() failed, could not write to file: \
                         {}'.format(x))
             else: 
-                log.warning('to_json() failed, x, str expected, got {}'.format(
+                log.warning('to_yaml() failed, x, str expected, got {}'.format(
                     type(x).__name__))
         else:
             log.warning('Expect input for Toml(x=)')
@@ -928,7 +983,8 @@ class Toml(object):
         """
         with open(x, 'r') as r:
             try:
-                return yaml.safe_load(r)
+                d = yaml.safe_load(r)
+                return collections.OrderedDict(sorted(d.items()))
             except yaml.YAMLError as exc:
                 log.warning(exc)
 
@@ -946,10 +1002,10 @@ class Toml(object):
 
                     return x
                 else:
-                    log.warning('to_json() failed, could not write to file: \
+                    log.warning('to_toml() failed, could not write to file: \
                         {}'.format(x))
             else: 
-                log.warning('to_json() failed, x, str expected, got {}'.format(
+                log.warning('to_toml() failed, x, str expected, got {}'.format(
                     type(x).__name__))
         else:
             log.warning('Expect input for Toml(x=)')
@@ -960,9 +1016,10 @@ class Toml(object):
         Parsing TOML file
         """
         try:
-            return toml.load(x)
+            d = toml.load(x)
+            return collections.OrderedDict(sorted(d.items()))
         except:
-            log.warning('failed to parsing file: {}'.fomrat(x))
+            log.warning('failed to parsing file: {}'.format(x))
 
 
     def from_pickle(self, x):
@@ -971,9 +1028,10 @@ class Toml(object):
         """
         try:
             with open(x, 'rb') as r:
-                return pickle.load(r)
+                d = pickle.load(r)
+                return collections.OrderedDict(sorted(d.items()))
         except:
-            log.warning('failed to parsing file: {}'.fomrat(x))
+            log.warning('failed to parsing file: {}'.format(x))
 
 
     def to_pickle(self, x):
@@ -990,10 +1048,10 @@ class Toml(object):
 
                     return x
                 else:
-                    log.warning('to_json() failed, could not write to file: \
+                    log.warning('to_pickle() failed, could not write to file: \
                         {}'.format(x))
             else: 
-                log.warning('to_json() failed, x, str expected, got {}'.format(
+                log.warning('to_pickle() failed, x, str expected, got {}'.format(
                     type(x).__name__))
         else:
             log.warning('Expect input for Toml(x=)')
@@ -1610,7 +1668,7 @@ class Bam(object):
         """
         if subdir is None:
             subdir = self._tmp(delete=False)
-        check_path(self.subdir)
+        check_path(subdir)
 
         # src, dest
         dest = os.path.join(subdir, os.path.basename(self.bam))
@@ -1939,8 +1997,6 @@ class FeatureCounts(object):
         self.init_args()
         self.init_files()
         Toml(self.__dict__).to_toml(self.config_toml)
-        # args_checker(self.__dict__, self.config_pickle)
-        # args_logger(self.__dict__, self.config_txt)
 
 
     def init_args(self):
@@ -2100,6 +2156,7 @@ class FeatureCounts(object):
         """
         return ' '.join([
             '{}'.format(shutil.which('featureCounts')),
+            '-s {}'.format(self.strandness),
             self.get_arg_gtf(),
             self.get_arg_pe(),
             '-o {}'.format(self.count_txt),
@@ -2122,21 +2179,23 @@ class FeatureCounts(object):
             assign_pct = assign / total
             assign_pct = assign_pct.round(decimals=4)
             assign_df = assign_pct.to_frame('assigned')
+            assign_df['strandness'] = self.strandness
             # save to json
             assign_df.to_csv(self.stat, sep='\t', index=True, header=False)
             assign_df.to_json(self.stat)
+
             # mimimal value
             assign_min = assign_pct.min()
-            if assign_min < 50:
+            if assign_min < 0.50:
                 log.warning('Caution: -s {}, {:.2f}% assigned, see {}'.format(
                     self.strandness, assign_min, self.summary))
             print(assign_df)
         except:
             log.warning('reading file failed: {}'.format(self.summary))
-            total, assign_pct, assign_df = [1, 0, None]
+            total, assign, assign_pct = [1, 0, 0]
 
         df = pd.DataFrame([total, assign, assign_pct]).T
-        df.columns = ['total', 'map', 'FRiP']
+        df.columns = ['total', 'map', 'pct']
         return df
 
 
@@ -2147,8 +2206,8 @@ class FeatureCounts(object):
         cmd = self.get_cmd()
 
         # save cmd
-        cmd_txt = os.path.join(self.outdir, 'cmd.sh')
-        with open(cmd_txt, 'wt') as w:
+        cmd_shell = os.path.join(self.outdir, self.prefix +'.cmd.sh')
+        with open(cmd_shell, 'wt') as w:
             w.write(cmd + '\n')
 
         if file_exists(self.count_txt) and not self.overwrite:
@@ -2157,9 +2216,11 @@ class FeatureCounts(object):
         else:
             try:
                 run_shell_cmd(cmd)
-                self.wrap_log()
             except:
                 log.error('FeatureCounts() failed, see: {}'.format(self.log))
+
+        return self.wrap_log()
+
 
 
 def symlink(src, dest, absolute_path=True):

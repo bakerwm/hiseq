@@ -1,1013 +1,444 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Working mode:
 
-1. build design
+1. RNAseq for 1 index, and 1 transcript (gene, TE, piRNA cluster, reporter, ...)
+# attention, norm_scale!?
 
-Create RNAseq_auto_design.txt for further analysis
+2. Saving config in TOML format
 
-2. pickle
+Directory structure:
 
-Pass all arguments from *.pickle file
+wildtype
+  |- gene
+  |- te
+  |- piRNA
+  |- reporter
+  |- ...
 
-3. design
+mutant
+  |- gene
+  |- te
+  |- piRNA
+  |- reporter
+  |- ...
 
-pass values from design.txt
+mutant.vs.wildtype
+  |- gene
+  |- te
+  |- piRNA
+  |- reporter
+  |- ...
 
+subdirectory structure
 
-
-## Design
-
-input:
-
-- control (rep1, rep2, ...)
-- treatment (rep1, rep2, ...)
-- genome
-
-output:
-
-  - single:
-    - raw_data
-    - clean_data
-    - align
-    - count
-    - qc
-    - report
-    ...
-
-  - pair:
-    - count
-    - deseq
-    - qc
-    - report
-
-
-## figures/tables
-1. scatter plot
-2. MA plot
-3. volcano
-4. heatplot
-...
-
-## subfunctions:
-
-class RNAseqSingle()
-class RNAseqPair()
-class RNAseqConfig()
-...
-object to dict, ...
+wildtype/gene
+  |- raw_data
+  |- clean_data
+  |- align
+  |- count
+  |- qc
+  |- report
+  |- spikein
+  |    |- align
+  |    |- count/norm.txt
 
 
-DE analysis:
+mutant.vs.wildtype/gene
+  |- count sense/antisense smp_name.txt   [sense, antisense]?
+  |- deseq
+  |- enrich
+  |- report
 
-DEseq2, edgeR, ...
+
+## Create plots
+1. QC
+  - adapter content
+  - mapping content
+  - unique/multiple content
+  - gene index
+
+2. Reads on gene body?
+
+3. DESeq
+  - scatter plot
+  - MA plot
+  - Volcano
+  - heatmap
 
 
-
-Alignment:
-
-gene,
-TE
-piRNA cluster
-...
 
 2020-04-18
 ## 1. save arguments in self.
 ## 2. save default paths, files, in self.files
-## 3. update all args/
-
+## 3. update all args
 """
 
 import os
 import re
-import hiseq
-import pysam
+import glob
 import shutil
 import tempfile
+import collections
 import pandas as pd
 from multiprocessing import Pool
-import copy # copy objects
+from Levenshtein import distance
+import hiseq # for command file
 from hiseq.utils.helper import *
-from hiseq.trim.trimmer import Trimmer
-from hiseq.align.alignment import Alignment
-from hiseq.rnaseq.rnaseq_builder import RNAseqFqDesign
-from hiseq.atac.atac_utils import Bam2bw
+from hiseq.trim.trimmer import Trim
+# from hiseq.align.alignment import Align, AlignIndex # deprecated
+from hiseq.rnaseq.alignment import Align, AlignIndex
+# from hiseq.rnaseq.rnaseq_builder import RNAseqFqDesign
+# from hiseq.atac.atac_utils import Bam2bw
+from hiseq.atac.atac_utils import *
+# from helper import FeatureCounts
+
+def print_dict(d):
+    d = collections.OrderedDict(sorted(d.items()))
+    for k, v in d.items():
+        print('{:>20s}: {}'.format(k, v))
 
 
-def print_df(x):
-    # for k, v in x.items():
-    #     print('{:30s} : {}'.format(k, v))
-    for k in sorted(x.keys()):
-        print('{:30s} : {}'.format(k, x[k]))
+def init_cpu(threads=1, parallel_jobs=1):
+    """
+    threads, CPUs
+    """
+    n_cpu = os.cpu_count() # alternative: multiprocessing.cpu_count()
+
+    max_jobs = int(n_cpu / 4.0)
+    ## check parallel_jobs (max: 1/4 of n_cpus)
+    if parallel_jobs > max_jobs: 
+        log.warning('Too large, change parallel_jobs from {} to {}'.format(
+            parallel_jobs, max_jobs))
+        parallel_jobs = max_jobs
+
+    ## check threads
+    max_threads = int(0.8 * n_cpu / parallel_jobs)
+    if threads * parallel_jobs > 0.8 * n_cpu:
+        log.warning('Too large, change threads from {} to {}'.format(
+            threads, max_threads))
+        threads = max_threads
+
+    return (threads, parallel_jobs)
+    
+
+def fq_paired(fq1, fq2):
+    """
+    Check fq1, fq2, (list)
+    """
+    if isinstance(fq1, str) and isinstance(fq2, str):
+        chk = distance(fq1, fq2) == 1
+    else:
+        chk = False
+
+    if not chk:
+        log.warning('fastq pairing failed')
+
+    return chk
 
 
 class RNAseq(object):
+    """
+    The main port, for RNAseq analysis: N groups of RNAseq analysis
+    """
     def __init__(self, **kwargs):
-        """
-        options:
-        global options: feature(gene/te/piRNAcluster/...), gtf,
-        1. design: design.txt (single/multiple/deseq)
-        2. single/multiple: --fq1, --fq2, --genome, --outdir
-        3. deseq: --dirs-ctl, --dirs-exp, --outdir
-        ...
-        """
-        self.update(kwargs) # fresh new
-        local_config = RNAseqConfig(**self.__dict__)
-        self.update(local_config.__dict__, force=True)
-        self.pickle = None # terminate `pickle` option
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
 
-    def update(self, d, force=True, remove=False):
+
+    def init_args(self):
+        args_local = RNAseqConfig(**self.__dict__)
+        self = update_obj(self, args_local.__dict__, force=True)
+        # Toml(self.__dict__).to_toml(self.config_toml)
+
+
+    def run_RNAseqRx_single(self, i):
         """
-        d: dict
-        force: bool, update exists attributes
-        remove: bool, remove exists attributes
-        Update attributes from dict
-        force exists attr
+        parsing arguments as dict
+        run RNAseqRx
         """
-        # fresh start
-        if remove is True:
-            for k in self.__dict__:
-                # self.__delattr__(k)
-                delattr(self, k)
-        # add attributes
-        if isinstance(d, dict):
-            for k, v in d.items():
-                if not hasattr(self, k) or force:
-                    setattr(self, k, v)
+        args_local = self.__dict__
+        args_local['parallel_jobs'] = 1 # force
+        d = list(self.fq_groups.values())[i]
+        args_local.update(d)
+        RNAseqRx(**args_local).run()
+
+
+    def run_RNAseqRx(self):
+        """
+        Run RNAseq, multiple groups (>=1)
+        multiple projects
+        """
+        if len(self.fq_groups) > 1 and self.parallel_jobs > 1:
+            with Pool(processes=self.parallel_jobs) as pool:
+                pool.map(self.run_RNAseqRx_single, range(len(self.fq_groups)))
+        else:
+            for i in range(len(self.fq_groups)):
+                self.run_RNAseqRx_single(i)
 
 
     def run(self):
         """
-        Run all RNAseq analysis
+        Run all
         """
-        args = self.__dict__.copy()
-
-
-
-        if self.rnaseq_type == 'build_design':
-            # RNAseqBuildDesign(**args).run()
-            print('!AAAA1')
-            RNAseqFqDesign(**args)
-        elif self.rnaseq_type == 'deseq_single':
-            print('!AAAA2')
-            RNAseqDeseqSingle(**args).run()
-        elif self.rnaseq_type == 'deseq_multiple':
-            print('!AAAA3')
-            RNAseqDeseqMultiple(**args).run()
-        elif self.rnaseq_type == 'rnaseq_single':
-            print('!AAAA4')
-            RNAseqSingle(**args).run()
-        elif self.rnaseq_type == 'rnaseq_multiple':
-            print('!AAAA5')
-            # env: rnaseq_multiple
-            smp_path = RNAseqMultiple(**args).run()
-            # env: deseq_multiple
-            args_i = self.__dict__.copy()
-            args_i['rnaseq_type'] = 'rnaseq_single' # update
-            args_i['smp_path'] = smp_path
-            local_config = RNAseqConfig(**args_i)
-            args_i.update(local_config.__dict__, force=True)
-            args_i['smp_path'] = smp_path # covered by RNAseqConfig
-            RNAseqDeseqMultiple(**args_i).run()
+        if self.hiseq_type == 'build_design':
+            RNAseqDesign(**self.__dict__).run()
+        elif self.hiseq_type == 'rnaseq_rx':
+            self.run_RNAseqRx()
+        elif self.hiseq_type == 'rnaseq_rn':
+            RNAseqRn(**self.__dict__).run()
+        elif self.hiseq_type == 'rnaseq_r1':
+            RNAseqR1(**self.__dict__).run()
         else:
-            pass
+            raise ValueError('unknown hiseq_type: {}'.format(self.hiseq_type))
 
 
-class RNAseqConfig(object):
+class RNAseqRx(object):
     """
-    UPDATED:
-    directory type: single, pair
-    config: init_args, single, merge, multiple
-    list all files (objects)
-
-    required args:
-    fq1, fq2, genome, outdir, ...
-
-    options:
+    DEseq analysis, single pair: mutant vs wildtype
     """
     def __init__(self, **kwargs):
-        self.update(kwargs) # update from args
-        self.init_args() # prepare args
-
-
-    def update(self, d, force=True, remove=False):
-        """
-        d: dict
-        force: bool, update exists attributes
-        remove: bool, remove exists attributes
-        Update attributes from dict
-        force exists attr
-        """
-        # fresh start
-        if remove is True:
-            for k in self.__dict__:
-                # self.__delattr__(k)
-                delattr(self, k)
-        # add attributes
-        if isinstance(d, dict):
-            for k, v in d.items():
-                if not hasattr(self, k) or force:
-                    setattr(self, k, v)
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
 
 
     def init_args(self):
-        """
-        check arguments conflicts, defaults...
-        """
-        # default values
-        ## critical args:
-        ## PE mode get low pct unique mapped reads, but SE mode not.
-        ## so force to SE mode
-        args_default = {
-            'align_to_rRNA': True, # default
-            'aligner': 'STAR', # default
-            'binsize': 10,
-            'build_design': False, # boolean
-            'ctl': None,
-            'ctl_read2': None,
-            'design': None, # json file
-            'dirs_ctl': None,
-            'dirs_exp': None,
-            'exp': None,
-            'exp_read2': None,
-            'feature': 'gene',
-            'fq1': None, 
-            'fq2': None,
-            'genome': 'dm6',
-            'genomeLoad': 'LoadAndRemove',
-            'genome_size': None,
-            'group': None,
-            'gtf': None,
-            'outdir': str(pathlib.Path.cwd()),
-            'overwrite': False,
-            'parallel_jobs': 1,
-            'read1_only': False,
-            'smp_name': None,
-            'smp_path': None,
-            'threads': 1,
-            'unique_only': True,
-        }
-        self.update(args_default, force=False) # update missing attrs
-        # 1st level: pickle / update all config
-        # # fresh start by pickle
-        # if not self.pickle is None:
-        #     if os.path.exists(self.pickle) and self.pickle.endswith('.pickle'):
-        #         args_pickle = pickle_to_dict(self.pickle)
-        #         args_pickle.pop('pickle', None) # empty, next round
-        #         self.update(args_pickle, force=True) # fresh start
+        args_local = RNAseqRxConfig(**self.__dict__)
+        self = update_obj(self, args_local.__dict__, force=True)
+        Toml(self.__dict__).to_toml(self.config_toml)
 
-        # 2nd level: design (input)
-        # fresh start by design (specific args)
-        # if not self.design is None:
-        #     # self.init_design_arg(create_dirs)
-        #     args_design = DesignReader(self.design).to_dict()
-        #     self.update(args_design, force=True) # update specific args
 
-        ## 1st level: creat design.json
-        if self.build_design:
-            # require: ctl, exp
-            if self.ctl is None or self.exp is None:
-                log.warning('--ctl, --exp required for build-design')
+    def run_RNAseqRn(self):
+        """
+        Run RNAseqRn for wt/mut fastq files
+        or copy file from RNAseqRn
+        """
+        c_mutant = RNAseqReader(self.mutant_dir)
+        c_wildtype = RNAseqReader(self.wildtype_dir)
+
+        if c_mutant.is_hiseq_rn and c_wildtype.is_hiseq_rn:
+            log.info('run RNAseqRx for mutant_dir and wildtype_dir')
+        elif isinstance(self.mutant, list) and isinstance(self.wildtype, list):
+            args_local = self.__dict__.copy()
+            rm_args = [
+                'build_design',
+                'design',
+                'rep_list',
+                'mutant_dir',
+                'wildtype_dir',
+                'mutant',
+                'mutant_fq2',
+                'wildtype',
+                'wildtype_fq2',
+                'smp_name'
+            ]
+            [args_local.pop(i, None) for i in rm_args] # remove
+
+            # for mutant
+            log.info('run RNAseqRn for wildtype')
+            # for wildtype fastq files
+            wildtype_args = args_local.copy()
+            wildtype_args.update({
+                'fq1': self.wildtype,
+                'fq2': self.wildtype_fq2
+            })
+            RNAseqRn(**wildtype_args).run()
+
+            # for mutant fastq files
+            log.info('run RNAseqRn for mutant')
+            mutant_args = args_local.copy()
+            mutant_args.update({
+                'fq1': self.mutant,
+                'fq2': self.mutant_fq2
+            })
+            RNAseqRn(**mutant_args).run()
         else:
-            self.init_fq()
-            self.init_group()
+            log.error('RNAseqRx() failed, unknown args')
 
-        ## outdir
-        self.outdir = file_abspath(self.outdir)
-
-        ## gtf
-        if isinstance(self.gtf, list):
-            self.gtf = next(iter(self.gtf), None)
-            log.warning('gtf, list found, choose the first one: {}'.format(self.gtf))
-
-        if self.gtf is None:
-            self.gtf = Genome(genome=self.genome).gene_gtf('ensembl')
-            log.warning('gtf, auto-geenrated: {}'.format(self.gtf))
-        elif isinstance(self.gtf, str):
-            if not os.path.exists(self.gtf):
-                raise Exception('gtf, file not exists: {}'.format(self.gtf))
-        else:
-            raise Exception('failed gtf, str expected, {} found'.format(type(self.gtf).__name__))
-
-        ## sub-cmd
-        # self.init_fq()
-        # self.init_group()
-        self.init_cpu()
-        self.init_mission()
+        # update
+        self.mutant_bam_from = c_mutant.args.get('bam', None)
+        self.mutant_bw_from = c_mutant.args.get('bw', None)
+        self.wildtype_bam_from = c_wildtype.args.get('bam', None)
+        self.wildtype_bw_from = c_wildtype.args.get('bw', None)
 
 
-    def init_fq(self):
+    def copy_bam_files(self):
         """
-        check out input fastq files
-        input: could be None, str, list
-        output: None or list
+        Copy bam files
         """
-        ####################################################
-        # 1st level: read1 only                            #
-        if self.read1_only is True:
-            self.fq2 = None
-
-        ####################################################
-        ## 1. for fastq1 files                             #
-        if self.fq1 is None:
-            pass
-        elif isinstance(self.fq1, str):
-            self.fq1 = file_abspath(self.fq1)
-        elif isinstance(self.fq1, list):
-            self.fq1 = file_abspath(self.fq1)
-        else:            
-            log.error('failed fq1, None, str, list expected, {} found'.format(type(self.fq1).__name__))
-
-        ####################################################
-        ## 2. for fastq2 files                              #
-        if self.fq2 is None:
-            pass
-        elif isinstance(self.fq2, str):
-            self.fq2 = file_abspath(self.fq2)
-        elif isinstance(self.fq2, list):
-            self.fq2 = file_abspath(self.fq2)
-        else:
-            log.error('failed fq2, None, str, list expected, {} found'.format(type(self.fq2).__name__))
-
-        ####################################################
-        ## 3. for smp_name                                 #
-        ## smp_name [from fq1, smp_path]
-        if self.smp_name is None:
-            if isinstance(self.fq1, list):
-                self.smp_name = fq_name(self.fq1, pe_fix=True)
-            elif isinstance(self.smp_path, list):
-                self.smp_name = fq_name(self.smp_path, pe_fix=True)
-            else:
-                log.warning('errors for smp_name')
-                pass
-        elif isinstance(self.smp_name, str):
-            self.smp_name = self.smp_name
-        elif isinstance(self.smp_name, list):
-            pass
-        else:
-            log.error('failed, smp_name, None, str, list expected, {} found'.format(type(self.smp_name).__name__))
+        # file_symlink(self.mutant_bam_from, self.mutant_bam)
+        # file_symlink(self.wildtype_bam_from, self.wildtype_bam)
+        bam_list = RNAseqReader(self.project_dir).get_r1_file('bam')
+        for bam in bam_list:
+            file_symlink(bam, self.bam_dir)
 
 
-    def init_group(self):
+    def copy_bw_files(self):
         """
-        Determine the group names of samples
-        input:
-        output: list or None
+        Copy bw files
         """
-        if self.group is None:
-            if isinstance(self.smp_path, list):
-                self.group = fq_name_rmrep(self.smp_path)
-            elif isinstance(self.smp_name, list):
-                self.group = fq_name_rmrep(self.smp_name)
-            else:
-                log.warning('group is None')
-                pass # None
-        elif isinstance(self.group, str):
-            self.group = [self.group]
-        elif isinstance(self.group, list):
-            pass
-        else:
-            log.error('failed, group, None, list expected, {} found'.format(type(self.group).__name__))
+        # c_mutant = RNAseqReader(self.mutant_dir)
+        # file_symlink(c_mutant.args.get('bw', None), self.mutant_bw)
+
+        # c_wildtype = RNAseqReader(self.wildtype_dir)
+        # file_symlink(c_wildtype.args.get('bw', None), self.wildtype_bw)
+
+        bw_list = RNAseqReader(self.project_dir).get_r1_file('bw')
+        for bw in bw_list:
+            file_symlink(bw, self.bw_dir)
 
 
-    def init_cpu(self):
+    def copy_count_files(self):
+        # # sense strand
+        # c_mutant = RNAseqReader(self.mutant_dir)
+        # mut_sens = c_mutant.args.get('count_sens', None)
+        # mut_anti = c_mutant.args.get('count_anti', None)
+        # file_symlink(mut_sens, self.mutant_count_sens)
+        # file_symlink(mut_anti, self.mutant_count_anti)
+
+        # # anti strand
+        # c_wildtype = RNAseqReader(self.wildtype_dir)
+        # wt_sens = c_wildtype.args.get('count_sens', None)
+        # wt_anti = c_wildtype.args.get('count_anti', None)
+        # file_symlink(wt_sens, self.wildtype_count_sens)
+        # file_symlink(wt_anti, self.wildtype_count_anti)
+
+        c_sens = RNAseqReader(self.project_dir).get_r1_file('count_sens')
+        c_anti = RNAseqReader(self.project_dir).get_r1_file('count_anti')
+
+        try:
+            for c in c_sens + c_anti:
+                file_symlink(c, self.count_dir)
+        except:
+            log.error('copy count.txt files failed')
+
+
+    def run_deseq(self):
+        """DEseq analysis
+        Using DESeq2, edgeR, ...
         """
-        threads, CPUs
-        """
-        ## check number of threads, parallel_jobs
-        ## parallel jobs * threads
-        n_cpu = os.cpu_count() # alternative: multiprocessing.cpu_count()
-
-        max_jobs = int(n_cpu / 4.0)
-        ## check parallel_jobs (max: 1/4 of n_cpus)
-        if self.parallel_jobs > max_jobs: 
-            log.warning('Too large, change parallel_jobs from {} to {}'.format(
-                self.parallel_jobs, max_jobs))
-            self.parallel_jobs = max_jobs
-
-        ## check threads
-        max_threads = int(0.8 * n_cpu / self.parallel_jobs)
-        if self.threads * self.parallel_jobs > 0.8 * n_cpu:
-            log.warning('Too large, change threads from {} to {}'.format(
-                self.threads, max_threads))
-            self.threads = max_threads        
-
-
-    def init_mission(self):
-        """
-        Determine the purpose the RNAseq analysis
-        1. build_design
-        2. deseq_multiple
-        3. deseq_single
-        4. rnaseq_multiple
-        5. rnaseq_single
-        """
-        create_dirs = getattr(self, 'create_dirs', True)
-
-        # create design?!
-        if self.build_design is True:
-            self.rnaseq_type = 'build_design' # del 
-            self.init_build_design() # fresh start 
-        # read data from design.json
-        elif file_exists(self.design):  
-            self.rnaseq_type = 'deseq_multiple'
-            self.init_deseq_multiple(create_dirs)
-        # # determine the rnaseq type:
-        # elif isinstance(self.smp_path, list):
-        #     self.rnaseq_type = 'deseq_multiple'
-        #     self.init_deseq_multiple(create_dirs)
-        elif isinstance(self.dirs_ctl, list) and isinstance(self.dirs_exp, list):
-            self.rnaseq_type = 'deseq_single'
-            self.init_deseq_single(create_dirs)
-        elif isinstance(self.fq1, list) and len(self.fq1) >= 1:
-            self.rnaseq_type = 'rnaseq_multiple'
-            self.init_rnaseq_multiple(create_dirs)
-        elif isinstance(self.fq1, str):
-            self.rnaseq_type = 'rnaseq_single'
-            self.init_rnaseq_single(create_dirs)
-        else:
-            self.rnaseq_type = None # unknown
-            log_msg0 = '\n'.join([
-                'Failed to determine the type of RNAseq',
-                '{:>30s} : {}'.format('RNAseq single', '[fq1], [fq2], genome'),
-                '{:>30s} : {}'.format('RNAseq multiple', '[fq1], [fq2], genome'),
-                '{:>30s} : {}'.format('DESeq single', '[dirs_ctl], [dirs_exp]'),
-                '{:>30s} : {}'.format('DESeq multiple', '[smp_path]')])
-            raise Exception(log_msg0)
-
-
-    def init_build_design(self):
-        """
-        Create design for RNAseq
-        ctl,
-        exp, 
-        (fq1, fq2)
-        
-        arguments:
-        --ctl
-        --exp
-        --ctl-read2
-        --exp-read2
-        --output
-        """
-        if self.ctl is None or self.exp is None:
-            raise Exception('--ctl, --exp required for build-design')
-        pass
-
-
-    def init_deseq_multiple(self, create_dirs=True):
-        """
-        Read ctl/exp from design.json
-        remove the "design", after parsing
-        """
-        pass
-
-
-    def init_deseq_single(self, create_dirs=True):
-        """
-        prepare args, files for DEseq single
-        input: dirs_ctl, dirs_exp, genome
-        output: deseq_single
-        """
-        ## smp_name
-        smp_path = self.dirs_ctl + self.dirs_exp
-        smp_path = [i.rstrip('/') for i in smp_path]
-        if self.smp_name is None:
-            self.smp_name = fq_name(smp_path)
-        if self.group is None:
-            self.group = fq_name_rmrep(smp_path)
-
-        ## check
-        chk0 = isinstance(self.dirs_ctl, list) and len(self.dirs_ctl) > 0
-        chk1 = isinstance(self.dirs_exp, list) and len(self.dirs_exp) > 0
-        chk2 = isinstance(self.genome, str)
-        chk3 = all(RNAseqReader(i, feature=self.feature).is_rnaseq_single() for i in self.dirs_ctl + self.dirs_exp)
-        chk4 = len(self.smp_name) == len(self.dirs_ctl + self.dirs_exp)
-        if not all([chk0, chk1, chk2, chk3, chk4]):
-            raise Exception('fq1, fq2, genome, failed')
-
-        # absolute path
-        self.dirs_ctl = file_abspath(self.dirs_ctl)
-        self.dirs_exp = file_abspath(self.dirs_exp)
-        self.prefix_ctl, self.prefix_exp = list_uniquer(self.group, sorted=False)
-        self.project_name = '{}.vs.{}'.format(self.prefix_ctl, self.prefix_exp)
-        self.project_dir = os.path.join(self.outdir, self.project_name, self.feature)
-        self.config_dir = os.path.join(self.project_dir, 'config')
-        #############################################################
-        ## save file_path / default  !, not required
-        ## update these attributes, everytime
-        ## auto-generated
-        auto_files = {
-            'project_dir': self.project_dir,
-            'config_dir': self.config_dir,
-            'count_dir': os.path.join(self.project_dir, 'count'),
-            'deseqdir': os.path.join(self.project_dir, 'deseq'),
-            'enrichdir': os.path.join(self.project_dir, 'enrich'),
-            'pdfdir': os.path.join(self.project_dir, 'pdf'),
-            'report_dir': os.path.join(self.project_dir, 'report'),
-            'config_txt': os.path.join(self.config_dir, 'arguments.txt'),
-            'config_pickle': os.path.join(self.config_dir, 'arguments.pickle'),
-            'config_json': os.path.join(self.config_dir, 'arguments.json'),
-            'deseq_design': os.path.join(self.config_dir, 'deseq_design.txt'),
-            'count_ctl': [RNAseqReader(i, feature=self.feature).count_sens for i in self.dirs_ctl],
-            'count_exp': [RNAseqReader(i, feature=self.feature).count_sens for i in self.dirs_exp],
-        }
-        self.update(auto_files, force=True) # !!!! key-point
-
-        ## create directories
-        if create_dirs is True:
-            check_path([
-                self.config_dir,
-                self.count_dir,
-                self.deseqdir,
-                self.enrichdir,
-                self.report_dir])
-
-
-    def init_rnaseq_multiple(self, create_dirs=True):
-        """
-        prepare args, files for multiple
-        input: fq1, fq2, genome, outdir
-        output: rnaseq_single
-        """
-        ## smp_name
-        if self.smp_name is None:
-            self.smp_name = fq_name(self.fq1, pe_fix=True)
-        ## check
-        chk0 = isinstance(self.fq1, list) and len(self.fq1) > 0
-        chk1 = isinstance(self.fq2, list) and len(self.fq2) > 0 or self.fq2 is None
-        chk2 = all(file_exists(self.fq1))
-        chk3 = file_exists(self.fq2) or self.fq2 is None
-        chk4 = isinstance(self.genome, str)
-        chk5 = isinstance(self.smp_name, list) and len(self.smp_name) > 0
-        log_msg0 = '\n'.join([
-            'failed for RNAseq multiple',
-            '{:>30s} : {} {}'.format('fq1, list > 0', chk0, self.fq1),
-            '{:>30s} : {} {}'.format('fq1 exists', chk2, self.fq1),
-            '{:>30s} : {} {}'.format('fq2, None or list > 0', chk1, self.fq2),
-            '{:>30s} : {} {}'.format('fq2 None or list', chk3, self.fq2),
-            '{:>30s} : {} {}'.format('genome, str', chk4, self.genome),
-            '{:>30s} : {} {}'.format('smp_name, list > 0', chk5, self.smp_name),
-            ])
-        if not all([chk0, chk1, chk2, chk3, chk4, chk5]):
-            raise Exception(log_msg0)
-
-
-        #############################################################
-        ## save file_path / default  !, not required
-        ## update these attributes, everytime
-        ## auto-generated
-        project_dir = os.path.join(self.outdir, 'config', self.feature)
-        config_dir = os.path.join(project_dir, 'config')
-        auto_files = {
-            'project_dir': project_dir,
-            'config_dir': config_dir,
-            'report_dir': os.path.join(project_dir, 'report'),
-            'config_txt': os.path.join(config_dir, 'arguments.txt'),
-            'config_pickle': os.path.join(config_dir, 'arguments.pickle'),
-            'config_json': os.path.join(config_dir, 'arguments.json'),
-        }
-        self.update(auto_files, force=True) # !!!! key-point
-        #############################################################
- 
-        # create
-        if create_dirs is True:
-            check_path([
-                self.config_dir, 
-                self.report_dir])
-
-
-    def init_rnaseq_single(self, create_dirs=True):
-        """
-        prepare args, files for single
-        input: fq1, fq2, genome, outdir : str
-        output: rnaseq_single
-        """
-        ## smp_name
-        if self.smp_name is None:
-            self.smp_name = fq_name(self.fq1, pe_fix=True)        
-        ## check
-        chk0 = isinstance(self.fq1, str)
-        chk1 = isinstance(self.fq2, str) or self.fq2 is None
-        chk2 = file_exists(self.fq1)
-        chk3 = file_exists(self.fq2) or self.fq2 is None
-        chk4 = isinstance(self.genome, str)
-        chk5 = isinstance(self.smp_name, str)
-        log_msg1 = '\n'.join([
-            'arguments failed',
-            '{:>30s}: {} {}'.format('fq1, str', chk0, self.fq1),
-            '{:>30s}: {} {}'.format('fq1, exists', chk2, self.fq1),
-            '{:>30s}: {} {}'.format('fq2, str or None', chk1, self.fq2),
-            '{:>30s}: {} {}'.format('fq1, exists or None', chk3, self.fq2),
-            '{:>30s}: {} {}'.format('genome, str', chk4, self.genome),
-            '{:>30s}: {} {}'.format('smp_name, str', chk5, self.smp_name),
-            ])
-        if not all([chk0, chk1, chk2, chk3, chk4, chk5]):
-            #raise Exception('fq1, fq2, genome, failed')
-            raise Exception(log_msg1)
-
-        #############################################################
-        ## save file_path / default  !, not required
-        ## update these attributes, everytime
-        ## auto-generated
-        # smp_name = next(iter(self.smp_name), None) # list -> str
-        project_dir = os.path.join(self.outdir, self.feature)
-        config_dir = os.path.join(project_dir, 'config')
-        init_files = {
-            'project_dir': project_dir,
-            'config_dir': config_dir,
-            'config_txt': os.path.join(config_dir, 'arguments.txt'),
-            'config_pickle': os.path.join(config_dir, 'arguments.pickle'),
-            'config_json': os.path.join(config_dir, 'arguments.json'),
-            'raw_dir': os.path.join(project_dir, 'raw_data'),
-            'clean_dir': os.path.join(project_dir, 'clean_data'),
-            'align_dir': os.path.join(project_dir, 'align'),
-            'bam_dir': os.path.join(project_dir, 'bam_files'),
-            'bw_dir': os.path.join(project_dir, 'bw_files'),
-            'count_dir': os.path.join(project_dir, 'count'),
-            'report_dir': os.path.join(project_dir, 'report'),
-            'out_prefix': os.path.join(project_dir, self.smp_name)
-        }
-        self.update(init_files, force=True) # !!!! key-point
-        #############################################################
-        ## local files: list -> str
-        # fq1 = next(iter(self.fq1), None)
-        # fq2 = None if self.fq2 is None else next(iter(self.fq2), None)
-        # smp_name = next(iter(self.smp_name), None)
-        ## raw data
-        self.raw_fq_list = [os.path.join(self.raw_dir, os.path.basename(self.fq1))]
-        fq2_raw = None if self.fq2 is None else os.path.join(self.raw_dir, os.path.basename(self.fq2))
-        self.raw_fq_list.append(fq2_raw)
-
-        ## clean data
-        self.clean_fq_list = [os.path.join(self.clean_dir, fq_name(self.fq1, pe_fix=False) + '.fq.gz')]
-        fq2_clean = None if self.fq2 is None else os.path.join(self.clean_dir, fq_name(self.fq2, pe_fix=False) + '.fq.gz')
-        self.clean_fq_list.append(fq2_clean)
-
-        ## files
-        self.trim_stat = os.path.join(self.clean_dir, self.smp_name + '.qc.stat')
-        self.bam_raw = os.path.join(self.align_dir, self.smp_name, '2.*', self.smp_name + '.bam')
-        self.bam_out = os.path.join(self.bam_dir, self.smp_name + '.bam')
-        self.align_stat = os.path.join(self.align_dir, self.smp_name + '.align.txt')
-        self.bw_fwd = os.path.join(self.bw_dir, self.smp_name + '.fwd.bigWig')
-        self.bw_rev = os.path.join(self.bw_dir, self.smp_name + '.rev.bigWig')
-        self.count_sens = os.path.join(self.count_dir, 'count.sens.txt')
-        self.count_anti = os.path.join(self.count_dir, 'count.anti.txt')
-        self.strandness_status = os.path.join(self.count_dir, 'strandness_status.out')
-
-        ## create directories
-        if create_dirs is True:
-            check_path([
-                self.config_dir,
-                self.raw_dir,
-                self.clean_dir,
-                self.align_dir,
-                self.bam_dir,
-                self.bw_dir,
-                self.count_dir,
-                self.report_dir])
-
-
-class RNAseqMultiple(object):
-    """
-    Run RNAseq for multiple samples; RNAseqSingle()
-    if groups > 1: run DEseq()    
-    """
-    def __init__(self, **kwargs):
-        self.update(kwargs) # fresh new
-        self.init_args() # update all variables: *.config, *.args
-
-
-    def update(self, d, force=True, remove=False):
-        """
-        d: dict
-        force: bool, update exists attributes
-        remove: bool, remove exists attributes
-        Update attributes from dict
-        force exists attr
-        """
-        # fresh start
-        if remove is True:
-            for k in self.__dict__:
-                # self.__delattr__(k)
-                delattr(self, k)
-        # add attributes
-        if isinstance(d, dict):
-            for k, v in d.items():
-                if not hasattr(self, k) or force:
-                    setattr(self, k, v)
-
-
-    def init_args(self):
-        """
-        Initiate directories, config:
-        save config files
-        outdir/config/*json, *pickle, *txt
-        """
-        local_config = RNAseqConfig(**self.__dict__) # update, global
-        self.update(local_config.__dict__, force=True) # update unknown args
-        assert self.rnaseq_type == 'rnaseq_multiple'
-
-        # check arguments
-        chk0 = args_checker(self.__dict__, self.config_pickle)
-        chk1 = args_logger(self.__dict__, self.config_txt)
-
-
-    def report(self):
-        """
-        Create alignment report for RNAseq multiple
-        1. trim
-        2. align
-        3. quant
-        ...
-        """        
         pkg_dir = os.path.dirname(hiseq.__file__)
-        qc_reportR = os.path.join(pkg_dir, 'bin', 'rnaseq_report.R')
-        cmd_file = os.path.join(self.report_dir, 'cmd.sh')
-        report_html = os.path.join(
-            self.report_dir, 
-            'rnaseq_report.html')
-
-        cmd = 'Rscript {} {} {} {}'.format(
-            qc_reportR,
-            self.outdir,
-            self.report_dir,
-            self.feature)
-
-        # save cmd
-        with open(cmd_file, 'wt') as w:
+        deseqR = os.path.join(pkg_dir, 'bin', 'run_rnaseq.R')
+        deseq_stdout = os.path.join(self.deseq_dir, 'deseq.stdout')
+        deseq_stderr = os.path.join(self.deseq_dir, 'deseq.stderr')
+        cmd_shell = os.path.join(self.deseq_dir, 'cmd.sh')
+        cmd = 'Rscript {} {} 1> {} 2> {}'.format(
+            deseqR,
+            self.project_dir,
+            deseq_stdout,
+            deseq_stderr)
+        with open(cmd_shell, 'wt') as w:
             w.write(cmd + '\n')
-
-        if check_file(report_html):
-            log.info('RNAseq multiple report() skipped, file exists: {}'.format(
-                report_html))
+        if file_exists(self.deseq_fix_xls) and not self.overwrite:
+            log.info('run_deseq() skipped, file exists: {}'.format(
+                self.deseq_fix_xls))
         else:
             try:
                 run_shell_cmd(cmd)
             except:
-                log.warning('report() failed.')
+                log.warning('DESeq2 failed.')
 
 
-    def run_rnaseq_single(self, fq1):
+    def report(self):
         """
-        For parallel reason, 
-        wrap analysis on single fastq files, into function
+        Create report for one sample
+        html
         """
-        args_local = self.__dict__.copy()
-        i = self.fq1.index(fq1)
-
-        # fq1,fq2,smp_name,...
-        fq2_list = args_local.get('fq2', None)
-        fq2 = fq2_list[i] if isinstance(fq2_list, list) else None
-        # smp_name
-        smp_name_list = args_local.get('smp_name', None)
-        smp_name = smp_name_list[i] if isinstance(smp_name_list, list) else None
-        # group
-        group_list = args_local.get('group', None)
-        group = group_list[i] if isinstance(group_list, list) else None
-        # outdir
-        outdir = os.path.join(args_local['outdir'], smp_name)
-
-        # update args
-        args_init = {
-            'fq1': fq1,
-            'fq2': fq2,
-            'smp_name': smp_name,
-            'group': group,
-            'outdir': outdir,
-            'smp_path': None,
-            'dirs_ctl': None,
-            'dirs_exp': None,
-            'pickle': None
-        }
-        args_local.update(args_init)
-
-        RNAseqSingle(**args_local).run()
+        pkg_dir = os.path.dirname(hiseq.__file__)
+        qc_reportR = os.path.join(pkg_dir, 'bin', 'hiseq_report.R')
+        hiseq_report_html = os.path.join(self.report_dir, 'HiSeq_report.html')
+        hiseq_report_stdout = os.path.join(self.report_dir, 
+            'HiSeq_report.stdout')
+        hiseq_report_stderr = os.path.join(self.report_dir, 
+            'HiSeq_report.stderr')
+        cmd = 'Rscript {} {} {} 1> {} 2> {}'.format(
+            qc_reportR,
+            self.project_dir,
+            self.report_dir,
+            hiseq_report_stdout,
+            hiseq_report_stderr
+        )
+        cmd_shell = os.path.join(self.report_dir, 'cmd.sh')
+        with open(cmd_shell, 'wt') as w:
+            w.write(cmd + '\n')
+        if file_exists(hiseq_report_html):
+            log.info('report() skipped, file exists: {}'.format(
+                hiseq_report_html))
+        else:
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.error('report() failed, {}'.format(self.report_dir))
 
 
     def run(self):
         """
-        check each sample
-        save to outdir/fq_name
+        Run multiple samples in parallel
+        using
+        multipleprocess.Pool
         """
-        ## prepare dirs for all single files
-        smp_dirs = []
-        for i, fq1 in enumerate(self.fq1):
-            smp_dirs.append(os.path.join(self.outdir, self.smp_name[i]))
-
-        ## Pool() run in parallel
-        with Pool(processes=self.parallel_jobs) as pool:
-            pool.map(self.run_rnaseq_single, self.fq1)
-
-        # for a, b in enumerate(self.fq1):
-        #     self.run_rnaseq_single(b)
-
-        ## create report
-        # self.report()
-
-        return smp_dirs
+        self.run_RNAseqRn()
+        self.copy_bam_files()
+        self.copy_bw_files()
+        self.copy_count_files()
+        self.run_deseq()
+        self.report()
 
 
-class RNAseqSingle(object):
+class RNAseqRn(object):
+    """
+    RNAseq analysis for multiple replicates, merge replicates
+    """
     def __init__(self, **kwargs):
-        """
-        Alignment one fastq file, quantification
-        """
-        self.update(kwargs) # init self, fresh new
-        self.init_args() # update all variables: *.config, *.args
-
-
-    def update(self, d, force=True, remove=False):
-        """
-        d: dict
-        force: bool, update exists attributes
-        remove: bool, remove exists attributes
-        Update attributes from dict
-        force exists attr
-        """
-        # fresh start
-        if remove is True:
-            for k in self.__dict__:
-                # self.__delattr__(k)
-                delattr(self, k)
-        # add attributes
-        if isinstance(d, dict):
-            for k, v in d.items():
-                if not hasattr(self, k) or force:
-                    setattr(self, k, v)
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
 
 
     def init_args(self):
+        args_local = RNAseqRnConfig(**self.__dict__)
+        self = update_obj(self, args_local.__dict__, force=True)
+        Toml(self.__dict__).to_toml(self.config_toml)
+
+
+    def get_bam_list(self):
         """
-        Initiate directories, config:
-        save config files
-        outdir/config/*json, *pickle, *txt
+        get the proper_mapped.bam files
         """
-        local_config = RNAseqConfig(**self.__dict__) # update, global
-        self.update(local_config.__dict__, force=True) # update local attributes
-
-        # save arguments
-        chk1 = args_checker(self.__dict__, self.config_pickle)
-        # Json(self.__dict__).writer(self.config_json)
-        chk2 = args_logger(self.__dict__, self.config_txt)
-
-        # check        
-        chka1 = isinstance(self.fq1, str)
-        chka2 = isinstance(self.fq2, str) or self.fq2 is None
-        chka3 = isinstance(self.genome, str)
-        chka4 = isinstance(self.outdir, str)
-        if not all([chka1, chka2, chka3, chka4]):
-            raise Exception('value error: \nfq1: {}\ngenome: {}\noutdir: {}'.format(
-                self.fq1, self.genome, self.outdir))
+        return [RNAseqReader(i).args.get('bam', None) for i in self.rep_list]
 
 
-    #######################################
-    ## main pipeline
-    def prep_raw(self, copy=False):
+    def get_bw_list(self):
         """
-        Copy raw data to dest dir
-        self.fq1, self.fq2 => raw_fq_list
+        get the proper_mapped.bam files
         """
-        raw_fq1, raw_fq2 = self.raw_fq_list
+        return [RNAseqReader(i).args.get('bw', None) for i in self.rep_list]
 
-        # copy
-        if copy is True:
-            shutil.copy(self.fq1, raw_fq1)
-            shutil.copy(self.fq2, raw_fq2)
+
+    def merge_bam(self):
+        """
+        Merge replicates, BAM
+        """
+        self.bam_list = self.get_bam_list()
+
+        cmd = ' '.join([
+            'samtools merge -',
+            ' '.join(self.bam_list),
+            '| samtools sort -o {} -'.format(self.bam),
+            '&& samtools index {}'.format(self.bam)])
+
+        if os.path.exists(self.bam):
+            log.info('merge_bam() skipped, file exists: {}'.format(
+                self.bam))
         else:
-            symlink(self.fq1, raw_fq1, absolute_path=True)
-            symlink(self.fq2, raw_fq2, absolute_path=True)
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.warning('merge_bam() failed.')
 
-
-    def trim(self, trimmed=False):
-        """
-        Trim reads:
-        hiseq.trim.trimmer.Trimmer(fq1, outdir, fq2, cut_after_trim='9,-6').run()
-
-        if trimmed:
-            do
-        else:
-            copy/links
-        """
-        args_trim = self.__dict__.copy()
-        fq1, fq2 = self.raw_fq_list
-        clean_fq1, clean_fq2 = self.clean_fq_list
-
-        # update args
-        args_trim['fq1'] = args_trim['fq'] = fq1
-        args_trim['fq2'] = fq2
-        args_trim['outdir'] = self.clean_dir
-
-        if trimmed is True:
-            ## fq1
-            if is_gz(fq1):
-                symlink(fq1, clean_fq1, absolute_path=True)
-            else:
-                gzip_cmd(fq1, clean_fq1, decompress=False, rm=False)
-            ## fq2
-            if not fq2 is None:
-                if is_gz(fq2):
-                    symlink(fq2, clean_fq2, absolute_path=True)
-                else:
-                    gzip_cmd(fq2, clean_fq2, decompress=False, rm=False)
-
-        else:
-            if check_file(self.clean_fq_list):
-                log.info('trim() skipped, file exists: {}'.format(
-                    self.clean_fq_list))
-            else:
-                Trimmer(**args_trim).run()
-
-
-    def align(self):
-        """
-        Alignment PE reads to reference genome, using STAR
-        """
-        args_local = self.__dict__.copy()
-        fq1, fq2 = args_local.get('clean_fq_list', [None, None])
-        outdir = args_local.get('align_dir', str(pathlib.Path.cwd()))
-
-        args_init = {
-            'fq1': fq1,
-            'fq2': fq2,
-            'fq': fq1,
-            'outdir': outdir
-        }
-        args_local.update(args_init)
-
-        # output
-        if check_file(args_local.get('bam_raw', None)):
-            log.info('align() skipped, file exists: {}'.format(
-                args_local.get('bam_raw', None)))
-        else:
-            print("!AAAA-1", args_local)
-            Alignment(**args_local).run()
-
-
-    def get_raw_bam(self):
-        """
-        Get the align bam file
-        from bam_dir/1., 2., ...
-        !!! specific: 2.genome/*.bam
-        """
-        bamlist = listfile(self.align_dir, '*.bam', recursive=True)
-        bamlist = [b for b in bamlist if not b.endswith('.raw.bam')]
-        # [spike-in]? [rRNA, genome]
-        return(bamlist[-1]) # last one
-
-
-    def save_bam(self):
-        """
-        Save genome mapped bam file to bam_file/
-        from: self.bam_raw, align/smp_name/2.dm6/smp_name.bam
-        to: self.bam_out, bam_files/smp_name.bam
-        """
-        bam_in = self.get_raw_bam() # to genome
-        if not os.path.exists(self.bam_out):
-            symlink(bam_in, self.bam_out, absolute_path=True)
-
-
-    def fc_count(self):
-        """
-        Run FeatureCounts for the bam file
-        """
-        args = self.__dict__.copy()
-
-        # determine the strandness
-        strand, strand_status = RNAseqLibrary(
-            bam=self.get_raw_bam(),
-            gtf=self.gtf).run(with_status=True)
-
-        # save to status
-        with open(self.strandness_status, 'w') as w:
-            w.write(strand_status)
-
-        # check strand
-        if strand == 'read1':
-            strand_fwd, strand_rev = (1, 2)
-        elif strand == 'read2':
-            strand_fwd, strand_rev = (2, 1)
-        else:
-            strand_fwd, strand_rev = (0, 0)
-
-        # run sense
-        args_fwd = {
-            'gtf': self.gtf,
-            'bam_list': self.get_raw_bam(),
-            'outdir': self.count_dir,
-            'strandness': strand_fwd,
-            'outname': 'count.sens.txt'}
-        _, _, assign_fwd = FeatureCounts(**args_fwd).run()
-
-        # run anti
-        args_rev = {
-            'gtf': self.gtf,
-            'bam_list': self.get_raw_bam(),
-            'outdir': self.count_dir,
-            'strandness': strand_rev,
-            'outname': 'count.anti.txt'}
-        _, _, assign_rev = FeatureCounts(**args_rev).run()
+        ## calculate norm scale
+        self.align_scale = self.cal_norm_scale(self.bam)
+        with open(self.align_scale_txt, 'wt') as w:
+            w.write('{:.4f}\n'.format(self.align_scale))
 
 
     def bam_to_bw(self, norm=1000000):
@@ -1016,10 +447,11 @@ class RNAseqSingle(object):
         bam -> bigWig
         """
         args_local = {
-            'bam': self.bam_out,
+            'bam': self.bam,
+            'scaleFactor': self.align_scale,
             'outdir': self.bw_dir,
             'genome': self.genome,
-            'strandness': 12,
+            'strandness': 0,
             'binsize': self.binsize,
             'overwrite': self.overwrite,
             'genome_size': self.genome_size
@@ -1028,434 +460,1887 @@ class RNAseqSingle(object):
         Bam2bw(**args_local).run()
 
 
+    def bam_to_bg(self):
+        """
+        Convert bam to bedgraph
+
+        norm
+        bedtools genomecov -bg -scale $scale_factor -ibam bam > bg
+        """
+        cmd = ' '.join([
+            '{}'.format(shutil.which('bedtools')),
+            'genomecov -bg -scale {}'.format(self.align_scale),
+            '-ibam {}'.format(self.bam),
+            '| sort -k1,1 -k2,2n > {}'.format(self.bg)
+        ])
+
+        if file_exists(self.bg) and not self.overwrite:
+            log.info('bam_to_bg() skipped, file exists:{}'.format(self.bg))
+        else:
+            cmd_shell = self.bg_dir + '/cmd.sh'
+            with open(cmd_shell, 'wt') as w:
+                w.write(cmd + '\n')
+
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.error('bam_to_bg() failed')
+
+
+    def bg_to_bw(self):
+        """
+        Create bigWig
+        bedgraph to bigWig
+        """
+        cmd = ' '.join([
+            '{}'.format(shutil.which('bedGraphToBigWig')),
+            '{} {} {}'.format(self.bg, self.genome_size_file, self.bw)
+        ])
+
+        if file_exists(self.bw) and not self.overwrite:
+            log.info('bg_to_bw() skipped, file exists:{}'.format(self.bw))
+        else:
+            cmd_shell = self.bw_dir + '/cmd.sh'
+            with open(cmd_shell, 'wt') as w:
+                w.write(cmd + '\n')
+
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.error('bg_to_bw() failed')
+
+
+    def cal_norm_scale(self, bam, norm=1000000):
+        """
+        scale factor
+
+        Bam().count_reads()
+        """
+        bam = Bam(bam)
+        is_pe = bam.isPaired()
+        n_map = bam.getNumberOfAlignments()
+        if is_pe:
+            n_map = n_map/2
+
+        if n_map > 0:
+            n_scale = norm/n_map
+        else:
+            log.error('no mapped reads detected')
+            n_scale = 1
+
+        return n_scale
+
+
+    def qc_bam_cor(self, window=500):
+        """
+        Compute correlation (pearson) between replicates
+        window = 500bp
+
+        eg:
+        multiBamSummary bins --binSize 500 --smartLabels -o *bam.npz \
+            --outRawCounts *counts.tab -b bam
+        """
+        args_local = {
+            'bam': self.get_bam_list(),
+            'outdir': self.qc_dir,
+            'prefix': '06.bam_cor',
+            'threads': self.threads,
+            'overwrite': self.overwrite,
+            'binsize': self.binsize
+        }
+        Bam2cor(**args_local).run()
+
+
+    def qc_genebody_enrich(self):
+        """
+        Calculate the TSS enrichment
+        """
+        bw_list = self.get_bw_list()
+        bw_list.append(self.bw)
+        bw_list_arg = ' '.join(bw_list)
+
+        cmd = ' '.join([
+            '{}'.format(shutil.which('computeMatrix')),
+            'scale-regions',
+            '-R {}'.format(self.gene_bed),
+            '-S {}'.format(bw_list_arg),
+            '-o {}'.format(self.genebody_enrich_matrix),
+            '-b 2000 -a 2000 --regionBodyLength 2000',
+            '--binSize 10 --sortRegions descend --skipZeros',
+            '--smartLabels',
+            '-p {}'.format(self.threads),
+            '2> {}'.format(self.genebody_enrich_matrix_log),
+            '&& {}'.format(shutil.which('plotProfile')),
+            '-m {}'.format(self.genebody_enrich_matrix),
+            '-o {}'.format(self.genebody_enrich_png),
+            '--dpi 300',
+            '--perGroup'
+        ])
+
+        if file_exists(self.genebody_enrich_png) and not self.overwrite:
+            log.info('qc_genebody_enrich() skipped, file exists: {}'.format(
+                self.genebody_enrich_png))
+        else:
+            if not file_exists(self.gene_bed):
+                log.error('qc_tss() skipped, gene_bed not found')
+            else:
+                with open(self.genebody_enrich_cmd, 'wt') as w:
+                    w.write(cmd + '\n')
+
+                try:
+                    run_shell_cmd(cmd)
+                except:
+                    log.error('qc_genebody_enrich() failed, see: {}'.format(
+                        self.genebody_enrich_matrix_log))
+
+
     def report(self):
         """
-        Create alignment report for RNAseq
-        1. trim
-        2. align
-        3. quant
-        ...
-        """        
-        pkg_dir    = os.path.dirname(hiseq.__file__)
-        qc_reportR = os.path.join(pkg_dir, 'bin', 'rnaseq_report.R')
-        cmd_file = os.path.join(self.report_dir, 'cmd.sh')
-        report_html = os.path.join(
-            self.report_dir, 
-            'rnaseq_report.html')
-
-        cmd = 'Rscript {} {} {} {}'.format(
+        Create report for one sample
+        html
+        """
+        pkg_dir = os.path.dirname(hiseq.__file__)
+        qc_reportR = os.path.join(pkg_dir, 'bin', 'hiseq_report.R')
+        hiseq_report_html = os.path.join(self.report_dir, 'HiSeq_report.html')
+        hiseq_report_stdout = os.path.join(self.report_dir, 
+            'HiSeq_report.stdout')
+        hiseq_report_stderr = os.path.join(self.report_dir, 
+            'HiSeq_report.stderr')
+        cmd = 'Rscript {} {} {} 1> {} 2> {}'.format(
             qc_reportR,
-            self.outdir,
+            self.project_dir,
             self.report_dir,
-            self.feature)
-
-        # save cmd
-        with open(cmd_file, 'wt') as w:
+            hiseq_report_stdout,
+            hiseq_report_stderr
+        )
+        cmd_shell = os.path.join(self.report_dir, 'cmd.sh')
+        with open(cmd_shell, 'wt') as w:
             w.write(cmd + '\n')
-
-        if check_file(report_html):
+        if file_exists(hiseq_report_html):
             log.info('report() skipped, file exists: {}'.format(
-                report_html))
+                hiseq_report_html))
         else:
             try:
                 run_shell_cmd(cmd)
             except:
-                log.warning('report() failed.')
+                log.error('report() failed, {}'.format(self.report_dir))
 
 
-    def run(self):
+    def run_RNAseqR1(self, i):
         """
-        Run pipeline for RNAseq,
-        process
+        Run RNAseqR1 for each fastq
         """
-        # sys.exit('!BBBB-4  exit RNAseqSingle()')
-        # init dir
-        copy_raw_fq = getattr(self, 'copy_raw_fq', False)
-        trimmed = getattr(self, 'trimmed', False)        
+        req_args = [
+            'outdir',
+            'aligner', 
+            'genome', 
+            'genome_index',
+            'spikein',
+            'spikein_index',
+            'rRNA_index',
+            'align_to_rRNA',
+            'extra_index', 
+            'gtf',
+            'gene_bed',
+            'trimmed', 
+            'keep_tmp',
+            'overwrite', 
+            'threads', 
+            'parallel_jobs', 
+            'cut_to_length', 
+            'recursive',
+            'extra_para',
+        ]
+        args_local = dict((k, getattr(self, k, None)) for k in req_args)
 
-        # 1. copy raw data
-        self.prep_raw(copy_raw_fq)
+        # update: fq1, fq2
+        args_local.update({
+            'fq1': self.fq1[i],
+            'fq2': self.fq2[i] if isinstance(self.fq2, list) else None
+        })
+        RNAseqR1(**args_local).run()
 
-        # 2. trim
-        self.trim(trimmed)
 
-        # 3. align
-        self.align()
-        self.save_bam() 
-
-        # 4. quant
-        self.fc_count()
-
-        # 5. bam2bw
-        self.bam_to_bw()
-
-        # 6.report
+    def pipe_rn(self):
+        """Run pipeline, replicates
+        data
+        """
+        # run
+        self.merge_bam()
+        self.bam_to_bg()
+        self.bg_to_bw()
+        self.qc_bam_cor()
+        self.qc_genebody_enrich()
         self.report()
 
-        return self.outdir
 
-
-class RNAseqDeseqMultiple(object):
-    """
-    Run multiple ctl/exp pairs, from design.json file
-    deseq_multiple_args = {pairs}
-    """
-    def __init__(self, **kwargs):
+    def pipe_r1(self):
+        """Run pipeline for single fastq
+        Do not run merge
         """
-        read design.json
-        """
-        self.update(kwargs) # fresh new
-        self.init_args() # update all variables: *.config, *.args
+        r1 = RNAseqReader(self.rep_list[0]).args
+        bam = rep.get('bam', None)
+        bg = rep.get('bg', None)
+        bw = rep.get('bw', None)
+        qc_dir = r1.get('qc_dir', None)
 
+        file_symlink(bam, self.bam)
+        file_symlink(bg, self.bg)
+        file_symlink(bw, self.bw)
+        file_symlink(qc_dir, self.qc_dir)
+        self.report()
 
-    def update(self, d, force=True, remove=False):
-        """
-        d: dict
-        force: bool, update exists attributes
-        remove: bool, remove exists attributes
-        Update attributes from dict
-        force exists attr
-        """
-        # fresh start
-        if remove is True:
-            for k in self.__dict__:
-                # self.__delattr__(k)
-                delattr(self, k)
-        # add attributes
-        if isinstance(d, dict):
-            for k, v in d.items():
-                if not hasattr(self, k) or force:
-                    setattr(self, k, v)
-
-
-    def init_args(self):
-        """
-        --design
-        """
-        local_config = RNAseqConfig(**self.__dict__) # update, global
-        self.update(local_config.__dict__, force=True) # update local attributes
-        assert self.rnaseq_type == 'deseq_multiple'
-
-        # read data from design.json
-        self.design_args = Json(self.design).reader()
-
-
-    def run_pair_single(self, k):
-        """
-        run 1 RNAseqDeseqSingle() # !!!! parallel-jobs
-        input: pair, [index_ctl, index_exp]
-        """
-        args_k = self.design_args[k] # fq
-
-        ## run locale
-        args_local = self.__dict__.copy()
-        args_local.pop('rnaseq_type', None)
-        # fx = args_local.pop('design_args', None) # multiple 
-        # f1 = fx.pop(k, None) # single
-
-        ## ctl
-        args_c = args_local.copy()
-        args_c['fq1'] = args_k.get('ctl', None)
-        args_c['fq2'] = args_k.get('ctl_read2', None)
-        args_c['design'] = None
-        dirs_ctl = RNAseqMultiple(**args_c).run()
-
-        ## exp
-        args_e = args_local.copy()
-        args_e['fq1'] = args_k.get('exp', None)
-        args_e['fq2'] = args_k.get('exp_read2', None)
-        args_e['design'] = None
-        dirs_exp = RNAseqMultiple(**args_e).run()
-
-        ## RUN DESeq single
-        args_n = args_local.copy()
-        args_x = {
-            'dirs_ctl': dirs_ctl,
-            'dirs_exp': dirs_exp,
-            'smp_name': None,
-            'group': None,
-            'smp_path': None,
-            'ctl': None,
-            'exp': None,
-            'ctl_read2': None,
-            'exp_read2': None,
-            'design': None,
-            'build_design': None}
-        args_n.update(args_x)
-        RNAseqDeseqSingle(**args_n).run()
+        # align_scale_txt = rep.get('align_scale_txt', None)
+        # align_json = rep.get('align_json')
+        # file_symlink(align_scale_txt, self.align_scale_txt)
+        # file_symlink(align_json, self.align_json)
+        # file_symlink(bam, self.bam)
+        # Bam(self.bam).index()
+        # file_symlink(bg, self.bg)
+        # file_symlink(bw, self.bw)
+        # # self.qc_genebody_enrich()
+        # self.report()
 
 
     def run(self):
         """
-        for group >= 2, paires >= 1
+        Run multiple samples in parallel
+        using
+        multipleprocess.Pool
         """
-        de_list = list(self.design_args.keys())
-        if len(de_list) > 0:
-            ## do not allowed, pool with in pool
-            # with Pool(processes=self.parallel_jobs) as pool:
-            #     pool.map(self.run_pair_single, list(self.design_args.keys()))
-            for k in de_list:
-                self.run_pair_single(k)
+        print('!AAAA-6')
+        # run for fastq
+        if isinstance(self.fq1, list):
+            if self.parallel_jobs > 1 and len(self.fq1) > 1:
+                with Pool(processes=self.parallel_jobs) as pool:
+                    pool.map(self.run_RNAseqR1, range(len(self.fq1)))
+            else:
+                for i in range(len(self.fq1)):
+                    self.run_RNAseqR1(i)
+
+        # mrege bam
+        if len(self.rep_list) > 1:
+            self.pipe_rn()
+        elif len(self.rep_list) == 1:
+            log.warning('merge() skipped, Only 1 replicate detected')
+            self.pipe_r1()
         else:
-            log.warning('groups >2 expected, {} found'.format(self.group))
+            raise ValueError('merge() failed, no rep detected')
 
 
-class RNAseqDeseqSingle(object):
+class RNAseqR1(object):
     """
-    Run RNAseq for single pair:
-
-    required args:
-        -dirs_ctl
-        -dirs_exp
-        -genme
-        -outdir
-        -feature
-
-    config
-    count/txt, rpkm, up, down, criteria
-    de
-    pdf/ma, pca, volcano
-    report/html
-    enrich/GO, GSEA, ...
+    RNAseq analysis for single replicate
     """
     def __init__(self, **kwargs):
-        """
-        dirs_ctl
-        dirs_exp
-        genome
-        outdir
-        feature
-        group_ctl (None)
-        group_exp (None)
-        merge replicates
-        """
-        self.update(kwargs) # fresh new
-        self.init_args() # update all variables: *.config, *.args
-
-
-    def update(self, d, force=True, remove=False):
-        """
-        d: dict
-        force: bool, update exists attributes
-        remove: bool, remove exists attributes
-        Update attributes from dict
-        force exists attr
-        """
-        # fresh start
-        if remove is True:
-            for k in self.__dict__:
-                # self.__delattr__(k)
-                delattr(self, k)
-        # add attributes
-        if isinstance(d, dict):
-            for k, v in d.items():
-                if not hasattr(self, k) or force:
-                    setattr(self, k, v)
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
 
 
     def init_args(self):
-        """
-        Initiate directories, config:
-        save config files
-        outdir/config/*json, *pickle, *txt
-        """
-        local_config = RNAseqConfig(**self.__dict__) # update, global
-        self.update(local_config.__dict__, force=True) # update local attributes
-        assert self.rnaseq_type == 'deseq_single'
-
-        # check arguments
-        chk1 = args_checker(self.__dict__, self.config_pickle)
-        # Json(self.__dict__).writer(self.config_json)
-        chk2 = args_logger(self.__dict__, self.config_txt)
-
-    #######################################
-    ## main pipeline
-    def copy_count_files(self):
-        """
-        Copy count files to target dirs
-        rename the count files by fqname
-        """
-        # copy count files
-        for n, f in zip(self.smp_name, self.count_ctl + self.count_exp):
-            f_new = os.path.join(self.count_dir, n + '.' + os.path.basename(f))
-            shutil.copy(f, f_new)
+        obj_local = RNAseqR1Config(**self.__dict__)
+        self = update_obj(self, obj_local.__dict__, force=True)
+        Toml(self.__dict__).to_toml(self.config_toml)
 
 
-    def deseq2(self):
+    # main pipeline #
+    def prep_raw(self):
         """
-        ## quality control
-        ## PCA/Cor/...
+        Cut the reads to specific length, from the 3' end
+        self.fq1, self.fq2 => raw_fq_list
         """
-        pkg_dir = os.path.dirname(hiseq.__file__)
-        deseqR = os.path.join(pkg_dir, 'bin', 'run_deseq2.R')
-        cmd_file = os.path.join(self.deseqdir, 'cmd.sh')
-        cmd = 'Rscript {} {} {}'.format(
-            deseqR,
-            os.path.join(self.outdir, self.project_name),
-            self.feature) #,
-            # os.path.join(self.deseqdir, 'mylog.deseq2.out'))  # pvalue cutoff
+        raw_fq1, raw_fq2 = self.raw_fq_list
+        file_symlink(self.fq1, raw_fq1, absolute_path=True)
+        file_symlink(self.fq2, raw_fq2, absolute_path=True)
 
-        # save cmd
-        with open(cmd_file, 'wt') as w:
-            w.write(cmd + '\n')
 
-        try:
-            run_shell_cmd(cmd)
-        except:
-            log.warning('DESeq2 failed.')
+    def trim(self):
+        """
+        Trim reads:
+        Trim(fq1, outdir, fq2, cut_after_trim='9,-6').run()
+
+        if trimmed:
+            do
+        else:
+            copy/links
+        """
+        fq1, fq2 = self.raw_fq_list
+        clean_fq1, clean_fq2 = self.clean_fq_list
+
+        # whether to trim or not
+        if self.trimmed:
+            ## copy files
+            file_symlink(fq1, clean_fq1)
+            file_symlink(fq2, clean_fq2)
+        else:
+            # update args
+            args_local = self.__dict__.copy()
+            args_init = {
+                'fq1': fq1,
+                'fq2': fq2,
+                'outdir': self.clean_dir,
+                'library_type': None,
+                'len_min': 20,
+                'cut_to_length': self.cut_to_length,
+                'recursive': self.recursive,
+                'parallel_jobs': 1 # do not allowed > 1
+            }
+            args_local.update(args_init)
+            trim = Trim(**args_local)
+            trim.run()
+
+            ## copy files
+            if isinstance(fq2, str):
+                file_symlink(trim.clean_fq1, clean_fq1)
+                file_symlink(trim.clean_fq2, clean_fq2)
+            else:
+                file_symlink(trim.clean_fq, clean_fq1)
+
+
+    def get_bam(self, x):
+        """
+        Get the align bam file, from x dicectory
+        align_dir/A, B, C, ...
+        Add prefix/ 01, 02, ...
+        """
+        bamlist = listfile(x, '*.bam', recursive=True)
+        return bamlist.pop() if len(bamlist) > 0 else None # last one
+
+
+    def align_genome(self):
+        """
+        Alignment PE reads to reference genome, using bowtie2
+        """
+        args_local = self.__dict__.copy()
+        fq1, fq2 = args_local.get('clean_fq_list', [None, None])
+
+        # update
+        args_init = {
+            'fq1': fq1,
+            'fq2': fq2,
+            'outdir': self.align_dir,
+            'aligner': self.aligner,
+            'genome_index': self.genome_index,
+            'extra_para': self.extra_para,
+            'keep_tmp': self.keep_tmp,
+            'overwrite': self.overwrite
+        }
+        args_local.update(args_init)
+
+        # align = Alignment(**args_local)
+        align = Align(**args_local)
+        align.run()
+
+        # output
+        tmp0 = listfile(self.align_dir, '*.bam', recursive=True)
+        bam = tmp0[0] if len(tmp0) > 0 else None
+        file_symlink(bam, self.bam)
+
+        # align.toml
+        tmp1 = listfile(self.align_dir, '*align.toml', recursive=True)
+        if len(tmp1) > 0:
+            file_symlink(tmp1[0], self.align_toml)
+
+        self.align_scale = self.cal_norm_scale(self.bam)
+        with open(self.align_scale_txt, 'wt') as w:
+            w.write('{:.4f}\n'.format(self.align_scale))
+
+
+    def align_spikein(self):
+        """
+        Alignment PE reads, spikein
+        """
+        args_local = self.__dict__.copy()
+        fq1, fq2 = args_local.get('clean_fq_list', [None, None])
+
+        # update
+        args_sp = {
+            'fq1': fq1,
+            'fq2': fq2,
+            'outdir': self.spikein_dir,
+            'genome_index': self.spikein_index,
+            'threads': self.threads,
+            'extra_para': self.extra_para,
+            'keep_tmp': self.keep_tmp,
+            'overwrite': self.overwrite
+        }
+        args_local.update(args_sp)
+        align = Align(**args_local)
+
+        # output
+        tmp0 = listfile(self.spikein_dir, '*.bam', recursive=True)
+        bam = tmp[0] if len(tmp0) > 0 else None
+        if file_exists(bam) and not self.overwrite:
+            log.info('align() skipped, file exists: {}'.format(bam))
+        else:
+            align.run()
+
+        # copy bam to bam_files
+        file_symlink(bam, self.spikein_bam)
+
+        self.spikein_scale = self.cal_norm_scale(self.spikein_bam)
+        with open(self.spikein_scale_txt, 'wt') as w:
+            w.write('{:.4f}\n'.format(self.spikein_scale))
+
+
+    def align_rRNA(self):
+        """
+        Alignment PE reads, rRNA
+        """
+        args_local = self.__dict__.copy()
+        fq1, fq2 = args_local.get('clean_fq_list', [None, None])
+
+        # update
+        args_sp = {
+            'fq1': fq1,
+            'fq2': fq2,
+            'outdir': self.rRNA_dir,
+            'genome_index': self.rRNA_index,
+            'threads': self.threads,
+            'extra_para': self.extra_para,
+            'keep_tmp': self.keep_tmp,
+            'overwrite': self.overwrite
+        }
+        args_local.update(args_sp)
+        align = Align(**args_local)
+
+        # output
+        tmp0 = listfile(self.rRNA_dir, '*.bam', recursive=True)
+        bam = tmp[0] if len(tmp0) > 0 else None
+        if file_exists(bam) and not self.overwrite:
+            log.info('align() skipped, file exists: {}'.format(bam))
+        else:
+            align.run()
+
+        # copy bam to bam_files
+        file_symlink(bam, self.rRNA_bam)
+
+
+    def bam_to_bg(self):
+        """
+        Convert bam to bedgraph
+
+        norm
+        bedtools genomecov -bg -scale $scale_factor -ibam bam > bg
+        """
+        cmd = ' '.join([
+            '{}'.format(shutil.which('bedtools')),
+            'genomecov -bg -scale {}'.format(self.align_scale),
+            '-ibam {}'.format(self.bam),
+            '| sort -k1,1 -k2,2n > {}'.format(self.bg)
+            ])
+
+        if file_exists(self.bg) and not self.overwrite:
+            log.info('bam_to_bg() skipped, file exists:{}'.format(self.bg))
+        else:
+            cmd_shell = self.bg_dir + '/cmd.sh'
+            with open(cmd_shell, 'wt') as w:
+                w.write(cmd + '\n')
+
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.error('bam_to_bg() failed')
+
+
+    def bg_to_bw(self):
+        """
+        Create bigWig
+        bedgraph to bigWig
+        """
+        cmd = ' '.join([
+            '{}'.format(shutil.which('bedGraphToBigWig')),
+            '{} {} {}'.format(self.bg, self.genome_size_file, self.bw)
+            ])
+
+        if file_exists(self.bw) and not self.overwrite:
+            log.info('bg_to_bw() skipped, file exists:{}'.format(self.bw))
+        else:
+            cmd_shell = self.bw_dir + '/cmd.sh'
+            with open(cmd_shell, 'wt') as w:
+                w.write(cmd + '\n')
+
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.error('bg_to_bw() failed')
+
+
+    def fc_count(self):
+        """
+        Run FeatureCounts for the bam file
+        """
+        args = self.__dict__.copy()
+
+        # check library type
+        s = HiSeqLibType(bam=self.bam, gtf=self.gtf).run()
+
+        if s == 1:
+            strand_sens = 1
+            strand_anti = 2
+        elif s == 2:
+            strand_sens = 2
+            strand_anti = 1
+        else:
+            strand_sens = strand_anti = 0
+
+        # args for local run
+        args_local = {
+            'gtf': self.gtf,
+            'bam_list': self.bam,
+            'outdir': self.count_dir,
+            'threads': self.threads,
+            'overwrite': self.overwrite
+        }
+
+        # for sense
+        args_sens = {
+            'prefix': os.path.basename(self.count_sens),
+            'strandness': strand_sens
+        }
+        args_sens.update(args_local)
+        fc_sens = FeatureCounts(**args_sens)
+        fc_sens.run()
+
+        # for antisense
+        args_anti = {
+            'prefix': os.path.basename(self.count_anti),
+            'strandness': strand_anti
+        }
+        args_anti.update(args_local)
+        fc_anti = FeatureCounts(**args_anti)
+        fc_anti.run()
+
+        # save strandness to file
+        msg = '\n'.join([
+            'sens: {}'.format(strand_sens),
+            'anti: {}'.format(strand_anti)
+        ])
+        with open(self.strandness_file, 'wt') as w:
+            w.write(msg + '\n')
+
+
+    # quality wildtype #
+    def cal_norm_scale(self, bam, norm=1000000):
+        """
+        scale factor
+
+        Bam().count_reads()
+        """
+        bam_o = Bam(bam)
+        is_pe = bam_o.isPaired()
+        n_map = bam_o.getNumberOfAlignments()
+        if is_pe:
+            n_map = n_map/2
+
+        if n_map > 0:
+            n_scale = norm/n_map
+        else:
+            log.error('no mapped reads detected')
+            n_scale = 1
+
+        return n_scale
+
+
+    def qc_trim_summary(self):
+        """
+        reads trim off
+
+        # version-1
+        #sample wildtype   output  percent
+        fq_rep1      2234501 2234276 99.99%
+
+        # version-2
+        #name   total   too_short       dup     too_short2      clean   percent
+        """
+        if file_exists(self.trim_stat_txt):
+            with open(self.trim_stat_txt, 'rt') as r:
+                lines = r.readlines()
+            lines = [i for i in lines if not i.startswith('#')]
+            line = lines.pop() # last line
+            tabs = line.strip().split('\t')
+            fqname, n_wildtype = tabs[:2]
+            n_output, n_pct = tabs[-2:]
+            d = {
+                'id': fqname,
+                'input': n_wildtype,
+                'output': n_output,
+                'out_pct': n_pct,
+                'rm_pct': round(100 - float(n_pct.strip()), 2)
+            }
+        else:
+            d = {
+                'id': self.smp_name,
+                'input': 0,
+                'output': 0,
+                'out_pct': 100,
+                'rm_pct': 0
+            }
+        Toml(d).to_toml(self.trim_summary_toml)
+
+
+    def qc_align_summary(self):
+        """
+        Save summary to file
+        """
+        # align to genome
+        align = Toml().from_toml(self.align_toml)
+
+        # spikein
+        if file_exists(self.spikein_bam):
+            n_spikein = Bam(self.spikein_bam).getNumberOfAlignments()
+            if is_pe:
+                n_spikein = n_spikein/2
+        else:
+            n_spikein = 0
+
+        # rRNA
+        if file_exists(self.rRNA_bam):
+            n_rRNA = Bam(self.spikein_bam).getNumberOfAlignments()
+            if is_pe:
+                n_rRNA = n_rRNA/2
+        else:
+            n_rRNA = 0
+
+
+        align['nodup'] = 0
+        align['spikein'] = n_spikein
+        align['chrM'] = n_rRNA
+
+        # save to file
+        Toml(align).to_toml(self.align_summary_toml)
+
+
+    def qc_genebody_enrich(self):
+        """
+        Calculate the TSS enrichment
+        """
+        cmd = ' '.join([
+            '{}'.format(shutil.which('computeMatrix')),
+            'scale-regions',
+            '-R {}'.format(self.gene_bed),
+            '-S {}'.format(self.bw),
+            '-o {}'.format(self.genebody_enrich_matrix),
+            '-b 2000 -a 2000 --regionBodyLength 2000',
+            '--binSize 10 --sortRegions descend --skipZeros',
+            '--smartLabels',
+            '-p {}'.format(self.threads),
+            '2> {}'.format(self.genebody_enrich_matrix_log),
+            '&& {}'.format(shutil.which('plotProfile')),
+            '-m {}'.format(self.genebody_enrich_matrix),
+            '-o {}'.format(self.genebody_enrich_png),
+            '--dpi 300',
+            '--perGroup'
+            ])
+
+        if file_exists(self.genebody_enrich_png) and not self.overwrite:
+            log.info('qc_genebody_enrich() skipped, file exists: {}'.format(
+                self.genebody_enrich_png))
+        else:
+            if not file_exists(self.gene_bed):
+                log.error('qc_tss() skipped, gene_bed not found')
+            else:
+                with open(self.genebody_enrich_cmd, 'wt') as w:
+                    w.write(cmd + '\n')
+
+                try:
+                    run_shell_cmd(cmd)
+                except:
+                    log.error('qc_genebody_enrich() failed, see: ')
+
+
+    def pipe_genome(self):
+        """
+        Run for genome
+        """
+        if isinstance(self.spikein_index, str):
+            self.align_spikein() # run alignment
+
+        if isinstance(self.rRNA_index, str):
+            self.align_rRNA()
+
+        self.prep_raw()
+        self.trim()
+        self.align_genome()
+        self.bam_to_bg()
+        self.bg_to_bw()
+
+        # count reads
+        if file_exists(self.count_sens) and not self.overwrite:
+            log.info('fc_count() skipped, file exists: {}'.format(
+                self.count_sens))
+        else:
+            self.fc_count()
+
+
+    def pipe_qc(self):
+        """
+        Quality control
+        """
+        self.qc_trim_summary()
+        self.qc_align_summary()
+        self.qc_genebody_enrich()
 
 
     def report(self):
         """
-        make report for deanalysis
+        Create report for one sample
+        html
         """
-        pass
+        pkg_dir = os.path.dirname(hiseq.__file__)
+        qc_reportR = os.path.join(pkg_dir, 'bin', 'hiseq_report.R')
+        hiseq_report_html = os.path.join(self.report_dir, 'HiSeq_report.html')
+        hiseq_report_stdout = os.path.join(self.report_dir, 
+            'HiSeq_report.stdout')
+        hiseq_report_stderr = os.path.join(self.report_dir, 
+            'HiSeq_report.stderr')
+        cmd = 'Rscript {} {} {} 1> {} 2> {}'.format(
+            qc_reportR,
+            self.project_dir,
+            self.report_dir,
+            hiseq_report_stdout,
+            hiseq_report_stderr
+        )
+        cmd_shell = os.path.join(self.report_dir, 'cmd.sh')
+        with open(cmd_shell, 'wt') as w:
+            w.write(cmd + '\n')
+        if file_exists(hiseq_report_html):
+            log.info('report() skipped, file exists: {}'.format(
+                hiseq_report_html))
+        else:
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.error('report() failed, {}'.format(self.report_dir))
 
 
     def run(self):
         """
-        Run all
+        Run all steps for RNAseq pipeline
         """
-        # 1. copy count
-        self.copy_count_files()
-
-        # # 2. design
-        # self.get_design()
-
-        # 3. run DESeq2
-        self.deseq2()
-
-        # 4. report to file/qc
+        self.pipe_genome()
+        self.pipe_qc()
         self.report()
 
 
-class RNAseqLibrary(object):
+class RNAseqConfig(object):
     """
-    Determine the RNAseq library type:
-    strandness: 1 ++, 1 --, / 2 +-, 2 -+ :
-    dUTP, NSR: 1 +-, 1 -+, / 2 ++, 2 -- :
-    ###
-    or:
-    infer_experiment.py from RSeQC package.
+    The main port, for RNAseq analysis
+
+    groups = {RNAseqRx}n = {RNAseqRn, RNAseqRn}n = {RNAseqR1}n
     """
-    def __init__(self, bam, gtf, size=200000, **kwargs):
-        self.update(kwargs) # fresh new
-        self.bam = bam
-        self.gtf = gtf
-        self.size = size
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
         self.init_args()
-
-
-    def update(self, d, force=True, remove=False):
-        """
-        d: dict
-        force: bool, update exists attributes
-        remove: bool, remove exists attributes
-        Update attributes from dict
-        force exists attr
-        """
-        # fresh start
-        if remove is True:
-            for k in self.__dict__:
-                # self.__delattr__(k)
-                delattr(self, k)
-        # add attributes
-        if isinstance(d, dict):
-            for k, v in d.items():
-                if not hasattr(self, k) or force:
-                    setattr(self, k, v)
 
 
     def init_args(self):
         """
-        Prepare Bam file (subset)
-        """
-        args_default = {
-            'outdir': self._tmp(),
-            'cleanup': True
+        required arguments for RNAseq analysis
+        """         
+        args_init = {
+            'build_design': False,
+            'design': None,
+            'rep_list': None,
+            'mutant_dir': None,
+            'wildtype_dir': None,
+            'mutant': None,
+            'mutant_fq2': None,
+            'wildtype': None,
+            'wildtype_fq2': None,
+            'fq1': None,
+            'fq2': None,
+            'outdir': None,
+            'aligner': 'STAR',
+            'genome': None,
+            'genome_index': None,
+            'spikein': None,
+            'spikein_index': None,
+            'rRNA_index': None,
+            'align_to_rRNA': False,
+            'extra_index': None,
+            'threads': 1,
+            'parallel_jobs': 1,
+            'overwrite': False,
+            'binsize': 50,
+            'genome_size': 0,
+            'genome_size_file': None,
+            'gene_bed': None,
+            'gtf': None,
+            'trimmed': False,
+            'keep_tmp': False,
+            'cut_to_length': 0,
+            'recursive': False,
+            'extra_para': None, # for alignment
         }
-        self.update(args_default, force=False)
+        self = update_obj(self, args_init, force=False)
 
-        # input bam
-        if isinstance(self.bam, str):
-            pass
-        elif isinstance(self.bam, list):
-            self.bam = self.bam[0] # the first one
-        else:
-            raise Exception('Expect str and list, get {}'.format(type(bam)))
-
-        # outdir
+        # output
         if self.outdir is None:
-            self.outdir = self._tmp()
-        if not os.path.exists(self.outdir):
-            os.makedirs(self.outdir)
+          self.outdir = str(pathlib.Path.cwd())
+        self.outdir = file_abspath(self.outdir)
 
-        # subset bam
-        self.bam_sub = self.subset_bam(self.outdir, self.size) # subset
+        # aligner
+        if self.aligner is None:
+            self.aligner = 'STAR'
 
-        ## input a BED file, convert to GTF
-        if self.gtf.lower().endswith('.bed'):
-            self.bed = self.gtf
-            self.gtf = os.path.join(self.outdir,
-                os.path.basename(os.path.splitext(self.gtf)[0]) + '.gtf')
-            # convert
-            self.bed2gtf(self.bed, self.gtf)
+        # threads
+        self.threads, self.parallel_jobs = init_cpu(self.threads,
+            self.parallel_jobs)
+
+        # RNAseq groups
+        self.fq_groups = Toml().from_toml(self.design) if \
+            file_exists(self.design) else self.init_groups()
+
+        self.init_files()
+        self.init_mission()
 
 
-    def _tmp(self):
+    def init_files(self):
         """
-        Create a tmp filename
+        Prepare directories, files
         """
-        tmp = tempfile.NamedTemporaryFile(prefix='tmp', delete=True)
+        self.project_dir = self.outdir
+        self.config_dir = self.outdir
+        self.config_toml = self.config_dir + '/config.toml'
+        check_path(self.project_dir)
+
+
+    def init_groups(self):
+        """
+        Create RNAseq compare group:
+        - wildtype, wildtype_fq2
+        - mutant, mutant_fq2
+
+        - wildtype_dir
+        - mutant_dir
+        """
+        if isinstance(self.wildtype, list) and isinstance(self.mutant, list):
+            g = {
+                'wildtype_dir': None,
+                'mutant_dir': None,
+                'wildtype': self.wildtype,
+                'wildtype_fq2': self.wildtype_fq2,
+                'mutant': self.mutant,
+                'mutant_fq2': self.mutant_fq2,
+                'group': fq_name_rmrep(self.wildtype).pop()
+            }
+        elif isinstance(self.wildtype_dir, str) \
+            and isinstance(self.mutant_dir, str):
+            c_wildtype = RNAseqReader(self.wildtype_dir)
+            c_mutant = RNAseqReader(self.mutant_dir)
+
+            if not c_wildtype.is_hiseq_rn or not c_mutant.is_hiseq_rn:
+                raise ValueError('mutant_dir, wildtype_dir failed: \
+                    {}, {}'.format(self.mutant_dir, self.wildtype_dir))
+            g = {
+                'wildtype_dir': self.wildtype_dir,
+                'mutant_dir': self.mutant_dir,
+                'wildtype': None,
+                'wildtype_fq2': None,
+                'mutant': None,
+                'wildtype_fq2': None,
+                'group': c_wildtype.args.get('smp_name', 'RNAseq')
+            }
+        else:
+            g = None
+
+        return {'RNAseq': g} if g else {} # empty
+
+
+    def init_mission(self):
+        """
+        Determine the type of RNAseq analysis
+        1. build_design
+        2. Single: mutant/wildtype pair
+        3. Multiple: mutant/wildtype pair
+        4. x, mutant vs wildtype
+        """
+        # 1st level
+        if self.build_design:
+            print('!AAAA-1')
+            self.hiseq_type = 'build_design'
+        elif len(self.fq_groups) >= 1:
+            print('!AAAA-2')
+            self.hiseq_type = 'rnaseq_rx'
+        elif isinstance(self.fq1, list):
+            print('!AAAA-3')
+            self.hiseq_type = 'rnaseq_rn'
+        elif isinstance(self.fq1, str):
+            print('!AAAA-4')
+            self.hiseq_type = 'rnaseq_r1'
+        else:
+            raise ValueError('unknown RNAseq type')
+
+
+class RNAseqRxConfig(object):
+    """
+    RNAseq for mutant vs wildtype: DESeq analysis
+
+    require: mutant_dir, wildtype_dir
+    or:
+    mutant, mutant_fq2, wildtype, wildtype_fq2
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+
+
+    def init_args(self):
+        """
+        required arguments for RNAseq analysis
+        """
+        args_init = {
+            'mutant_dir': None,
+            'wildtype_dir': None,
+            'mutant': None,
+            'mutant_fq2': None,
+            'wildtype': None,
+            'wildtype_fq2': None,
+            'outdir': None,
+        }
+        # args_init = {
+        #     'outdir': None,
+        #     'mutant_dir': None,
+        #     'wildtype_dir': None,
+        #     'mutant': None,
+        #     'mutant_fq2': None,
+        #     'wildtype': None,
+        #     'wildtype_fq2': None,
+        #     'smp_name': None,
+        #     'aligner': 'STAR',
+        #     'genome': None,
+        #     'genome_index': None,
+        #     'spikein': None,
+        #     'spikein_index': None,
+        #     'rRNA_index': None,
+        #     'align_to_rRNA': False,
+        #     'extra_index': None,
+        #     'threads': 1,
+        #     'parallel_jobs': 1,
+        #     'overwrite': False,
+        #     'binsize': 50,
+        #     'genome_size': 0,
+        #     'genome_size_file': None,
+        #     'gene_bed': None,
+        #     'keep_tmp': False,
+        #     'trimmed': False,
+        #     'cut_to_length': 0,
+        #     'recursive': False,
+        #     'extra_para': None
+        # }
+        self = update_obj(self, args_init, force=False)
+        self.hiseq_type = 'rnaseq_rx' #
+
+        # aligner
+        if self.aligner is None:
+            self.aligner = 'STAR'
+
+        # threads
+        self.threads, self.parallel_jobs = init_cpu(self.threads,
+            self.parallel_jobs)
+
+        self.outdir = file_abspath(self.outdir)
+
+        self.init_fq()
+        self.init_files()
+
+
+    def init_fq(self):
+        """
+        Support fastq files
+        mutant, wildtype
+        fq1, list
+        fq2, list or None
+        """
+        # fastq files
+        if isinstance(self.mutant, list) and isinstance(self.wildtype, list):
+            self.mutant = file_abspath(self.mutant)
+            self.mutant_fq2 = file_abspath(self.mutant_fq2)
+            self.wildtype = file_abspath(self.wildtype)
+            self.wildtype_fq2 = file_abspath(self.wildtype_fq2)
+
+            # file exists
+            if not all(file_exists(self.mutant)):
+                raise ValueError('--mutant, file not exists: {}'.format(
+                    self.mutant))
+
+            if not all(file_exists(self.wildtype)):
+                raise ValueError('--wildtype, file not exists: {}'.format(
+                    self.mutant))
+
+            # check, mutant,wildtype name
+            mutant_names = set(map(fq_name_rmrep, self.mutant))
+            wildtype_names = set(map(fq_name_rmrep, self.wildtype))
+            if len(mutant_names) > 1:
+                raise ValueError('--mutant failed, filename \
+                    differ: {}'.format(mutant_names))
+
+            if len(wildtype_names) > 1:
+                raise ValueError('--wildtype failed, filename \
+                    differ: {}'.format(wildtype_names))
+
+            # check paired
+            if isinstance(self.mutant_fq2, list):
+                mutant_pe = all([fq_paired(i, j) for i, j \
+                    in zip(self.mutant, self.mutant_fq2)])
+                if not mutant_pe:
+                    raise ValueError('--mutant, --mutant-fq2, not paired: \
+                        {}, {}'.format(self.mutant, self.mutant_fq2))
+            if isinstance(self.wildtype_fq2, list):
+                wildtype_pe = all([fq_paired(i, j) for i, j \
+                    in zip(self.wildtype, self.wildtype_fq2)])
+                if not wildtype_pe:
+                    raise ValueError('--wildtype, --wildtype-fq2, not paired: \
+                        {}, {}'.format(self.wildtype, self.wildtype_fq2))
+
+            # update mutant_dir, wildtype_dir
+            self.mutant_name = mutant_names.pop()
+            self.wildtype_name = wildtype_names.pop()
+            self.mutant_dir = self.outdir + '/' + self.mutant_name
+            self.wildtype_dir = self.outdir + '/' + self.wildtype_name
+
+        elif isinstance(self.mutant_dir, str) \
+            and isinstance(self.wildtype_dir, str):
+            self.mutant_dir = file_abspath(self.mutant_dir)
+            self.wildtype_dir = file_abspath(self.wildtype_dir)
+
+            c_mutant = RNAseqReader(self.mutant_dir)
+            c_wildtype = RNAseqReader(self.wildtype_dir)
+
+            if not c_mutant.is_hiseq_rn or not c_wildtype.is_hiseq_rn:
+                raise ValueError('mutant_dir, wildtype_dir failed: \
+                    {}, {}'.format(self.mutant_dir, self.wildtype_dir))
+
+            self.mutant_name = c_mutant.args.get('smp_name', None)
+            self.wildtype_name = c_wildtype.args.get('smp_name', None)
+
+        else:
+            raise ValueError('--mutant, --wildtype, or --mutant-dir, \
+                --wildtype-dir failed')
+
+        # update smp_name
+        self.smp_name = '{}.vs.{}'.format(self.wildtype_name, self.mutant_name)
+
+
+    def init_files(self):
+        """
+        Prepare directories, files
+        """
+        # path, files
+        self.project_name = self.smp_name
+        self.project_dir = self.outdir + '/' + self.project_name
+        self.config_dir = self.project_dir + '/config'
+
+        default_dirs = {
+            'bam_dir': 'bam_files',
+            'bw_dir': 'bw_files',
+            'count_dir': 'count',
+            'deseq_dir': 'deseq',
+            'qc_dir': 'qc',
+            'report_dir': 'report'
+        }
+        # convert to path
+        for k, v in default_dirs.items():
+            default_dirs[k] = os.path.join(self.project_dir, v)
+        self = update_obj(self, default_dirs, force=True) # key
+
+        # files
+        default_files = {
+            'config_toml': self.config_dir + '/config.toml',
+            'mutant_bam': self.bam_dir + '/' + self.mutant_name + '.bam',
+            'mutant_bw': self.bw_dir + '/' + self.mutant_name + '.bigWig',
+            'wildtype_bam': self.bam_dir + '/' + self.wildtype_name + '.bam',
+            'wildtype_bw': self.bw_dir + '/' + self.wildtype_name + '.bigWig',
+            'bw': self.bw_dir + '/' + self.mutant_name + '.bigWig',
+            # 'mutant_count_sens': RNAseqReader(
+            #     self.mutant_dir).get_r1_file('count_sens'),
+            # 'mutant_count_anti': RNAseqReader(
+            #     self.mutant_dir).get_r1_file('count_anti'),
+            # 'wildtype_count_sens': RNAseqReader(
+            #     self.wildtype_dir).get_r1_file('count_sens'),
+            # 'wildtype_count_anti': RNAseqReader(
+            #     self.wildtype_dir).get_r1_file('count_anti'),
+            'deseq_fix_xls': self.deseq_dir + '/transcripts_deseq2.fix.xls'
+        }
+        self = update_obj(self, default_files, force=True) # key
+
+        check_path([
+            self.project_dir,
+            self.config_dir,
+            self.bam_dir,
+            self.bw_dir,
+            self.count_dir,
+            self.deseq_dir,
+            self.qc_dir,
+            self.report_dir])
+
+
+class RNAseqRnConfig(object):
+    """
+    RNAseq for single sample, N replicates; wrap replicates
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+
+
+    def init_args(self):
+        """
+        required arguments for RNAseq analysis
+        """
+        args_init = {
+            'rep_list': None,
+            'fq1': None,
+            'fq2': None,
+            'outdir': None,
+            'smp_name': None
+        }
+
+        # args_init = {
+        #     'rep_list': None,
+        #     'fq1': None,
+        #     'fq2': None,
+        #     'outdir': None,
+        #     'aligner': 'STAR',
+        #     'smp_name': None,
+        #     'genome': None,
+        #     'genome_index': None,
+        #     'spikein': None,
+        #     'spikein_index': None,
+        #     'rRNA_index': None,
+        #     'align_to_rRNA': False,
+        #     'extra_index': None,
+        #     'threads': 1,
+        #     'parallel_jobs': 1,
+        #     'overwrite': False,
+        #     'binsize': 50,
+        #     'genome_size': 0,
+        #     'genome_size_file': None,
+        #     'keep_tmp': False,
+        #     'trimmed': False,
+        #     'cut_to_length': 0,
+        #     'recursive': False
+        # }
+        self = update_obj(self, args_init, force=False)
+        self.hiseq_type = 'rnaseq_rn' #
+
+        # aligner
+        if self.aligner is None:
+            self.aligner = 'STAR'
+
+        # threads
+        self.threads, self.parallel_jobs = init_cpu(self.threads,
+            self.parallel_jobs)
+
+        self.outdir = file_abspath(self.outdir)
+
+        self.init_fq()
+        self.init_files()
+
+
+    def init_fq(self):
+        """
+        Support fastq files
+        fq1 (required), list
+        fq2 (optional), list or None
+        """
+        # convert str to list
+        if isinstance(self.fq1, str):
+            self.fq1 = [self.fq1]
+
+        if isinstance(self.fq2, str):
+            self.fq2 = [self.fq2]
+
+        if isinstance(self.fq1, list):
+            self.fq1 = file_abspath(self.fq1)
+
+            # file exists
+            if not all(file_exists(self.fq1)):
+                raise ValueError('--fq1, file not exists: {}'.format(self.fq1))
+
+            # rep list
+            q_names = [fq_name(i, pe_fix=True) for i in self.fq1]
+            self.rep_list = [self.outdir + '/' + i for i in q_names]
+
+            # fq2
+            if isinstance(self.fq2, list):
+                self.fq2 = file_abspath(self.fq2)
+
+                if not all(file_exists(self.fq2)):
+                    raise ValueError('--fq2, file not exists: {}'.format(
+                        self.fq2))
+
+                # paired
+                fq_pe = all([fq_paired(i, j) \
+                    for i, j in zip(self.fq1, self.fq2)])
+                
+                if not fq_pe and isinstance(self.fq2, list):
+                    raise ValueError('--fq1, --fq2, file not paired')
+        else:
+            raise ValueError('fq1, fq2 required')
+
+        # smp_name
+        if not isinstance(self.smp_name, str):
+            self.smp_name = fq_name_rmrep(self.rep_list).pop()
+
+
+    def init_files(self):
+        """
+        Prepare directories, files
+        for bigWig files, track files
+        """
+        # path, files
+        self.project_name = self.smp_name
+        self.project_dir = os.path.join(self.outdir, self.project_name)
+        self.config_dir = os.path.join(self.project_dir, 'config')
+
+        default_dirs = {
+            'align_dir': 'align',
+            'bam_dir': 'bam_files',
+            'bw_dir': 'bw_files',
+            'bg_dir': 'bg_files',
+            'qc_dir': 'qc',
+            'report_dir': 'report'
+        }
+        # convert to path
+        for k, v in default_dirs.items():
+            default_dirs[k] = os.path.join(self.project_dir, v)
+        self = update_obj(self, default_dirs, force=True) # key
+
+        # files
+        default_files = {
+            'config_toml': self.config_dir + '/config.toml',
+            'bam': self.bam_dir + '/' + self.project_name + '.bam',
+            'bed': self.bam_dir + '/' + self.project_name + '.bed',
+            'bg': self.bg_dir + '/' + self.project_name + '.bedGraph',
+            'bw': self.bw_dir + '/' + self.project_name + '.bigWig',
+            'align_scale_txt': self.align_dir + '/' + 'scale.txt',
+            'genebody_enrich_matrix': self.qc_dir \
+                + '/05.genebody_enrich.mat.gz',
+            'genebody_enrich_matrix_log': self.qc_dir \
+                + '/05.genebody_enrich.log',
+            'genebody_enrich_png': self.qc_dir + '/05.genebody_enrich.png',
+            'genebody_enrich_cmd': self.qc_dir + '/05.genebody_enrich.cmd.sh',
+            'bam_cor_npz': self.qc_dir + '/06.bam_cor.npz',
+            'bam_cor_counts': self.qc_dir + '/06.bam_cor.counts.tab',
+            'bam_cor_heatmap_png': self.qc_dir + '/06.bam_cor.cor_heatmap.png',
+            'bam_cor_pca_png': self.qc_dir + '/06.bam_cor.cor_PCA.png'
+        }
+        self = update_obj(self, default_files, force=True) # key
+
+        check_path([
+            self.config_dir,
+            self.align_dir,
+            self.bam_dir,
+            self.bw_dir,
+            self.bg_dir,
+            self.qc_dir,
+            self.report_dir])
+
+
+class RNAseqR1Config(object):
+    """
+    RNAseq for single replicate, single index
+    input:
+    - fq1, fq2
+    - genome, genome_index
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+
+
+    def init_args(self):
+        """
+        required arguments for RNAseq analysis
+        """
+        args_init = {
+            'fq1': None,
+            'fq2': None,
+            'outdir': None,
+            'smp_name': None,
+            'aligner': 'STAR',
+            'genome': None,
+            'genome_index': None,
+            'spikein': None,
+            'spikein_index': None,
+            'rRNA_index': None,
+            'align_to_rRNA': False,
+            'extra_index': None,
+            'threads': 1,
+            'overwrite': False,
+            'binsize': 50,
+            'genome_size': 0,
+            'genome_size_file': None,
+            'gene_bed': None,
+            'gtf': None,
+            'keep_tmp': False,
+            'trimmed': False,
+            'cut_to_length': 0,
+            'recursive': False,
+            'extra_para': None
+        }
+        self = update_obj(self, args_init, force=False)
+        self.hiseq_type = 'rnaseq_r1' #
+
+        # aligner
+        if self.aligner is None:
+            self.aligner = 'STAR'
+
+        # smp_name
+        if not isinstance(self.smp_name, str):
+            self.smp_name = fq_name(self.fq1, pe_fix=True) # the first one
+
+        # output
+        self.outdir = file_abspath(self.outdir)
+
+        self.init_fq()
+        self.init_index()
+        self.init_files()
+
+
+    def init_fq(self):
+        """
+        Support fastq files
+        fq1 (required), str
+        fq2 (optional), str or None
+        """
+        # fq1
+        if not isinstance(self.fq1, str):
+            raise ValueError('--fq1, str expected, got {}'.format(
+                type(self.fq1).__name__))
+
+        # abs
+        self.fq1 = file_abspath(self.fq1)
+
+        # file exists
+        if not file_exists(self.fq1):
+            raise ValueError('--fq1, file not exists: {}'.format(self.fq1))
+
+        # fq2
+        if not self.fq2 is None:
+            if not isinstance(self.fq2, str):
+                raise ValueError('--fq2, None or str expected, got {}'.format(
+                    type(self.fq2).__name__))
+
+            # abs
+            self.fq2 = file_abspath(self.fq2)
+
+            if not file_exists(self.fq2):
+                raise ValueError('--fq2, file not exists: {}'.format(self.fq2))
+
+            # paired
+            if not fq_paired(self.fq1, self.fq2):
+                raise ValueError('--fq1, --fq2, file not paired')
+
+
+    def init_index(self):
+        """Prepare index for alignment
+        1. genome_index: genome, extra_index
+        2. rRNA_index: align_to_rRNA, ...
+        3. spikein_index: spikein, spikein_index
+        """
+        # extra index
+        if isinstance(self.extra_index, str):
+            self.genome_index = self.extra_index
+        else:
+            # genome, spikein, rRNA, MT, ...
+            # 1. genome_index
+            if isinstance(self.genome_index, str):
+                ai = AlignIndex(index=self.genome_index)
+
+                # valid
+                if not ai.is_index():
+                    raise ValueError('genome_index failed, {}'.format(
+                        self.genome_index))
+
+                # chrsizes
+                if self.genome_size < 1:
+                    self.genome_size = ai.index_size()
+
+                if not isinstance(self.genome_size_file, str): 
+                    self.genome_size_file = ai.index_size(return_file=True)
+
+            elif isinstance(self.genome, str):
+                self.genome_index = AlignIndex(aligner=self.aligner).search(
+                    genome=self.genome, group='genome')
+
+                self.genome_size_file = Genome(genome=self.genome).get_fasize()
+
+                if self.genome_size < 1:
+                    with open(self.genome_size_file, 'rt') as r:
+                        s = [i.strip().split('\t')[1] for i in r.readlines()]
+ 
+                    self.genome_size = sum(map(int, s))
+            
+            else:
+                self.genome_index = None
+
+        # 2. rRNA_index:
+        if isinstance(self.rRNA_index, str):
+            ai = AlignIndex(aligner=self.aligner, index=self.rRNA_index)
+            if not ai.is_index():
+                raise ValueError('rRNA_index failed, {}'.format(
+                    self.rRNA_index))
+        elif self.align_to_rRNA:
+            if isinstance(self.genome, str):
+                ri = AlignIndex(aligner=self.aligner)                    
+                for rRNA in ['rRNA', 'MT_trRNA', 'trRNA']:
+                    ri_index = ri.search(genome=self.grnome, tag=rRNA)
+                    if ri_index:
+                        log.info('fetch rRNA index: {}, {}'.format(
+                            rRNA, ri_index))
+                        self.rRNA_index = ri_index
+                        break
+        else:
+            self.rRNA_index = None
+
+        # 3. spikein_index
+        if isinstance(self.spikein_index, str):
+            ai = AlignIndex(aligner=self.aligner, index=self.spikein_index)
+            if not ai.is_index():
+                raise ValueError('spikein_index failed, {}'.format(
+                    self.spikein_index))
+        elif isinstance(self.spikein, str):
+            self.spikein_index = AlignIndex(aligner=self.aligner).search(
+                genome=self.spikein, group='genome')
+
+        else:
+            self.spikein_index = None
+
+        # summarize all index
+        self.spikein_index = getattr(self, 'spikein_index', None)
+        self.extra_index = getattr(self, 'extra_index', [])
+        self.tags_index = getattr(self, 'tags_index', [])
+        self.genome_index = getattr(self, 'genome_index', [])
+
+        # check
+        ai = AlignIndex(index=self.genome_index)
+        if not ai.is_index():
+            raise ValueError('genome_index failed, {}'.format(
+                self.genome_index))
+
+
+    def init_files(self):
+        """
+        Prepare directories, files
+        """
+        # path, files
+        self.project_name = self.smp_name
+        self.project_dir = os.path.join(self.outdir, self.project_name)
+        self.config_dir = os.path.join(self.project_dir, 'config')
+
+        default_dirs = {
+            'raw_dir': 'raw_data',
+            'clean_dir': 'clean_data',
+            'align_dir': 'align',
+            'spikein_dir': 'spikein',
+            'rRNA_dir': 'rRNA',
+            'bam_dir': 'bam_files',
+            'bg_dir': 'bg_files',
+            'bw_dir': 'bw_files',
+            'count_dir': 'count',
+            'qc_dir': 'qc',
+            'report_dir': 'report'
+        }
+        # convert to path
+        for k, v in default_dirs.items():
+            default_dirs[k] = os.path.join(self.project_dir, v)
+        self = update_obj(self, default_dirs, force=True) # key
+
+        # files
+        default_files = {
+            'config_toml': self.config_dir + '/config.toml',
+            'bam': self.bam_dir + '/' + self.project_name + '.bam',
+            'bg': self.bg_dir + '/' + self.project_name + '.bedGraph',
+            'bw': self.bw_dir + '/' + self.project_name + '.bigWig',
+            'strandness_file': self.count_dir + '/strandness.txt',
+            'count_sens': self.count_dir \
+                + '/' + self.project_name + '.sens.txt',
+            'count_anti': self.count_dir \
+                + '/' + self.project_name + '.anti.txt',
+            'trim_stat_txt': self.clean_dir + '/' + self.project_name \
+                + '/' + self.project_name + '.trim.stat',
+            'align_scale_txt': self.align_dir + '/' + 'scale.txt',
+            'align_flagstat': self.align_dir + '/' \
+                + self.smp_name + '.flagstat',
+            'align_stat': self.align_dir \
+                + '/' + self.smp_name + '.bowtie2.stat',
+            'align_toml': self.align_dir \
+                + '/' + self.smp_name + '.bowtie2.toml',
+
+            'rRNA_bam': self.rRNA_dir + '/rRNA.bam',
+            'rRNA_stat': self.rRNA_dir + '/rRNA.align.stat',
+            'rRNA_toml': self.rRNA_dir + '/rRNA.align.toml',
+            'spikein_bam': self.spikein_dir + '/spikein.bam',
+            'spikein_scale_txt': self.spikein_dir + '/scale.txt',
+            'spikein_flagstat': self.spikein_dir + '/spikein.flagstat',
+            'spikein_stat': self.spikein_dir + '/spikein.align.stat',
+            'spikein_toml': self.spikein_dir + '/spikein.align.toml',
+            'trim_summary_toml': self.qc_dir + '/00.trim_summary.toml',
+            'align_summary_toml': self.qc_dir + '/01.alignment_summary.toml',
+            'genebody_enrich_matrix': self.qc_dir \
+                + '/05.genebody_enrich.mat.gz',
+            'genebody_enrich_matrix_log': self.qc_dir \
+                + '/05.genebody_enrich.log',
+            'genebody_enrich_png': self.qc_dir + '/05.genebody_enrich.png',
+            'genebody_enrich_cmd': self.qc_dir + '/05.genebody_enrich.cmd.sh',
+            'bam_cor_npz': self.qc_dir + '/06.bam_cor.npz',
+            'bam_cor_counts': self.qc_dir + '/06.bam_cor.counts.tab',
+            'bam_cor_heatmap_png': self.qc_dir + '/06.bam_cor.cor_heatmap.png',
+            'bam_cor_pca_png': self.qc_dir + '/06.bam_cor.cor_PCA.png'
+        }
+        self = update_obj(self, default_files, force=True) # key
+
+        # raw data
+        self.raw_fq_list = [self.raw_dir + '/' + os.path.basename(self.fq1)]
+        if isinstance(self.fq2, str):
+            raw_fq2 = self.raw_dir + '/' + os.path.basename(self.fq2)
+        else:
+            raw_fq2 = None
+        self.raw_fq_list.append(raw_fq2)
+
+        ## clean data
+        self.clean_fq_list = [self.clean_dir + '/' + os.path.basename(self.fq1)]
+        if isinstance(self.fq2, str):
+            clean_fq2 = self.clean_dir + '/' + os.path.basename(self.fq2)
+        else:
+            clean_fq2 = None
+        self.clean_fq_list.append(clean_fq2)
+
+        check_path([
+            self.config_dir,
+            self.raw_dir,
+            self.clean_dir,
+            self.align_dir,
+            self.spikein_dir,
+            self.rRNA_dir,
+            self.bam_dir,
+            self.bg_dir,
+            self.bw_dir,
+            self.count_dir,
+            self.qc_dir,
+            self.report_dir])
+
+
+class RNAseqRpConfig(object):
+    """
+    RNAseq for report
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+
+
+class RNAseqDesign(object):
+    """
+    Prepare mutant/wildtype samples for RNAseq analysis
+    append/update
+
+    format:
+    mutant: fq1, fq2
+    wildtype: fq1, fq2
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+
+
+    def init_args(self):
+        args_init = {
+            'wildtype_dir': None,
+            'mutant_dir': None,
+            'wildtype': None,
+            'wildtype_fq2': None,
+            'mutant': None,
+            'mutant_fq2': None,
+            'design': None
+        }
+        self = update_obj(self, args_init, force=False)
+
+        ## check
+        self.design = file_abspath(self.design)
+        if not isinstance(self.design, str):
+            raise ValueError('--design, required')
+
+        ## check fastq files
+        fq_chk = []
+        log.info('Check: wildtype')
+        fq1 = self.wildtype
+        fq2 = self.wildtype_fq2 if isinstance(self.wildtype_fq2, list) \
+            else [None]*len(fq1)
+        for q1, q2 in zip(fq1, fq2):
+            fq_chk.append(self.fq_check(q1))
+            # paired
+            if isinstance(q2, str):
+                fq_chk.append(self.fq_check(q2))
+                fq_chk.append(self.fq_paired(q1, q2))
+
+        log.info('Check: mutant')
+        fq1 = self.mutant
+        fq2 = self.mutant_fq2 if isinstance(self.mutant_fq2, list) \
+            else [None]*len(fq1)
+        for q1, q2 in zip(fq1, fq2):
+            fq_chk.append(self.fq_check(q1))
+            # paired
+            if isinstance(q2, str):
+                fq_chk.append(self.fq_check(q2))                
+                fq_chk.append(self.fq_paired(q1, q2))
+
+        # check
+        if not all(fq_chk):
+            raise ValueError('fastq files checking failed')
+
+
+    def fq_check(self, x):
+        """Check input file exists
+        """
+        chk = file_exists(x) if file_exists(x) else False
+        log.info('{} : {}'.format(chk, x))
+        return chk
+
+
+    def fq_paired(self, fq1, fq2):
+        """
+        Check fq1, fq2, (list)
+        """
+        if isinstance(fq1, str) and isinstance(fq2, str):
+            chk = distance(fq1, fq2) == 1
+        else:
+            chk = False
+
+        if not chk:
+            log.warning('fastq pairing failed')
+
+        return chk
+
+
+    def run(self, design=None):
+        """
+        Save args in Json format
+        """
+        d = Toml().from_toml(self.design) if file_exists(self.design) else {}
+        # d = {} # fresh start
+
+        # local
+        args_local = {
+            'design': self.design,
+            'mutant': self.mutant,
+            'mutant_fq2': self.mutant_fq2,
+            'wildtype': self.wildtype,
+            'wildtype_fq2': self.wildtype_fq2}
+        # remove None
+        args_local = {k:v for k, v in args_local.items() if not v == None}
+
+        # saving to dict
+        key = 'rnaseq_{:03d}'.format(len(d) + 1)
+        if args_local in list(d.values()):
+            log.warning('design exists, skipped ...')
+        else:
+            d.update({key:args_local})
+
+        Toml(d).to_toml(self.design)
+
+
+class RNAseqReader(object):
+    """
+    Read config.yaml from the local directory
+    """
+    def __init__(self, x):
+        self.x = x
+        self.args = self.read()
+        self.hiseq_type = self.args.get('hiseq_type', None)
+        self.is_hiseq_r1 = self.hiseq_type == 'rnaseq_r1'
+        self.is_hiseq_rn = self.hiseq_type == 'rnaseq_rn'
+        self.is_hiseq_rx = self.hiseq_type == 'rnaseq_rx'
+        self.is_hiseq_rp = self.hiseq_type == 'rnaseq_rp'
+        self.is_hiseq_rd = self.hiseq_type == 'build_design'
+
+        if isinstance(self.hiseq_type, str):
+            self.is_hiseq = self.hiseq_type.startswith('hiseq_')
+        else:
+            self.is_hiseq = False
+
+
+    def read(self, x=None):
+        """
+        # hiseq
+        hiseq
+          |-config
+          |   |-config.toml
+
+        # alignment
+        align_dir
+          |- smp_nmae
+          |    |- index
+          |    |    |- config.toml
+        """
+        if x is None:
+            x = self.x
+
+        if not isinstance(x, str):
+            args = {}
+        else:
+            if os.path.isdir(x):
+                p1x = os.path.join(x, 'config', 'config.toml')
+                p2x = os.path.join(x, '*', '*', 'config.toml')
+                p1 = glob.glob(p1x)
+                p2 = glob.glob(p2x)
+                # read config
+                if len(p1) == 1:
+                    args = Toml().from_toml(p1[0])
+                elif len(p2) == 1:
+                    args = Toml().from_toml(p2[0])
+                else:
+                    args = {}
+            else:
+                args = {}
+
+        return args
+
+
+    def get_r1_dir(self):
+        """
+        search r1 dirs, corresponding to the x (R1, Rn, Rx)
+        """
+        if self.hiseq_type == 'rnaseq_r1':
+            r1_list = self.x
+        elif self.hiseq_type == 'rnaseq_rn':
+            r1_list = self.args.get('rep_list', None)
+        elif self.hiseq_type == 'rnaseq_rx':
+            # mut
+            mut_dir = self.args.get('mutant_dir', None)
+            mut_args = self.read(mut_dir)
+            mut_r1 = mut_args.get('rep_list', None)
+
+            # wt
+            wt_dir = self.args.get('wildtype_dir', None)
+            wt_args = self.read(wt_dir)
+            wt_r1 = wt_args.get('rep_list', None)
+
+            # output
+            r1_list = []
+
+            if mut_r1:
+                r1_list.extend(mut_r1)
+
+            if wt_r1:
+                r1_list.extend(wt_r1)
+
+        else:
+            r1_list = []
+
+        return r1_list
+
+
+    def get_rn_dir(self):
+        """
+        search rn dirs, corresponding to the x (R1, Rn, Rx)
+        """
+        if self.hiseq_type == 'rnaseq_rn':
+            rn_list = self.x
+        elif self.hiseq_type == 'rnaseq_rx':
+            mut_dir = self.args.get('mutant_dir', None)
+            wt_dir = self.args.get('wildtype_dir', None)
+            rn_list = [i for i in [mut_dir, wt_dir] if i]
+        else:
+            rn_list = []
+
+        return rn_list
+
+
+    def get_rx_dir(self):
+        """
+        search rx dir
+        """
+        return self.x if self.hiseq_type == 'rnaseq_rx' else None
+
+
+    def get_r1_file(self, name='bam'):
+        """
+        Parsing files from RNAseqR1 directories
+        """
+        if self.hiseq_type == 'rnaseq_r1':
+            f_list = self.args.get(name, None)
+        elif self.hiseq_type == 'rnaseq_rn':
+            r1_list = self.args.get('rep_list', [])
+            f_list = [self.read(i).get(name, None) for i in r1_list]
+        elif self.hiseq_type == 'rnaseq_rx':
+            # mut
+            mut_dir = self.args.get('mutant_dir', None)
+            mut_args = self.read(mut_dir)
+            mut_r1 = mut_args.get('rep_list', None)
+
+            # wt
+            wt_dir = self.args.get('wildtype_dir', None)
+            wt_args = self.read(wt_dir)
+            wt_r1 = wt_args.get('rep_list', None)
+
+            # output
+            r1_list = []
+
+            if mut_r1:
+                r1_list.extend(mut_r1)
+
+            if wt_r1:
+                r1_list.extend(wt_r1)
+
+            f_list = [self.read(i).get(name, None) for i in r1_list]
+        else:
+            f_list = []
+
+        return f_list
+
+
+class HiSeqLibType(object):
+    """
+    Guess the library type of the HiSeq data
+    Strandness
+
+    strandness: 1 ++, 1 --, / 2 +-, 2 -+ :
+    dUTP, NSR: 1 +-, 1 -+, / 2 ++, 2 -- :
+
+    infer_experiment.py from RSeQC package.
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+
+
+    def init_args(self):
+        args_init = {
+            'bam': None,
+            'gtf': None,
+            'size': 200000,
+            'outdir': None,
+            'clean_up': True
+        }
+        self = update_obj(self, args_init, force=False)
+
+        if not isinstance(self.bam, str):
+            raise Exception('bam, str and list expected, got {}'.format(
+                type(self.bam).__name__))
+
+        if not isinstance(self.gtf, str):
+            raise Exception('gtf, str expected, got {}'.format(
+                type(self.gtf).__name__))
+
+        # output, tmp dir
+        if self.outdir is None:
+            self.outdir = self._tmp(is_dir=True)
+        check_path(self.outdir)
+
+
+    def _tmp(self, is_dir=False, suffix='.txt'):
+        """
+        Create a tmp file to save json object
+        """
+        if is_dir:
+            tmp = tempfile.TemporaryDirectory(prefix='tmp')
+        else:
+            tmp = tempfile.NamedTemporaryFile(prefix='tmp', suffix=suffix,
+                delete=False)
         return tmp.name
-
-
-    def bed2gtf(self, bed_in, gtf_out):
-        """
-        Convert BED to GTF format
-        """
-        with open(bed_in) as r, open(gtf_out) as w:
-            for line in r:
-                fields = line.rstrip().split('\t')
-                start = int(fields[1]) + 1 # 0-index to 1-index
-                end = fields[2]
-                des = 'gene_id "{}"; gene_name "{}";'.format(fields[3], fields[3])
-                gtf_line = '\t'.join([
-                    fields[0],
-                    'BED_file',
-                    'exon',
-                    str(start),
-                    end,
-                    '.',
-                    fields[5],
-                    '.',
-                    des])
-                w.write(gtf_line + '\n')
-
-
-    def subset_bam(self, dest, size=20000):
-        """
-        Extract N reads from bam list
-        """
-        if not os.path.exists(dest):
-            os.mkdir(dest)
-
-        ## create bam index
-        Bam(self.bam).index()
-        bname = os.path.basename(self.bam)
-        dest_bam = os.path.join(dest, bname)
-        samfile = pysam.AlignmentFile(self.bam, 'rb')
-        subfile = pysam.AlignmentFile(dest_bam, 'wb', template=samfile)
-
-        # count
-        n = 0
-        for read in samfile.fetch():
-            n += 1
-            if n > size:
-                break
-            subfile.write(read)
-
-        return dest_bam
 
 
     def stat(self, strandness=1):
@@ -1464,346 +2349,62 @@ class RNAseqLibrary(object):
         using -s 1, -s 2
         and return the mapping reads
         """
-        ## -s 1
-        outname = 'count.s_' + str(strandness) + '.txt'
+        prefix = 'count.s_{}.txt'.format(strandness)
         args = {
             'gtf': self.gtf,
             'bam_list': self.bam_sub,
             'outdir': self.outdir,
-            'strandness': strandness,
-            'outname': outname}
-
-        total, assign, assign_df = FeatureCounts(**args).run()
-
-        return assign
+            'prefix': prefix,
+            'strandness': strandness
+        }
+        return FeatureCounts(**args).run()
         
 
     def run(self, with_status=False):
         """
         Check -s 1, -s 2:
         """
-        a = self.stat(strandness=1).to_list()[0] # s=1
-        b = self.stat(strandness=2).to_list()[0] # s=2
+        # subset BAM
+        self.bam_sub = Bam(self.bam).subset(self.size, self.outdir)
 
-        ## loginfo
-        strand_status = 'Library strandness by featureCounts: -s\n'
-        strand_status += 'sample: {}\n'.format(self.bam)
-        strand_status += 'gtf: {}\n'.format(self.gtf)
-        strand_status += 'assigned_fwd: {:>6.2f}%  -s=1  stranded\n'.format(a)
-        strand_status += 'assigned_rev: {:>6.2f}%  -s=2  reversely_stranded\n'.format(b)
-        log.info(strand_status)
+        # run fc
+        dfa = self.stat(strandness=1)
+        dfb = self.stat(strandness=2)
 
-        ## correct BED
-        if a + b < 20:
-            log.warning('check out gtf file: {}'.format(self.gtf))
-            tag = 'undetermined'
-        elif a == b:
-            tag = 'read0'
-        elif a > b:
-            tag = 'read1'
+        sa = dfa.pct.to_list().pop()
+        sb = dfb.pct.to_list().pop()
+
+
+        # check strand:
+        if sa + sb < 0.2:
+            log.warning('Less than 20\% reads assigned, {}'.format(self.gtf))
+            s = 0
+        elif sa == sb:
+            log.info('Library type (s=0): non-stranded')
+            s = 0
+        elif sa > sb:
+            log.info('Library type (s=1): 1 ++, 1 --, / 2 +-, 2 -+')
+            s = 1
         else:
-            tag = 'read2'
-
-        if self.cleanup is True:
-            # check ?
-            log.warning('Temporary directory in: {}'.format(self.outdir))
-            if self.outdir.startswith('/tmp/'):
-                # remove files within /tmp folder # linux
-                shutil.rmtree(self.outdir) # dangerous !!!
-
-        if with_status:
-            return (tag, strand_status)
-        else:
-            return tag
-
-
-class FeatureCounts(object):
-    """
-    Run featureCounts for GTF + BAM(s)
-    mission()
-    count.txt
-    determin: library type: +-/-+; -+/+-;
-    map reads, scale
-    FPKM/RPKM;
-    map pct:
-    """
-    def __init__(self, **kwargs):
-        """
-        arguments:
-        gtf:
-        bam_list: (index)
-        outdir:
-        strandness: 0=no, 1=sens, 2=anti, 3=both
-        smpname: count.txt default
-        threads: 4
-        overwrite: False
-        """
-        # required args
-        self.update(kwargs) # fresh new
-        # self.args = kwargs
-        self.check_status = self.init_fc() # global config
-
-
-    def update(self, d, force=True, remove=False):
-        """
-        d: dict
-        force: bool, update exists attributes
-        remove: bool, remove exists attributes
-        Update attributes from dict
-        force exists attr
-        """
-        # fresh start
-        if remove is True:
-            for k in self.__dict__:
-                # self.__delattr__(k)
-                delattr(self, k)
-        # add attributes
-        if isinstance(d, dict):
-            for k, v in d.items():
-                if not hasattr(self, k) or force:
-                    setattr(self, k, v)
-
-
-    def init_fc(self):
-        """
-        Initiate the config for RNAseq analysis
-        """
-        args_default = {
-            'gtf': None,
-            'bam_list': None,
-            'outdir': str(pathlib.Path.cwd()),
-            'strandness': 0,
-            'threads': 4,
-            'overwrite': False,
-            'outname': 'count.txt'
-        }
-        self.update(args_default, force=False)
-
-        # required
-        check_path(self.outdir)
-
-        # convert to list
-        if isinstance(self.bam_list, str):
-            self.bam_list = [self.bam_list]
-
-        # check required args
-        chk1 = isinstance(self.gtf, str) and os.path.exists(self.gtf)
-        chk2 = all([os.path.exists(i) for i in self.bam_list])
-        if not chk1 or not chk2:
-            log.error('fc() failed, check gtf={}, bam_list={}'.format(self.gtf, self.bam_list))
-
-        ## absolute path
-        self.gtf = file_abspath(self.gtf)
-        self.bam_list = file_abspath(self.bam_list)
-        self.outdir = file_abspath(self.outdir)
-
-        ## index bam files
-        [Bam(i).index() for i in self.bam_list]
-
-        # determine the output files
-        self.count_txt = os.path.join(self.outdir, self.outname)
-        self.summary = self.count_txt + '.summary'
-        self.log_file = os.path.join(self.outdir, 'featureCounts.log')
-
-        ## PE reads
-        self.pe_flag = self.is_PE_bam()
-
-        ## tool
-        self.fc_exe = shutil.which('featureCounts')
-
-        ## update args
-        args = self.__dict__
-        args.pop('args_input', None)
-        args.pop('cmd_input', None)
-        args.pop('dict', None)
-        args.pop('args', None)
-
-        ## save config
-        args_txt = os.path.join(self.outdir, 'arguments.txt')
-        args_json = os.path.join(self.outdir, 'arguments.json')
-        args_pickle = os.path.join(self.outdir, 'arguments.pickle')
-        # save to file
-
-        # Json(args).writer(args_json)
-        args_logger(args, args_txt)
-        chk3 = args_checker(args, args_pickle); chk3 = True
-        chk4 = self.overwrite
-
-        # status
-        return all([chk3, chk4])
-
-
-    def get_cmd(self):
-        """
-        prepare args for featureCounts
-        """
-        cmd = '{} -M -O --fraction -g gene_id -t exon '.format(
-            self.fc_exe)
-
-        # for PE
-        if self.pe_flag:
-            cmd += ' -p -C -B '
-
-        # args
-        cmd += '-s {} -T {} -a {} -o {} {} 2> {}'.format(
-            self.strandness,
-            self.threads,
-            self.gtf,
-            self.count_txt,
-            ' '.join(self.bam_list),
-            self.log_file)
-
-        return cmd
-
-
-    def is_PE_bam(self):
-        """
-        Check whether the input bam files are Paired or Single file
-        Bam().isPaired()
-        """
-        return all([Bam(i).isPaired() for i in self.bam_list])
-
-
-    def wrap_log(self):
-        """
-        save output file to log,
-        """
-        df = pd.read_csv(self.summary, '\t', index_col=0)
-        df.columns = [os.path.basename(i) for i in df.columns.tolist()]
-        ## total
-        total = df.sum(axis=0, skipna=True)
-        ## assign
-        assign = df.loc['Assigned', ] / total * 100
-        ## pct
-        assign_df = assign.to_frame('assigned%')
-        ## minimum
-        min_pct = assign.min()
-        if assign.min() < 50:
-            log.warning('caution: -s {}, {:.2f}% reads were assigned, {}'.format(
-                self.strandness,
-                assign.min(),
-                self.summary))
-        return (total, assign, assign_df)
-
-
-    def _tmp(self):
-        """
-        Create a tmp filename
-        """
-        tmp = tempfile.NamedTemporaryFile(prefix='tmp', delete=True)
-        return os.path.basename(tmp.name)
-
-
-    def run(self):
-        """
-        run featureCounts
-        """
-        cmd = self.get_cmd()
-        if os.path.exists(self.count_txt) and self.overwrite is False:
-            log.info('FeatureCounts() skipped, file exists: {}'.format(
-            self.count_txt))
-        else:
-            run_shell_cmd(cmd)
-            
-        return self.wrap_log()
-
-
-class RNAseqReader(object):
-    """
-    Return the config, files for RNAseq direcotory
-
-    RNAseqSingle: config/
-    RNAseqMultiple: config/
-    DeseqSingle: config/
-
-    # to-do
-    DEseqMultiple: ? (RNAseqMultiple)
-    """
-    def __init__(self, path, **kwargs):
-        self.path = path
-        self.feature = kwargs.get('feature', 'gene')
-        self.check()
-
-
-    def update(self, d, force=True, remove=False):
-        """
-        d: dict
-        all: bool, update exists attributes
-        remove: bool, remove exists attributes
-        Update attributes from dict
-        all exists attr
-        """
-        # fresh start
-        if remove is True:
-            for k in self.__dict__:
-                # self.__delattr__(k)
-                delattr(self, k)
-        # add attributes
-        if isinstance(d, dict):
-            for k, v in d.items():
-                if not hasattr(self, k) or force:
-                    setattr(self, k, v)
-
-
-    def check(self, return_args=False):
-        """
-        Check if the directory is of RNAseq 
-        [single|multiple|deseq_single|deseq_multiple]
-        single - config:
-            outdir/feature/config/arguments.pickle
-        multiple - config:
-            outdir/config/feature/config/arguments.pickle
-        deseq - single:
-            outdir/feature/config/arguments.pickle
-        """
-        x1 = os.path.join(self.path, self.feature, 'config', 'arguments.pickle')
-        x2 = os.path.join(self.path, 'config', self.feature, 'config', 'arguments.pickle')
-
-        if os.path.exists(x1):
-            args = pickle_to_dict(x1)
-        elif os.path.exists(x2):
-            args = pickle_to_dict(x2)
-        else:
-            args = {}
-            log.error("""
-                unknown directory, expect config file:
-                RNAseq single: {}
-                RNAseq multiple: {}
-                RNAseq deseq: {}""".format(x1, x2, x1))
+            log.info('Library type (s=2): 1 +-, 1 -+, / 2 ++, 2 --')
+            s = 2
         
-        # update self
-        self.update(args, force=True) # fresh new
+        # clean up
+        if self.clean_up:
+            path_remove(self.outdir, ask=False)
 
+        # log
+        msg = '\n'.join([
+            'Check BAM strandness by featureCounts',
+            'Library strandness: -s=1 or -s=2',
+            'bam: {}'.format(self.bam),
+            'gtf: {}'.format(self.gtf),
+            'forward stranded, -s=1, {:>6.2f}%'.format(sa*100),
+            'reverse stranded, -s=2, {:>6.2f}%'.format(sb*100)
+        ])
+        log.info(msg)
 
-    def is_rnaseq_single(self):
-        """
-        Check if the directory is of RNAseq single sample
-        outdir/feature/config/arguments.pickle
-        """
-        return self.rnaseq_type == 'rnaseq_single'
-
-
-    def is_rnaseq_multi(self):
-        """
-        Check if the directory is of RNAseq multiple sample
-        outdir/config/feature/config/arguments.pickle
-        """
-        return self.rnaseq_type == 'rnaseq_multiple'
-
-
-    def is_deseq_single(self):
-        """
-        Check if the directory if of RNAseq DESeq analysis
-        outdir/feature/config/arguments.pickle
-        """
-        return self.rnaseq_type == 'deseq_single'
-
-
-    def is_deseq_multiple(self):
-        """
-        Check if the directory if of RNAseq DESeq analysis
-        outdir/feature/config/arguments.pickle
-        """
-        return self.rnaseq_type == 'deseq_multiple'
+        # output
+        return s
 
 
