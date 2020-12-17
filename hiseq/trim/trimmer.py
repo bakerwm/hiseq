@@ -181,10 +181,10 @@ class Trim(object):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
         self.init_files()
-
-        ## save arguments
-        args_checker(self.__dict__, self.config_pickle)
-        args_logger(self.__dict__, self.config_txt)
+        Toml(self.__dict__).to_toml(self.config_toml)
+        # ## save arguments
+        # args_checker(self.__dict__, self.config_pickle)
+        # args_logger(self.__dict__, self.config_txt)
 
 
     def init_args(self):
@@ -251,6 +251,7 @@ class Trim(object):
             'config_txt': self.config_dir + '/config.txt',
             'config_pickle': self.config_dir + '/config.pickle',
             'config_json': self.config_dir + '/config.json',
+            'config_toml': self.config_dir + '/config.toml',
             'rmdup_fq': self.rmdup_dir + '/' + self.smp_name + '.fq.gz',
             'rmdup_fq1': self.rmdup_dir + '/' + self.smp_name + '_1.fq.gz',
             'rmdup_fq2': self.rmdup_dir + '/' + self.smp_name + '_2.fq.gz',
@@ -360,29 +361,28 @@ class Trim(object):
         args_local = self.__dict__.copy()
 
         # 1. cutadapt
-        args_cutadapt = args.local.copy()
+        args_cutadapt = args_local.copy()
         args_cutadapt['outdir'] = self.cutadapt_dir # update
         cut1 = Cutadapt(**args_cutadapt)
         cut1.run() # 
         cut1_fq = cut1.clean_fq
-        n_total = cut1.n_total
-        n_cut1 = cut1.n_clean
+        n_total, n_cut1, _ = cut1.parse_log()
 
         # 2. remove dup
         if self.rmdup:
-            self.rm_dup(cut1_fq, rmdup_fq)
-            n_rmdup = Fastx(rmdup_fq).number_of_seq()
+            self.rm_dup(cut1_fq, self.rmdup_fq)
+            n_rmdup = Fastx(self.rmdup_fq).number_of_seq()
         else:
             n_rmdup = n_cut1
-            file_symlink(cut1_fq, rmdup_fq, absolute_path=False)
+            file_symlink(cut1_fq, self.rmdup_fq, absolute_path=False)
 
         # 3. cut after trim
         if self.cut_after_trim:
-            self.run_cut2(rmdup_fq, cut2_fq, self.cut_after_trim)
-            n_cut2 = Fastx(cut2_fq).number_of_seq()
+            self.run_cut2(self.rmdup_fq, self.cut2_fq, self.cut_after_trim)
+            n_cut2 = Fastx(self.cut2_fq).number_of_seq()
         else:
             n_cut2 = n_rmdup
-            file_symlink(rmdup_fq, cut2_fq)
+            file_symlink(self.rmdup_fq, self.cut2_fq)
 
         # 4. organize files
         # save: 1.cutadapt log/stat; 2. save nodup log/stat; 3. save cut2 log/stat
@@ -404,10 +404,10 @@ class Trim(object):
 
         # save fq files, cutadapt log
         file_copy(cut1.log, self.log_dir)
-        file_copy(cut2_fq, self.clean_fq)
+        file_copy(self.cut2_fq, self.clean_fq)
 
         # 5. remove temp files
-        del_list = [cut1_fq, rmdup_fq, cut2_fq]
+        del_list = [cut1_fq, self.rmdup_fq, self.cut2_fq]
         if not self.keep_tmp:
             file_remove(del_list, ask=False)
 
@@ -435,7 +435,7 @@ class Trim(object):
             log.info('remove dup for read1 only')
             self.rm_dup(cut1_fq1, self.rmdup_fq1)
             self.rm_dup(cut1_fq2, self.rmdup_fq2)
-            n_rmdup = Fastx(rmdup_fq1).number_of_seq()
+            n_rmdup = Fastx(self.rmdup_fq1).number_of_seq()
             # n_rmdup2 = Fastx(rmdup_fq2).number_of_seq()
         else:
             n_rmdup = n_cut1
@@ -537,12 +537,13 @@ class Cutadapt(object):
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
-        self.init_adapter()
         self.init_files()
+        self.init_adapter()
+        Toml(self.__dict__).to_toml(self.config_toml)
 
-        # save config
-        chk0 = args_checker(self.__dict__, self.config_pickle)
-        chk1 = args_logger(self.__dict__, self.config_txt)
+        # # save config
+        # chk0 = args_checker(self.__dict__, self.config_pickle)
+        # chk1 = args_logger(self.__dict__, self.config_txt)
 
 
     def init_args(self):
@@ -620,16 +621,20 @@ class Cutadapt(object):
             }
         if isinstance(self.library_type, str):
             self.library_type = self.library_type.lower()
-            self.adapter3, self.Adapter3 = lib.get(self.library_type, [None, None])
+            self.adapter3, self.Adapter3 = lib.get(
+                self.library_type, [None, None])
         elif isinstance(self.adapter3, str):
             pass
-
         else:
             log.info('Auto detect the adapters:')
             d = Fastx(self.fq1).detect_adapter()
-            df = pd.DataFrame.from_dict(d, orient='index').sort_values(0, ascending=False)
+            df = pd.DataFrame.from_dict(d, orient='index').sort_values(0, 
+                ascending=False)
             self.library_type = df.index.to_list()[0] # first one
-            self.adapter3, self.Adapter3 = lib.get(self.library_type, [None, None])
+            self.adapter3, self.Adapter3 = lib.get(
+                self.library_type, [None, None])
+            ## save Auto-detect
+            # df.to_csv(self.auto_adapter)
 
 
     def init_files(self):
@@ -638,27 +643,30 @@ class Cutadapt(object):
         """
         self.project_name = self.smp_name
         self.project_dir = self.outdir + '/' + self.project_name
+        project_prefix = self.project_dir + '/' + self.smp_name
         self.config_dir = self.project_dir + '/config'
 
         # files
         default_files = {
-            'config_txt': self.config_dir + '/config.txt',
-            'config_pickle': self.config_dir + '/config.pickle',
-            'config_json': self.config_dir + '/config.json',
-            'clean_fq': self.project_dir + '/' + self.smp_name + '.fq.gz',
-            'clean_fq1': self.project_dir + '/' + self.smp_name + '_1.fq.gz',
-            'clean_fq2': self.project_dir + '/' + self.smp_name + '_2.fq.gz',
-            'untrim_fq': self.project_dir + '/' + self.smp_name + '.untrim.fq.gz',
-            'untrim_fq1': self.project_dir + '/' + self.smp_name + '.untrim.1.fq.gz',
-            'untrim_fq2': self.project_dir + '/' + self.smp_name + '.untrim.2.fq.gz',
-            'too_short_fq': self.project_dir + '/' + self.smp_name + '.too_short.fq.gz',
-            'too_short_fq1': self.project_dir + '/' + self.smp_name + '.too_short.1.fq.gz',
-            'too_short_fq2': self.project_dir + '/' + self.smp_name + '.too_short.2.fq.gz',
-            'too_long_fq': self.project_dir + '/' + self.smp_name + '.too_long.fq.gz',
-            'too_long_fq1': self.project_dir + '/' + self.smp_name + '.too_long.1.fq.gz',
-            'too_long_fq2': self.project_dir + '/' + self.smp_name + '.too_long.2.fq.gz',
-            'log': self.project_dir + '/' + self.smp_name + '.cutadapt.log',
-            'stat': self.project_dir + '/' + self.smp_name + '.cutadapt.stat'
+            # 'config_txt': self.config_dir + '/config.txt',
+            # 'config_pickle': self.config_dir + '/config.pickle',
+            # 'config_json': self.config_dir + '/config.json',
+            'config_toml': self.config_dir + '/config.toml',
+            'auto_adapter': project_prefix + '.auto_adapter.csv',
+            'clean_fq': project_prefix + '.fq.gz',
+            'clean_fq1': project_prefix + '_1.fq.gz',
+            'clean_fq2': project_prefix + '_2.fq.gz',
+            'untrim_fq': project_prefix + '.untrim.fq.gz',
+            'untrim_fq1': project_prefix + '.untrim.1.fq.gz',
+            'untrim_fq2': project_prefix + '.untrim.2.fq.gz',
+            'too_short_fq': project_prefix + '.too_short.fq.gz',
+            'too_short_fq1': project_prefix + '.too_short.1.fq.gz',
+            'too_short_fq2': project_prefix + '.too_short.2.fq.gz',
+            'too_long_fq': project_prefix + '.too_long.fq.gz',
+            'too_long_fq1': project_prefix + '.too_long.1.fq.gz',
+            'too_long_fq2': project_prefix + '.too_long.2.fq.gz',
+            'log': project_prefix + '.cutadapt.log',
+            'stat': project_prefix + '.cutadapt.stat'
         }
         self = update_obj(self, default_files, force=True) # key
 
