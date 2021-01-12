@@ -510,6 +510,9 @@ class AlignConfig(object):
         elif isinstance(self.index_list, list):
             pass
         else:
+            self.spikein_index = None # init
+            self.tag_index = None # init
+            self.genome_index = None # init
             ####################
             # index_list       #
             ####################
@@ -534,7 +537,8 @@ class AlignConfig(object):
                         aligner=self.aligner).search(
                         genome=self.spikein, group='genome')
                 else:
-                    self.spikein_index = None
+                    pass
+                    # self.spikein_index = None
 
                 ####################
                 # tag index        #
@@ -550,31 +554,23 @@ class AlignConfig(object):
 
                 if tag and isinstance(self.genome, str):
                     tag_index = AlignIndex(aligner=self.aligner).search(
-                        genome=self.genome,
-                        group=tag)
-                else:
-                    tag_index = None
+                        genome=self.genome, group=tag)
 
                 if AlignIndex(aligner=self.aligner, index=tag_index).is_index():
                     self.tag_index = tag_index
-                else:
-                    self.tag_index = None # blank
 
                 ####################
                 # genome index     #
                 ####################
                 if isinstance(self.genome_index, str):
                     ai = AlignIndex(index=self.genome_index)
-
                     # valid
                     if not ai.is_index():
                         raise ValueError('genome_index failed, {}'.format(
                             self.genome_index))
-
                     # chrsizes
                     if self.genome_size < 1:
                         self.genome_size = ai.index_size()
-
                     if not isinstance(self.genome_size_file, str): 
                         self.genome_size_file = ai.index_size(return_file=True)
 
@@ -582,19 +578,17 @@ class AlignConfig(object):
                     self.genome_index = AlignIndex(
                         aligner=self.aligner).search(
                         genome=self.genome, group='genome')
-
                     self.genome_size_file = Genome(
                         genome=self.genome).get_fasize()
-
                     if self.genome_size < 1:
                         with open(self.genome_size_file, 'rt') as r:
                             s = [i.strip().split('\t')[1] \
                                 for i in r.readlines()]
-     
                         self.genome_size = sum(map(int, s))
                 
                 else:
-                    self.genome_index = None
+                    pass
+                    # self.genome_index = None
 
             # construct all index
             self.index_list = [] # int
