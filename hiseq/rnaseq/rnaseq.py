@@ -86,12 +86,8 @@ from Levenshtein import distance
 import hiseq # for command file
 from hiseq.utils.helper import *
 from hiseq.trim.trimmer import Trim
-# from hiseq.align.alignment import Align, AlignIndex # deprecated
 from hiseq.rnaseq.alignment import Align, AlignIndex
-# from hiseq.rnaseq.rnaseq_builder import RNAseqFqDesign
-# from hiseq.atac.atac_utils import Bam2bw
 from hiseq.atac.atac_utils import *
-# from helper import FeatureCounts
 
 def print_dict(d):
     d = collections.OrderedDict(sorted(d.items()))
@@ -322,9 +318,11 @@ class RNAseqRx(object):
         deseq_stdout = os.path.join(self.deseq_dir, 'deseq.stdout')
         deseq_stderr = os.path.join(self.deseq_dir, 'deseq.stderr')
         cmd_shell = os.path.join(self.deseq_dir, 'cmd.sh')
-        cmd = 'Rscript {} {} 1> {} 2> {}'.format(
+        run_go = 1 if self.genome else 0
+        cmd = 'Rscript {} {} {} 1> {} 2> {}'.format(
             deseqR,
             self.project_dir,
+            run_go,
             deseq_stdout,
             deseq_stderr)
         with open(cmd_shell, 'wt') as w:
@@ -1516,6 +1514,7 @@ class RNAseqRxConfig(object):
             'bw_dir': 'bw_files',
             'count_dir': 'count',
             'deseq_dir': 'deseq',
+            'enrich_dir': 'enrich',
             'qc_dir': 'qc',
             'report_dir': 'report'
         }
@@ -1551,6 +1550,7 @@ class RNAseqRxConfig(object):
             self.bw_dir,
             self.count_dir,
             self.deseq_dir,
+            self.enrich_dir,
             self.qc_dir,
             self.report_dir])
 
@@ -1895,6 +1895,7 @@ class RNAseqR1Config(object):
         self.genome_index = getattr(self, 'genome_index', [])
 
         # check
+        print('!AAAA-1', self.genome_index)
         ai = AlignIndex(index=self.genome_index)
         if not ai.is_index():
             raise ValueError('genome_index failed, {}'.format(
