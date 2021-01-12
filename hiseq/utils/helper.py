@@ -148,7 +148,8 @@ def listdir(path, full_name=True, recursive=False, include_dir=False):
     return sorted(out)
 
 
-def listfile(path='.', pattern='*', full_name=True, recursive=False):
+def listfile(path='.', pattern='*', full_name=True, recursive=False,
+    include_dir=False):
     """
     Search files by the pattern, within directory
     fnmatch.fnmatch()
@@ -168,9 +169,24 @@ def listfile(path='.', pattern='*', full_name=True, recursive=False):
     example:
     listfile('./', '*.fq')
     """
-    fn_list = listdir(path, full_name, recursive, include_dir=False)
+    fn_list = listdir(path, full_name, recursive, include_dir=include_dir)
     fn_list = [f for f in fn_list if fnmatch.fnmatch(os.path.basename(f), pattern)]
     return sorted(fn_list)
+
+
+def list_fx(path, recursive=False):
+    """List the fastq, fasta files
+    *.fq
+    *.fastq
+    *.fa
+    *.fasta
+    """
+    f_list = listfile(path, recursive=recursive)
+    # re for fa/fq files
+    p = re.compile('\.f(ast)?(a|q)(\.gz)?', flags=re.IGNORECASE)
+    fx_list = [i for i in f_list if p.search(i)]
+
+    return fx_list
 
 
 def list_fq_files(path, pattern='*'):
