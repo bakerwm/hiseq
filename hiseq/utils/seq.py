@@ -37,6 +37,14 @@ class Fastx(object):
         self.cat = 'zcat' if input.endswith('.gz') else 'cat'
 
 
+    def is_not_empty(self, x):
+        """Check the file is empty or not
+        plain text: 0
+        gzip.txt: 20
+        """
+        return os.stat(x).st_size > 20
+
+
     def is_fastq(self):
         return self.fx_type(self.input) == 'fastq'
 
@@ -52,37 +60,40 @@ class Fastx(object):
         """
         assert isinstance(fn, str)
 
-        d = {}
-        counter = 0
-        with xopen(fn) as fh:
-            for line in fh:
-                counter += 1
-                if counter > top_n:
-                    break
-                elif counter % 4 == 1: # for 1st line of fastq; and fa
-                    base = line[0] # the first character
-                    if base.lower() in 'acgtn': # sequence line in fasta
+        if self.is_not_empty(fn):
+            d = {}
+            counter = 0
+            with xopen(fn) as fh:
+                for line in fh:
+                    counter += 1
+                    if counter > top_n:
+                        break
+                    elif counter % 4 == 1: # for 1st line of fastq; and fa
+                        base = line[0] # the first character
+                        if base.lower() in 'acgtn': # sequence line in fasta
+                            continue
+                        d[base] = d.get(base, 0) + 1
+                    else:
                         continue
-                    d[base] = d.get(base, 0) + 1
-                else:
-                    continue
 
-        ## percentage
-        x = sorted(d.items(), key=lambda kv:kv[1], reverse=True)
-        ## the top1 character
-        x_top1 = x[0][0]
-        x_top1_pct = x[0][1] / sum(d.values())
+            ## percentage
+            x = sorted(d.items(), key=lambda kv:kv[1], reverse=True)
+            ## the top1 character
+            x_top1 = x[0][0]
+            x_top1_pct = x[0][1] / sum(d.values())
 
-        ## check
-        if x_top1 == '@':
-            fx_type = 'fastq'
-        elif x_top1 == '>':
-            fx_type = 'fasta'
+            ## check
+            if x_top1 == '@':
+                fx_type = 'fastq'
+            elif x_top1 == '>':
+                fx_type = 'fasta'
+            else:
+                fx_type = None
+
+            ## if top1_pct < 90%
+            if x_top1_pct < 0.9:
+                fx_type = None
         else:
-            fx_type = None
-
-        ## if top1_pct < 90%
-        if x_top1_pct < 0.9:
             fx_type = None
 
         return fx_type

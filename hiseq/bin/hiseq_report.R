@@ -17,6 +17,13 @@ if (length(args) < 2){
 indir   <- args[1]
 outdir  <- args[2]
 
+library(hiseqr)
+library(dplyr)
+library(ggplot2)
+library(ggthemes)
+library(ggrepel)
+library(patchwork)
+
 hiseqr::hiseq_report(indir, outdir)
 
 ## EOF

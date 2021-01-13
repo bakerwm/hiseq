@@ -12,14 +12,17 @@ import sys
 import re
 import gzip
 import shutil
-import json
 import signal
+import json
+import yaml
+import toml
 import pickle
 import fnmatch
 import tempfile
 import logging
 import functools
 import subprocess
+import collections
 import numpy
 import pysam
 import pybedtools
@@ -53,14 +56,12 @@ def index_checker(seq_list, mm=0):
 
     return tag == 0
 
-
-
-
 logging.basicConfig(
     format='[%(asctime)s %(levelname)s] %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
     stream=sys.stdout)
 log = logging.getLogger(__name__)
+log.setLevel('INFO')
 
 
 # Decorator:
@@ -91,6 +92,41 @@ class Logger(object):
         return decorated
 
 
+
+def check_fq(fq):
+    """
+    Make sure
+    fq: str or list, or None
+    """
+    if fq is None:
+        # raise ValueError('fq1 required, got None')
+        pass
+    elif isinstance(fq, list):
+        fq = file_abspath(fq)
+    elif isinstance(fq, str):
+        fq = [file_abspath(fq)]
+    else:
+        log.error('fq failed, Nont, str, list expected, got {}'.format(type(fq).__name__))
+
+    return fq
+
+
+def fq_paired(fq1, fq2):
+    """
+    Make sure fq1 and fq2, proper paired, by name: R1, R2
+    """
+    fq1 = check_fq(fq1)
+    fq2 = check_fq(fq2)
+
+    if isinstance(fq1, str) and isinstance(fq2, str):
+        return distance(fq1, fq2) == 1
+    elif isinstance(fq1, list) and isinstance(fq2, list):
+        return [distance(i, j) == 1 for i, j in zip(fq1, fq2)]
+    else:
+        log.warning('fq not paired: {}, {}'.format(fq1, fq2))
+        return False
+
+
 ## 1. files and path ##
 def listdir(path, full_name=True, recursive=False, include_dir=False):
     """
@@ -112,7 +148,8 @@ def listdir(path, full_name=True, recursive=False, include_dir=False):
     return sorted(out)
 
 
-def listfile(path='.', pattern='*', full_name=True, recursive=False):
+def listfile(path='.', pattern='*', full_name=True, recursive=False,
+    include_dir=False):
     """
     Search files by the pattern, within directory
     fnmatch.fnmatch()
@@ -132,9 +169,24 @@ def listfile(path='.', pattern='*', full_name=True, recursive=False):
     example:
     listfile('./', '*.fq')
     """
-    fn_list = listdir(path, full_name, recursive, include_dir=False)
+    fn_list = listdir(path, full_name, recursive, include_dir=include_dir)
     fn_list = [f for f in fn_list if fnmatch.fnmatch(os.path.basename(f), pattern)]
     return sorted(fn_list)
+
+
+def list_fx(path, recursive=False):
+    """List the fastq, fasta files
+    *.fq
+    *.fastq
+    *.fa
+    *.fasta
+    """
+    f_list = listfile(path, recursive=recursive)
+    # re for fa/fq files
+    p = re.compile('\.f(ast)?(a|q)(\.gz)?', flags=re.IGNORECASE)
+    fx_list = [i for i in f_list if p.search(i)]
+
+    return fx_list
 
 
 def list_fq_files(path, pattern='*'):
@@ -222,27 +274,6 @@ def file_prefix(fn, with_path=False):
     if not with_path:
         p1 = os.path.basename(p1)
     return [p1, px]
-
-
-def symlink(src, dest, absolute_path=True):
-    """
-    Create symlinks within output dir
-    ../src
-    """
-    if src is None or dest is None:
-        log.warning('symlink skipped: {}, to: {}'.format(src, dest))
-    elif file_exists(dest):
-        log.warning('symlink skipped, target exists...'.format(dest))
-    else:
-        if absolute_path:
-            # support: ~, $HOME,
-            srcname = os.path.abspath(os.path.expanduser(os.path.expandvars(src)))
-        else:
-            # only for directories within the same folder
-            srcname = os.path.join('..', os.path.basename(src))
-
-        if not os.path.exists(dest):
-            os.symlink(srcname, dest)
 
 
 def check_file(x, show_log=False, emptycheck=False):
@@ -401,22 +432,30 @@ def file_symlink(src, dest, absolute_path=False):
         src = os.path.abspath(os.path.expanduser(os.path.expandvars(src)))
         dest = os.path.abspath(os.path.expanduser(os.path.expandvars(dest)))
 
-        # target exists
-        if os.path.exists(dest):
-            log.info('symlink() skipped, dest exists: {}'.format(dest))
-        elif os.path.isdir(src):
-            if absolute_path:
-                os.symlink(src, dest)
+        if os.path.isdir(src):
+            # target exists
+            if os.path.exists(dest):
+                log.info('symlink() skipped, dest exists: {}'.format(dest))
             else:
-                rel_src = os.path.relpath(src, dest)
-                os.symlink(rel_src, dest)
+                if absolute_path:
+                    os.symlink(src, dest)
+                else:
+                    rel_src = os.path.relpath(src, dest)
+                    os.symlink(rel_src, dest)
 
-        elif os.path.isfile(src):  
+        elif os.path.isfile(src):
             src_filename = os.path.basename(src)
             src_dirname = os.path.dirname(src)
-            dest_dirname = os.path.dirname(dest)
 
-            if absolute_path:
+            if os.path.isdir(dest):
+                dest_dirname = dest
+                dest = os.path.join(dest_dirname, src_filename)
+            else:
+                dest_dirname = os.path.dirname(dest)
+
+            if os.path.exists(dest):
+                log.info('symlink() skipped, dest exists: {}'.format(dest))
+            elif absolute_path:
                 os.symlink(src, dest)
             else:
                 rel_src_dirname = os.path.relpath(src_dirname, dest_dirname)
@@ -444,14 +483,20 @@ def file_remove(x, ask=True):
             undel_list.append(x)
     elif isinstance(x, list):
         for f in x:
-            if os.path.isfile(f) and file_exists(x):
-                del_list.append(f)
+            if isinstance(f, str):
+                if os.path.isfile(f) and file_exists(f):
+                    del_list.append(f)
+                else:
+                    undel_list.append(f)
             else:
                 undel_list.append(f)
     elif isinstance(x, dict):
         for f in list(x.values()):
-            if os.path.isfile(f) and file_exists(x):
-                del_list.append(f)
+            if isinstance(f, str):
+                if os.path.isfile(f) and file_exists(f):
+                    del_list.append(f)
+                else:
+                    undel_list.append(f)
             else:
                 undel_list.append(f)
     else:
@@ -486,18 +531,21 @@ def file_copy(src, dest, force=False):
     if src is None:
         log.error('file_copy() skipped, src is NoneType')
     elif os.path.isfile(src):
-        if os.path.isdir(dest):
-            dest_file = os.path.join(dest, os.path.basename(src))
-            shutil.copy(src, dest_file)
-        elif os.path.isfile(dest):
-            if force:
+        if isinstance(dest, str):
+            if os.path.isdir(dest):
+                dest_file = os.path.join(dest, os.path.basename(src))
+                shutil.copy(src, dest_file)
+            elif os.path.isfile(dest):
+                if force:
+                    shutil.copy(src, dest)
+                else:
+                    log.warning('file_copy() skipped, dest exists: {}'.format(dest))
+            elif os.path.exists(os.path.dirname(dest)):
                 shutil.copy(src, dest)
             else:
-                log.error('file_copy() skipped, dest exists: {}'.format(dest))
-        elif os.path.exists(os.path.dirname(dest)):
-            shutil.copy(src, dest)
-        else:
-            log.error('file_copy() skipped, dest is not file or dir')
+                log.error('file_copy() skipped, dest is not file or dir')
+    else:
+        log.error('file_copy() skipped, src is not file')
 
 
 def path_remove(x, ask=True):
@@ -782,9 +830,273 @@ def sam_flag_check(query, subject):
     return flag
 
 
-
 ################################################################################
 ## functions for pipeline
+class Toml(object):
+    """
+    Processing TOML files
+
+    {toml, yaml, json, pickle} -> {dict} -> {toml, yaml, json, pickle}
+
+    guess input format
+
+    Known issue:
+    1. do not support Date and time 
+    2. do not support non{str, list} in to_text() 
+    3. 
+
+    !!!! Do not support Date and time in TOML format
+    """
+    def __init__(self, x=None, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.x = x
+
+        if x is None:
+            # self.x_dict = {}
+            pass
+        else:
+            x_fmt = self.guess_fmt(x)
+            if x_fmt:
+                if x_fmt == 'dict':
+                    self.x_dict = collections.OrderedDict(sorted(x.items()))
+                elif x_fmt == 'JSON':
+                    self.x_dict = self.from_json(x)
+                elif x_fmt == 'YAML':
+                    self.x_dict = self.from_yam(x)
+                elif x_fmt == 'TOML':
+                    self.x_dict = self.from_toml(x)
+                elif x_fmt == 'pickle':
+                    self.x_dict = self.from_pickle(x)
+                else:
+                    self.x_dict = {} # empty
+            else:
+                raise ValueError('x, str or dict expected, got {}'.format(
+                    type(x).__name__))
+
+
+    def guess_fmt(self, x):
+        """
+        Guess the format of input x
+    
+        file format:
+        - yaml
+        - json
+        - pickle
+
+        data format:
+        - dict
+        """
+        # supported
+        fmt = {
+            'json': 'JSON',
+            'yaml': 'YAML',
+            'yml': "YAML",
+            'toml': 'TOML',
+            'pickle': 'pickle'
+        }
+
+        if isinstance(x, str):
+            x_ext = os.path.splitext(x)[1]
+            x_ext = x_ext.lstrip('.').lower()
+            x_fmt = fmt.get(x_ext, None)
+
+        elif isinstance(x, dict):
+            x_fmt = 'dict'
+
+        else:
+            x_fmt = None
+
+        return x_fmt
+
+
+    def _tmp(self, suffix='.txt'):
+        """
+        Create a tmp file to save json object
+        """
+        tmp = tempfile.NamedTemporaryFile(prefix='tmp', suffix=suffix,
+            delete=False)
+        return tmp.name
+
+
+    def to_json(self, x):
+        """
+        Save dict to file in Json format
+        """
+        x = file_abspath(x) # convert to absolute path
+        if isinstance(self.x_dict, dict):
+            if isinstance(x, str):
+                if file_exists(os.path.dirname(x), isfile=False):
+                    with open(x, 'wt') as w:
+                        json.dump(self.x_dict, w, indent=4, sort_keys=True)
+
+                    return x
+                else:
+                    log.warning('to_json() failed, could not write to file: \
+                        {}'.format(x))
+            else: 
+                log.warning('to_json() failed, x, str expected, got {}'.format(
+                    type(x).__name__))
+        else:
+            log.warning('Expect input for Toml(x=)')
+
+
+    def from_json(self, x):
+        """
+        Parsing data from JSON file
+        """
+        try:
+            with open(x, 'r') as r:
+                if os.path.getsize(x) > 0:
+                    d = json.load(r)
+                    return collections.OrderedDict(sorted(d.items()))
+        except:
+            log.warning('from_json() failed')
+
+
+    def to_dict(self):
+        """
+        Convert file to dict
+        """
+        if isinstance(self.x_dict, dict):
+            return self.x_dict
+        else:
+            log.warning('Expect input for Toml(x=)')
+
+
+    def from_dict(self, x):
+        """
+        Parsing data from dict
+        """
+        return collections.OrderedDict(sorted(x.items())) \
+            if isinstance(x, dict) else None
+
+
+    def to_yaml(self, x):
+        """
+        Saving data to file in YAML format
+        """
+        x = file_abspath(x) # convert to absolute path
+        if isinstance(self.x_dict, dict):
+            if isinstance(x, str):
+                if file_exists(os.path.dirname(x), isfile=False):
+                    with open(x, 'wt') as w:
+                        json.dump(self.x_dict, w, indent=4, sort_keys=True)
+
+                    return x
+                else:
+                    log.warning('to_yaml() failed, could not write to file: \
+                        {}'.format(x))
+            else: 
+                log.warning('to_yaml() failed, x, str expected, got {}'.format(
+                    type(x).__name__))
+        else:
+            log.warning('Expect input for Toml(x=)')
+        
+
+    def from_yaml(self, x):
+        """
+        Parsing data from YAML file
+        """
+        with open(x, 'r') as r:
+            try:
+                d = yaml.safe_load(r)
+                return collections.OrderedDict(sorted(d.items()))
+            except yaml.YAMLError as exc:
+                log.warning(exc)
+
+
+    def to_toml(self, x):
+        """
+        Saving config to TOML file
+        """
+        x = file_abspath(x) # convert to absolute path
+        if isinstance(self.x_dict, dict):
+            if isinstance(x, str):
+                if file_exists(os.path.dirname(x), isfile=False):
+                    with open(x, 'w') as w:
+                        x_new = toml.dump(self.x_dict, w)
+
+                    return x
+                else:
+                    log.warning('to_toml() failed, could not write to file: \
+                        {}'.format(x))
+            else: 
+                log.warning('to_toml() failed, x, str expected, got {}'.format(
+                    type(x).__name__))
+        else:
+            log.warning('Expect input for Toml(x=)')
+
+
+    def from_toml(self, x):
+        """
+        Parsing TOML file
+        """
+        try:
+            d = toml.load(x)
+            return collections.OrderedDict(sorted(d.items()))
+        except:
+            log.warning('failed to parsing file: {}'.format(x))
+
+
+    def from_pickle(self, x):
+        """
+        Parsing data from pickle file
+        """
+        try:
+            with open(x, 'rb') as r:
+                d = pickle.load(r)
+                return collections.OrderedDict(sorted(d.items()))
+        except:
+            log.warning('failed to parsing file: {}'.format(x))
+
+
+    def to_pickle(self, x):
+        """
+        Saving data to pickle file
+        """
+        x = file_abspath(x) # convert to absolute path
+        if isinstance(self.x_dict, dict):
+            if isinstance(x, str):
+                if file_exists(os.path.dirname(x), isfile=False):
+                    with open(x, 'wb') as w:
+                        pickle.dump(self.x_dict, w, 
+                                    protocol=pickle.HIGHEST_PROTOCOL)
+
+                    return x
+                else:
+                    log.warning('to_pickle() failed, could not write to file: \
+                        {}'.format(x))
+            else: 
+                log.warning('to_pickle() failed, x, str expected, got {}'.format(
+                    type(x).__name__))
+        else:
+            log.warning('Expect input for Toml(x=)')
+
+
+    def to_text(self, x):
+        """
+        Saving dict in text format
+        """
+        x = file_abspath(x) # convert to absolute path
+        if isinstance(self.x_dict, dict):
+            if isinstance(x, str):
+                if file_exists(os.path.dirname(x), isfile=False):
+                    msg = '\n'.join([
+                        '{:30s} | {:<40s}'.format(k, str(v)) for k, v in self.x_dict.items()
+                        ])
+                    with open(x, 'wt') as w:
+                        w.write(msg + '\n')
+
+                    return x
+                else:
+                    log.warning('to_text() failed, could not write to file: \
+                        {}'.format(x))
+            else: 
+                log.warning('to_text() failed, x, str expected, got {}'.format(
+                    type(x).__name__))
+        else:
+            log.warning('Expect input for Toml(x=)')
+
 
 def in_dict(d, k):
     """
@@ -1072,73 +1384,6 @@ class Json(object):
             log.warning('failed saving file: {}'.format(json_file_out))
 
         return json_file_out
-
-
-
-# class Json(object):
-
-#     def __init__(self, x):
-#         """
-#         x
-#           - dict, save to file
-#           - json, save to file
-#           - file, read as dict
-#         Save dict to json file
-#         Read from json file as dict
-#         ...
-#         """
-#         self.x = x # input
-
-#         if isinstance(x, Json):
-#             self.dict = x.dict
-#         elif isinstance(x, dict):
-#             # input a dict,
-#             # save to file
-#             self.dict = x
-#         elif os.path.exists(x):
-#             # a file saving json content
-#             self.dict = self.reader()
-#         else:
-#             raise Exception('unknown objec: {}'.format(x))
-
-#     def _tmp(self):
-#         """
-#         Create a tmp file to save json object
-#         """
-#         tmp = tempfile.NamedTemporaryFile(prefix='tmp', suffix='.json',
-#             delete=False)
-#         return tmp.name
-
-
-#     def reader(self):
-#         """
-#         Read json file as dict
-#         """
-#         if os.path.getsize(self.x) > 0:
-#             with open(self.x) as r:
-#                 d = json.load(r)
-#         else:
-#             d = {}
-
-#         return d
-
-
-#     def writer(self, f=None):
-#         """
-#         Write d (dict) to file x, in json format
-#         """
-#         # save to file
-#         if f is None:
-#             f = self._tmp()
-
-#         assert isinstance(f, str)
-#         # assert os.path.isfile(f)
-
-#         if isinstance(self.x, dict):
-#             with open(f, 'wt') as w:
-#                 json.dump(self.x, w, indent=4, sort_keys=True)
-
-#         return f
 
 
 class Genome(object):
@@ -1439,7 +1684,7 @@ class Bam(object):
         """
         if subdir is None:
             subdir = self._tmp(delete=False)
-        check_path(self.subdir)
+        check_path(subdir)
 
         # src, dest
         dest = os.path.join(subdir, os.path.basename(self.bam))
@@ -1696,219 +1941,8 @@ class Bam(object):
     ## code from cgat: END
     ##########################################
 
-
-# ## for index
-# ## to-do
-# ##   - build index (not recommended)
-# ##
-# class AlignIndex(object):
-
-#     def __init__(self, aligner='bowtie', index=None, **kwargs):
-#         """
-#         Required args:
-#           - aligner
-#           - index (optional)
-#           - genome
-#           - group : genome, rRNA, transposon, piRNA_cluster, ...
-#           - genome_path
-#         """
-#         ## init
-#         # args = args_init(kwargs, align=True) # init
-#         # args = ArgumentsInit(kwargs, align=True)
-#         self.args = ArgumentsInit(kwargs, trim=True).dict.__dict__
-#         self.args.pop('args_input', None)
-#         self.args.pop('cmd_input', None)
-#         self.args.pop('dict', None)
-
-#         self.aligner = aligner
-
-#         if isinstance(index, str):
-#             # index given
-#             self.index = index.rstrip('/') #
-#             self.name = self.get_name()
-#             self.aligner_supported = self.get_aligner() # all
-#             self.check = index if self.is_index() else None
-#         else:
-#             # index not defined, search required
-#             # log.warning('index=, not defined; .search() required')
-#             pass
-
-#         # self.kwargs = args
-
-
-#     def get_aligner(self, index=None):
-#         """
-#         Search the available index for aligner:
-#         bowtie, [*.[1234].ebwt,  *.rev.[12].ebwt]
-#         bowtie2, [*.[1234].bt2, *.rev.[12].bt2]
-#         STAR,
-#         bwa,
-#         hisat2,
-#         """
-#         if index is None:
-#             index = self.index
-
-#         bowtie_files = [index + i for i in [
-#             '.1.ebwt',
-#             '.2.ebwt',
-#             '.3.ebwt',
-#             '.4.ebwt',
-#             '.rev.1.ebwt',
-#             '.rev.2.ebwt']]
-
-#         bowtie2_files = [index + i for i in [
-#             '.1.bt2',
-#             '.2.bt2',
-#             '.3.bt2',
-#             '.4.bt2',
-#             '.rev.1.bt2',
-#             '.rev.2.bt2']]
-
-#         hisat2_files = ['{}.{}.ht2'.format(index, i) for i in range(1, 9)]
-
-
-#         bwa_files = [index + i for i in [
-#             '.sa',
-#             '.amb',
-#             '.ann',
-#             '.pac',
-#             '.bwt']]
-
-#         STAR_files = [os.path.join(index, i) for i in [
-#             'SAindex',
-#             'Genome',
-#             'SA',
-#             'chrLength.txt',
-#             'chrNameLength.txt',
-#             'chrName.txt',
-#             'chrStart.txt',
-#             'genomeParameters.txt']]
-
-#         ## check exists
-#         bowtie_chk = [os.path.exists(i) for i in bowtie_files]
-#         bowtie2_chk = [os.path.exists(i) for i in bowtie2_files]
-#         hisat2_chk = [os.path.exists(i) for i in hisat2_files]
-#         bwa_chk = [os.path.exists(i) for i in bwa_files]
-#         STAR_chk = [os.path.exists(i) for i in STAR_files]
-
-#         ## check file exists
-#         aligner = []
-
-#         if all(bowtie_chk):
-#             aligner.append('bowtie')
-#         elif all(bowtie2_chk):
-#             aligner.append('bowtie2')
-#         elif all(hisat2_chk):
-#             aligner.append('hisat2')
-#         elif all(bwa_chk):
-#             aligner.append('bwa')
-#         elif all(STAR_chk):
-#             aligner.append('STAR')
-#         else:
-#             pass
-
-#         return aligner
-
-
-#     def is_index(self, index=None):
-#         """
-#         Check if index support for aligner
-#         """
-#         if index is None:
-#             index = self.index
-#         return self.aligner in self.get_aligner(index)
-
-#         # return self.aligner in self.aligner_supported if
-#         #    index is None else self.aligner in self.get_aligner(index)
-
-
-#     def get_name(self, index=None):
-#         """
-#         Get the name of index
-#         basename: bowtie, bowtie2, hisqt2, bwa
-#         folder: STAR
-#         """
-#         if index is None:
-#             index = self.index
-#         if os.path.isdir(index):
-#             # STAR
-#             iname = os.path.basename(index)
-#             # iname = os.path.basename(os.path.dirname(index))
-#         elif os.path.basename(index) == 'genome':
-#             # ~/data/genome/dm3/bowtie2_index/genome
-#             # bowtie, bowtie2, bwa, hisat2
-#             # iname = os.path.basename(index)
-#             iname = os.path.basename(os.path.dirname(os.path.dirname(index)))
-#         else:
-#             iname = os.path.basename(index)
-
-#         return iname
-
-
-#     def search(self, genome=None, group='genome'):
-#         """
-#         Search the index for aligner: STAR, bowtie, bowtie2, bwa, hisat2
-#         para:
-
-#         *genome*    The ucsc name of the genome, dm3, dm6, mm9, mm10, hg19, hg38, ...
-#         *group*      Choose from: genome, rRNA, transposon, piRNA_cluster, ...
-
-#         structure of genome_path:
-#         default: {HOME}/data/genome/{genome_version}/{aligner}/
-
-#         path-to-genome/
-#             |- Bowtie_index /
-#                 |- genome
-#                 |- rRNA
-#                 |- MT_trRNA
-#             |- transposon
-#             |- piRNA cluster
-
-#         """
-#         args = self.args.copy()
-
-#         g_path = args.get('genome_path', './')
-#         i_prefix = os.path.join(g_path, genome, self.aligner + '_index')
-
-#         # all index
-#         d = {
-#             'genome': [
-#                 os.path.join(i_prefix, 'genome'),
-#                 os.path.join(i_prefix, genome)],
-#             'genome_rm': [
-#                 os.path.join(i_prefix, 'genome_rm'),
-#                 os.path.join(i_prefix, genome + '_rm')],
-#             'MT_trRNA': [
-#                 os.path.join(i_prefix, 'MT_trRNA')],
-#             'rRNA': [
-#                 os.path.join(i_prefix, 'rRNA')],
-#             'chrM': [
-#                 os.path.join(i_prefix, 'chrM')],
-#             'structural_RNA': [
-#                 os.path.join(i_prefix, 'structural_RNA')],
-#             'te': [
-#                 os.path.join(i_prefix, 'transposon')],
-#             'piRNA_cluster': [
-#                 os.path.join(i_prefix, 'piRNA_cluster')],
-#             'miRNA': [
-#                 os.path.join(i_prefix, 'miRNA')],
-#             'miRNA_hairpin': [
-#                 os.path.join(i_prefix, 'miRNA_hairpin')]}
-
-#         # hit
-#         i_list = d.get(group, ['temp_temp'])
-#         i_list = [i for i in i_list if self.is_index(i)]
-
-#         return i_list[0] if len(i_list) > 0 else None
-
-
-################################################################################
-## functions
-
-
 ################################################################################
 ## TEMP
-
 def featureCounts_reader(x, bam_names=False):
     """
     Read fc .txt as data.frame
@@ -1978,8 +2012,7 @@ class FeatureCounts(object):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
         self.init_files()
-        args_checker(self.__dict__, self.config_pickle)
-        args_logger(self.__dict__, self.config_txt)
+        Toml(self.__dict__).to_toml(self.config_toml)
 
 
     def init_args(self):
@@ -2036,9 +2069,10 @@ class FeatureCounts(object):
         self.config_dir = os.path.join(self.outdir, 'config')
 
         default_files = {
-            'config_txt': self.config_dir + '/config.txt',
-            'config_pickle': self.config_dir + '/config.pickle',
-            'config_json': self.config_dir + '/config.json',
+            # 'config_txt': self.config_dir + '/config.txt',
+            # 'config_pickle': self.config_dir + '/config.pickle',
+            # 'config_json': self.config_dir + '/config.json',
+            'config_toml': self.config_dir + '/config.toml',
             'count_txt': self.outdir + '/' + self.prefix,
             'summary': self.outdir + '/' + self.prefix + '.summary',
             'log': self.outdir + '/' + self.prefix + '.featureCounts.log',
@@ -2138,6 +2172,7 @@ class FeatureCounts(object):
         """
         return ' '.join([
             '{}'.format(shutil.which('featureCounts')),
+            '-s {}'.format(self.strandness),
             self.get_arg_gtf(),
             self.get_arg_pe(),
             '-o {}'.format(self.count_txt),
@@ -2160,21 +2195,23 @@ class FeatureCounts(object):
             assign_pct = assign / total
             assign_pct = assign_pct.round(decimals=4)
             assign_df = assign_pct.to_frame('assigned')
+            assign_df['strandness'] = self.strandness
             # save to json
             assign_df.to_csv(self.stat, sep='\t', index=True, header=False)
             assign_df.to_json(self.stat)
+
             # mimimal value
             assign_min = assign_pct.min()
-            if assign_min < 50:
+            if assign_min < 0.50:
                 log.warning('Caution: -s {}, {:.2f}% assigned, see {}'.format(
                     self.strandness, assign_min, self.summary))
             print(assign_df)
         except:
             log.warning('reading file failed: {}'.format(self.summary))
-            total, assign_pct, assign_df = [1, 0, None]
+            total, assign, assign_pct = [1, 0, 0]
 
         df = pd.DataFrame([total, assign, assign_pct]).T
-        df.columns = ['total', 'map', 'FRiP']
+        df.columns = ['total', 'map', 'pct']
         return df
 
 
@@ -2185,8 +2222,8 @@ class FeatureCounts(object):
         cmd = self.get_cmd()
 
         # save cmd
-        cmd_txt = os.path.join(self.outdir, 'cmd.sh')
-        with open(cmd_txt, 'wt') as w:
+        cmd_shell = os.path.join(self.outdir, self.prefix +'.cmd.sh')
+        with open(cmd_shell, 'wt') as w:
             w.write(cmd + '\n')
 
         if file_exists(self.count_txt) and not self.overwrite:
@@ -2195,7 +2232,30 @@ class FeatureCounts(object):
         else:
             try:
                 run_shell_cmd(cmd)
-                self.wrap_log()
             except:
                 log.error('FeatureCounts() failed, see: {}'.format(self.log))
+
+        return self.wrap_log()
+
+
+
+def symlink(src, dest, absolute_path=True):
+    """
+    Create symlinks within output dir
+    ../src
+    """
+    if src is None or dest is None:
+        log.warning('symlink skipped: {}, to: {}'.format(src, dest))
+    elif file_exists(dest):
+        log.warning('symlink skipped, target exists...'.format(dest))
+    else:
+        if absolute_path:
+            # support: ~, $HOME,
+            srcname = os.path.abspath(os.path.expanduser(os.path.expandvars(src)))
+        else:
+            # only for directories within the same folder
+            srcname = os.path.join('..', os.path.basename(src))
+
+        if not os.path.exists(dest):
+            os.symlink(srcname, dest)
 

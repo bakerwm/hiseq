@@ -16,18 +16,19 @@ import sys
 import signal
 import time
 import yaml
+import logging
 import trackhub
 from urllib.request import urlopen
 from bs4 import BeautifulSoup
-from hiseq.utils.helper import * 
+from hiseq.utils.helper import *
 
 
-logging.basicConfig(
-    format='[%(asctime)s %(levelname)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    stream=sys.stdout)
-log = logging.getLogger(__name__)
-log.setLevel('INFO')
+# logging.basicConfig(
+#     format='[%(asctime)s %(levelname)s] %(message)s',
+#     datefmt='%Y-%m-%d %H:%M:%S',
+#     stream=sys.stdout)
+# log = logging.getLogger(__name__)
+# log.setLevel('INFO')
 
 ## run
 def get_ticks():
@@ -99,7 +100,6 @@ def dict2yaml(d, s):
         A dict saving objects 
     s : str
         path to a file, will saving the dict as YAML format
-
     
     dimX:
         name: stage,
@@ -134,7 +134,6 @@ def dict2yaml(d, s):
             }
         }
     }
-
     """
     with open(s, 'w') as w:
         try:
@@ -183,7 +182,6 @@ def yaml2dict(s):
             }
         }
     }
-
     """
     with open(s, 'r') as r:
         try:
@@ -200,7 +198,7 @@ def yaml2dict(s):
 # 2. According to TrackFile, add signal_view or region_view, or both
 #
 # 3. Create, Init compositeTrack, based on subgroups
-#
+
 
 ################################################################################
 ## functions for Track Hub ##
@@ -521,7 +519,6 @@ class HttpServer(object):
     is hosting httpd service.
 
     # to-do
-    #
     # 1. support ftp server (local, remote)
     # 2. support http server (remote)
     # require, server_ip, username, password, root_dir, ...
@@ -785,8 +782,6 @@ class TrackFile(object):
     label_rm_list : list
         A list of strings, remove from the 'short_label', to make sure the 
         length of short label less than 17 characters. default: []
-
-
     """
     def __init__(self, s, **kwargs):
         """
@@ -797,7 +792,6 @@ class TrackFile(object):
         s : str
             path to a file
         """
-
         for k, v in kwargs.items():
             if not hasattr(self, k):
                 setattr(self, k, v)
@@ -819,7 +813,6 @@ class TrackFile(object):
         self.subgroups = getattr(self, 'subgroups', {}) # pass groups
         self.colorDim = getattr(self, 'colorDim', 'dimX') # assign colors
         self.label_rm_list = getattr(self, 'label_rm_list',  []) # rm
-
         self.colorPal = 1 # color palette, option: 1, 2, 3
         self.fname, self.fext = os.path.splitext(os.path.basename(self.s))
         self.fname = self.sanitize(self.fname)
@@ -1243,7 +1236,6 @@ class TrackHubConfig(object):
         args_init = {
             'config': None, # yaml, for global args
             'data_dir': None,
-            'subgroups_yaml': 'subgroups.yaml', # name of subgroups
             'remote_dir': None,
             'hub_name': None,
             'genome': None,
@@ -1266,7 +1258,7 @@ class TrackHubConfig(object):
         }
         self = update_obj(self, args_init, force=False)
 
-        # update from config
+        # update from config # !!!! loading args from config.yaml
         if file_exists(self.config):
             args_config = yaml2dict(self.config)
             self = update_obj(self, args_config, force=True)
@@ -1336,35 +1328,44 @@ class TrackHubConfig(object):
         Support only 2-level directory structure:
         """
         # 1st-level: data_dir
-        g_lv1 = self.parse_group_files(s=self.data_dir, grp='subgroups.yaml', 
+        subgrp_yaml = os.path.join(self.data_dir, 'subgroups.yaml')
+        g_lv1 = self.parse_group_files(data_dir=self.data_dir, 
             grp_name=self.hub_name)
 
-        # 2nd-level: data_dir/subdir
-        d_lv1 = [i for i in listdir(self.data_dir, 
-            include_dir=True) if os.path.isdir(i)]
-        g_lv2 = [self.parse_group_files(s=d, 
-            grp=self.subgroups_yaml) for d in d_lv1]
-
+        d_grp = {}
         # level-1: subgroups in data_dir
         if g_lv1:
             d_grp = {self.hub_name: g_lv1}
-        # level-2: multiple subgroups in data_dir/dirs
-        elif g_lv2:
-            d_grp = {i['name']:i for i in g_lv2}
         else:
-            raise ValueError('track_files failed, require [bigWig] files and \
-                [{}] in : {}'.format(self.subgroups_yaml, self.data_dir))
+        # 2nd-level: data_dir/subdir
+            d_lv1 = [i for i in listdir(self.data_dir, include_dir=True) 
+                if os.path.isdir(i)]
+            if len(d_lv1) > 0:
+                g_lv2 = [self.parse_group_files(data_dir=d) for d in d_lv1]
+                g_lv2 = [i for i in g_lv2 if not i is None] # remove None
+                if len(g_lv2) > 0:
+                    d_grp = {i['name']:i for i in g_lv2}
+        # check
+        if len(d_grp) == 0:
+            msg = '\n'.join([
+                'bigWig files or subgroups.yaml not found.',
+                'Check files in: [{}]'.format(self.data_dir)
+            ])
+            log.error(msg)
+            sys.exit(1)
+            raise ValueError('bigWig files and subgroups.yaml not found: \
+                check directory {}'.format(self.data_dir))
 
         self.subgroups_list = d_grp
 
 
-    def parse_group_files(self, s, grp='subgroups.yaml', grp_name=None):
-        """if 'subgroups.yaml' exists in the dir,
+    def parse_group_files(self, data_dir, grp_name=None):
+        """Make sure 'subgroups.yaml' exists in the dir, "s/"
 
         Parameter:
         ----------
         s : str
-            The directory to check
+            The directory with bw/bg files
 
         grp : str
             A YAML file, specify the subgroups for the track files in the dir
@@ -1379,40 +1380,56 @@ class TrackHubConfig(object):
 
         return: None
 
+        Directory structure:
+        |- data_dir
+        |   |- subgroups.yaml
+        |   |- bw_files/
+        |   |- bb_files/
+
         # if bw_files, subgroups.yaml exists
         """
         d_grp = None
         # init_dir
-        if isinstance(s, str):
-            if os.path.isdir(s):
-                # for level-1
-                f_lv1 = [i for i in listdir(s) if TrackFile(i).is_track_file()]
-                d_lv1 = [i for i in listdir(s, include_dir=True) if os.path.isdir(i)]
+        if isinstance(data_dir, str):
+            if os.path.isdir(data_dir):
+                if not isinstance(grp_name, str):
+                    grp_name = os.path.basename(data_dir)
+                subgrp_lv1 = os.path.join(data_dir, 'subgroups.yaml')
+                if file_exists(subgrp_lv1):
+                    # files: level=1
+                    f_lv1 = [i for i in listdir(data_dir)
+                        if TrackFile(i).is_track_file()]
 
-                # for level-2
-                f_lv2 = []
-                for d in d_lv1:
-                    f_lv2.extend([i for i in listdir(d) if TrackFile(i).is_track_file()])
+                    # files: level=2
+                    d_lv1 = [i for i in listdir(data_dir, include_dir=True) 
+                        if os.path.isdir(i)]
+                    f_lv2 = [] # empty
+                    if len(d_lv1) > 0:
+                        [f_lv2.extend([i for i in listdir(d) 
+                            if TrackFile(i).is_track_file()]) for d in d_lv1]
+                    f_lv1.extend(f_lv2)
 
-                # all files
-                f_lv1.extend(f_lv2)
-
-
-                # subgroups file
-                f_grp = os.path.join(s, grp)
-
-                # name of grp
-                if grp_name is None:
-                    grp_name = os.path.basename(s)
-
-                # output
-                if file_exists(f_grp):
+                    # output
                     d_grp = {
                         'name': grp_name,     
-                        'subgroups': f_grp,
+                        'subgroups': subgrp_lv1,
                         'bw_files': [i for i in f_lv1 if TrackFile(i).is_bw()],
                         'bb_files': [i for i in f_lv1 if TrackFile(i).is_bb()]
                     }
+
+                    # check
+                    if len(d_grp.get('bw_files')) == 0:
+                        log.warning('bigWig files not found: {}'.format(
+                            data_dir))
+                        d_grp = None
+                else:
+                    log.warning('required file missing: {}'.format(subgrp_lv1))
+            else:
+                log.warning('not a directory: data_dir={}'.format(data_dir))
+        else:
+            log.warning('data_dir expect str, got {}'.format(
+                type(data_dir).__name__))
+
         # output
         return d_grp
 
@@ -1526,16 +1543,20 @@ class TrackHub():
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
-        self.init_hub() # main port, hub, trackdb, ...
-
-        # path to hub.txt
-        self.remote_hub_dir = os.path.join(self.remote_dir, self.hub_name)
-        self.hub_txt = os.path.join(self.remote_hub_dir, self.hub.filename)
 
 
     def init_args(self):
-        args_local = TrackHubConfig(**self.__dict__)
-        self = update_obj(self, args_local.__dict__, force=True)
+        if self.demo or self.config is None:
+            # trackhub_config_template()
+            pass
+        else:
+            args_local = TrackHubConfig(**self.__dict__)
+            self = update_obj(self, args_local.__dict__, force=True)
+            self.init_hub() # main port, hub, trackdb, ...
+
+            # path to hub.txt
+            self.remote_hub_dir = os.path.join(self.remote_dir, self.hub_name)
+            self.hub_txt = os.path.join(self.remote_hub_dir, self.hub.filename)
 
 
     def init_hub(self):
@@ -1866,6 +1887,9 @@ class TrackHub():
         hub_dict = {'hub_url': self.hub_url, 'trackhub_url': self.trackhub_url}
         dict2yaml(hub_dict, hub_yaml)
 
+        # target files
+        print('>> find hub_txt: {}'.format(hub_yaml))
+
         return self.trackhub_url
 
 
@@ -1881,7 +1905,9 @@ class TrackHub():
             Construct trackhub files, but not copy files
 
         """
-        if self.dry_run:
+        if self.demo or self.config is None:
+            trackhub_config_template()
+        elif self.dry_run:
             self.render()
         else:
             self.get_trackhub_url()
@@ -1903,7 +1929,6 @@ def trackhub_config_template():
         'http_root_dir': '/data/public/upload',
         'http_root_alias': '/upload',
         'http_root_url': None,
-        'subgroups_yaml': 'subgroups.yaml',
         'genome': 'dm6',
         'user': 'user',
         'email': 'abc@abc.com',
@@ -1944,23 +1969,43 @@ def trackhub_config_template():
     dict2yaml(default_subgroups, subgroups_f)
 
     # show message
+    cf = '{:>16s} : {}'.format('config.yaml', config_f),
+    gf = '{:>16s} : {}'.format('subgroups.yaml', subgroups_f),
+
     msg = '\n'.join([
-        'Generating template files:',
-        '{}'.format('-'*50),
-        '{:>16s} : {}'.format('config.yaml', config_f),
-        '{:>16s} : {}'.format('subgroups.yaml', subgroups_f),
-        '{}'.format('-'*50),
-        'Note:',
-        '1. save "config_template.yam" as "config.yam"',
-        '   modify the args according to your data',
-        '2. save "subgroups_template.yaml" as "subgroups.yaml"',
-        '   update the subgroups, save in data_dir',
-        '3. Run the program:',
-        'command-line:',
-        '$ hiseq get_trackhub -c config.yaml',
-        'python code: ',
-        '>>> TrackHub(config="config.yaml").get_trackhub_url()'
-        ])
+        '{}'.format('#'*80),
+        '# {:<77s}#'.format('Mini-tutorial [run_trackhub]'),
+        '# {:<77s}#'.format('1. Generating template files:'),
+        '# {:<77s}#'.format('$ python run_trackhub --demo'),
+        '# {:<77s}#'.format(str(cf)),
+        '# {:<77s}#'.format(str(gf)),
+        '# {:<77s}#'.format(''),
+        '# {:<77s}#'.format('2. Move the YAML files to {data_dir}'),
+        '# {:<77s}#'.format('$ mv subgroups.yaml {data_dir}/subgroups.yaml'),
+        '# {:<77s}#'.format('$ mv config.yaml {data_dir}/config.yaml'),
+        '# {:<77s}#'.format(''),
+        '# {:<77s}#'.format('Update the YAML files, according to your data'),
+        '# {:<77s}#'.format('Required fields - config.yaml'),
+        '# {:<77s}#'.format('  - data_dir        # absolute path'),
+        '# {:<77s}#'.format('  - genome          # dm6'),
+        '# {:<77s}#'.format('  - label_rm_list   # string, removed from label'),
+        '# {:<77s}#'.format('  - hub_name        # RNAseq_piwi'),
+        '# {:<77s}#'.format('  - remote_dir      # see http_root_dir'),
+        '# {:<77s}#'.format('  - position        # chr2L:1-1000'),
+        '# {:<77s}#'.format('  - http_root_alias # /upload, see: /var/apache2/sites-available/'),
+        '# {:<77s}#'.format('  - http_root_dir   # /data/public/upload, as above'),
+        '# {:<77s}#'.format('  - http_root_url   # null, parse IP of HTTP server'),
+        '# {:<77s}#'.format(''),
+        '# {:<77s}#'.format('Required fields - subgroups.yaml'),
+        '# {:<77s}#'.format('  - mapping'),
+        '# {:<77s}#'.format(''),
+        '# {:<77s}#'.format('3. Generating trackhub files'),
+        '# {:<77s}#'.format('$ hiseq run_trackhub -c {data_dir}/config.yaml'),
+        '# {:<77s}#'.format(''),
+        '# {:<77s}#'.format('4. Find the hub.txt file'),
+        '# {:<77s}#'.format('{remote_dir}/hub_name/{hub_name}_hub.txt'),
+        '{}'.format('#'*80)
+    ])
 
     print(msg)
 
@@ -1968,56 +2013,6 @@ def trackhub_config_template():
 def main():
     trackhub_config_template()
 
-    # config = 'config.yaml'
-    # t = TrackHub(config=config)
-    # t.run()
-
-    # print(t.hub_url)
-    # print(t.trackhub_url)
-
-    # t.render()
-
-    # # hub_url = 'http://ftp.ebi.ac.uk/pub/databases/ensembl/encode/integration_data_jan2011/hub.txt'
-    # hub_url = 'http://159.226.118.232/upload/ucsc_trackhub/hiseq_lxh/demo/composite1.hub.txt'
-    # a = HubUrl(hub_url=hub_url, genome='dm6', position='chr2:10,000,000-12,000,000').trackhub_url()
-    # print(a)
-
-    # args = {
-    #     's': '/data/public/upload/ucsc_trackhub/hiseq_lxh/demo/composite1.hub.txt',
-    #     'http_root_dir': '/data/public/upload',
-    #     'http_root_alias': None,
-    #     'http_root_url': 'http://159.226.118.232/upload',
-    # }
-
-    # a = HttpServer(**args).to_url()
-    # print(a)
-
-
-
 
 if __name__ == '__main__':
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

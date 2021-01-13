@@ -325,11 +325,11 @@ class CnR(object):
             self.run_CnR_design()
         elif self.hiseq_type == 'hiseq_from_design':
             self.run_CnR_from_design()
-        elif self.hiseq_type == 'hiseq_r1':
+        elif self.hiseq_type == 'cnr_r1':
             self.run_CnR_r1()
-        elif self.hiseq_type == 'hiseq_rn':
+        elif self.hiseq_type == 'cnr_rn':
             self.run_CnR_rn()
-        elif self.hiseq_type == 'hiseq_rx':
+        elif self.hiseq_type == 'cnr_rx':
             self.run_CnR_rx()
         else:
             raise ValueError('unknown hiseq_type: {}'.format(self.hiseq_type))
@@ -386,7 +386,7 @@ class CnRx(object):
                 'extra_index': self.extra_index,
                 'genome_size': self.genome_size,
                 'gene_bed': self.gene_bed,
-                'hiseq_type': 'hiseq_rn'
+                'hiseq_type': 'cnr_rn'
                 }
             ip_args.update(ip_local)
             CnRn(**ip_args).run()
@@ -403,7 +403,7 @@ class CnRx(object):
                 'extra_index': self.extra_index,
                 'genome_size': self.genome_size,
                 'gene_bed': self.gene_bed,
-                'hiseq_type': 'hiseq_rn'
+                'hiseq_type': 'cnr_rn'
                 }
             input_args.update(input_local)
             CnRn(**input_args).run()
@@ -606,24 +606,29 @@ class CnRx(object):
         """
         pkg_dir = os.path.dirname(hiseq.__file__)
         qc_reportR = os.path.join(pkg_dir, 'bin', 'hiseq_report.R')
-        hiseq_report_html = os.path.join(
-            self.report_dir, 
-            'HiSeq_report.html')
-
-        cmd = 'Rscript {} {} {}'.format(
+        hiseq_report_html = os.path.join(self.report_dir, 'HiSeq_report.html')
+        hiseq_report_stdout = os.path.join(self.report_dir, 
+            'HiSeq_report.stdout')
+        hiseq_report_stderr = os.path.join(self.report_dir, 
+            'HiSeq_report.stderr')
+        cmd = 'Rscript {} {} {} 1> {} 2> {}'.format(
             qc_reportR,
             self.project_dir,
-            self.report_dir)
-
-        cmd_txt = os.path.join(self.report_dir, 'cmd.sh')
-        with open(cmd_txt, 'wt') as w:
+            self.report_dir,
+            hiseq_report_stdout,
+            hiseq_report_stderr
+        )
+        cmd_shell = os.path.join(self.report_dir, 'cmd.sh')
+        with open(cmd_shell, 'wt') as w:
             w.write(cmd + '\n')
-    
         if file_exists(hiseq_report_html):
             log.info('report() skipped, file exists: {}'.format(
                 hiseq_report_html))
         else:
-            run_shell_cmd(cmd) 
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.error('report() failed, {}'.format(self.report_dir))
 
 
     def run(self):
@@ -1063,24 +1068,29 @@ class CnRn(object):
         """
         pkg_dir = os.path.dirname(hiseq.__file__)
         qc_reportR = os.path.join(pkg_dir, 'bin', 'hiseq_report.R')
-        hiseq_report_html = os.path.join(
-            self.report_dir, 
-            'HiSeq_report.html')
-
-        cmd = 'Rscript {} {} {}'.format(
+        hiseq_report_html = os.path.join(self.report_dir, 'HiSeq_report.html')
+        hiseq_report_stdout = os.path.join(self.report_dir, 
+            'HiSeq_report.stdout')
+        hiseq_report_stderr = os.path.join(self.report_dir, 
+            'HiSeq_report.stderr')
+        cmd = 'Rscript {} {} {} 1> {} 2> {}'.format(
             qc_reportR,
             self.project_dir,
-            self.report_dir)
-
-        cmd_txt = os.path.join(self.report_dir, 'cmd.sh')
-        with open(cmd_txt, 'wt') as w:
+            self.report_dir,
+            hiseq_report_stdout,
+            hiseq_report_stderr
+        )
+        cmd_shell = os.path.join(self.report_dir, 'cmd.sh')
+        with open(cmd_shell, 'wt') as w:
             w.write(cmd + '\n')
-
         if file_exists(hiseq_report_html):
             log.info('report() skipped, file exists: {}'.format(
                 hiseq_report_html))
         else:
-            run_shell_cmd(cmd) 
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.error('report() failed, {}'.format(self.report_dir))
 
 
     def pick_fq_samples(self, i):
@@ -1799,24 +1809,29 @@ class CnR1(object):
         """
         pkg_dir = os.path.dirname(hiseq.__file__)
         qc_reportR = os.path.join(pkg_dir, 'bin', 'hiseq_report.R')
-        hiseq_report_html = os.path.join(
-            self.report_dir, 
-            'HiSeq_report.html')
-
-        cmd = 'Rscript {} {} {}'.format(
+        hiseq_report_html = os.path.join(self.report_dir, 'HiSeq_report.html')
+        hiseq_report_stdout = os.path.join(self.report_dir, 
+            'HiSeq_report.stdout')
+        hiseq_report_stderr = os.path.join(self.report_dir, 
+            'HiSeq_report.stderr')
+        cmd = 'Rscript {} {} {} 1> {} 2> {}'.format(
             qc_reportR,
             self.project_dir,
-            self.report_dir)
-
-        cmd_txt = os.path.join(self.report_dir, 'cmd.sh')
-        with open(cmd_txt, 'wt') as w:
+            self.report_dir,
+            hiseq_report_stdout,
+            hiseq_report_stderr
+        )
+        cmd_shell = os.path.join(self.report_dir, 'cmd.sh')
+        with open(cmd_shell, 'wt') as w:
             w.write(cmd + '\n')
-    
         if file_exists(hiseq_report_html):
             log.info('report() skipped, file exists: {}'.format(
                 hiseq_report_html))
         else:
-            run_shell_cmd(cmd)
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.error('report() failed, {}'.format(self.report_dir))
 
 
     def run(self):
@@ -1945,13 +1960,13 @@ class CnRConfig(object):
         elif file_exists(self.design):
             self.hiseq_type = 'hiseq_from_design'
         elif isinstance(self.ip_dir, str) and isinstance(self.input_dir, str):
-            self.hiseq_type = 'hiseq_rx'
+            self.hiseq_type = 'cnr_rx'
         elif all([not i is None for i in [self.ip, self.input]]):
-            self.hiseq_type = 'hiseq_rx'
+            self.hiseq_type = 'cnr_rx'
         elif isinstance(self.rep_list, list) or isinstance(self.fq1, list):
-            self.hiseq_type = 'hiseq_rn'
+            self.hiseq_type = 'cnr_rn'
         elif isinstance(self.fq1, str):
-            self.hiseq_type = 'hiseq_r1'
+            self.hiseq_type = 'cnr_r1'
         else:
             raise ValueError('unknown CnR type')
 
@@ -2008,7 +2023,7 @@ class CnRxConfig(object):
             'recursive': False
         }
         self = update_obj(self, args_init, force=False)
-        self.hiseq_type = 'hiseq_rx' # 
+        self.hiseq_type = 'cnr_rx' # 
 
         # aligner
         if self.aligner is None:
@@ -2246,7 +2261,7 @@ class CnRnConfig(object):
             'recursive': False
         }
         self = update_obj(self, args_init, force=False)
-        self.hiseq_type = 'hiseq_rn' # 
+        self.hiseq_type = 'cnr_rn' # 
 
         # aligner
         if self.aligner is None:
@@ -2472,7 +2487,7 @@ class CnR1Config(object):
             'recursive': False 
         }
         self = update_obj(self, args_init, force=False)
-        self.hiseq_type = 'hiseq_r1' # 
+        self.hiseq_type = 'cnr_r1' # 
 
         # aligner
         if self.aligner is None:
@@ -2687,10 +2702,10 @@ class CnRReader(object):
         self.read()
         self.hiseq_type = self.args.get('hiseq_type', None)
 
-        self.is_hiseq_r1 = self.hiseq_type == 'hiseq_r1'
-        self.is_hiseq_rn = self.hiseq_type == 'hiseq_rn'
-        self.is_hiseq_rx = self.hiseq_type == 'hiseq_rx'
-        self.is_hiseq_rt = self.hiseq_type == 'hiseq_rt'
+        self.is_hiseq_r1 = self.hiseq_type == 'cnr_r1'
+        self.is_hiseq_rn = self.hiseq_type == 'cnr_rn'
+        self.is_hiseq_rx = self.hiseq_type == 'cnr_rx'
+        self.is_hiseq_rt = self.hiseq_type == 'cnr_rt'
         self.is_hiseq_rd = self.hiseq_type == 'build_design'
 
 

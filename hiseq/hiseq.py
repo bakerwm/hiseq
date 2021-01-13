@@ -310,28 +310,24 @@ class Hiseq(object):
         # help
         if len(sys.argv) < 3:
             parser.parse_args(['-h'])
-        # main
         args = vars(args) # convert to dict
         # check design or --fq1,--fq2,--genome,--outdir or smp_path/dirs_ctl/dirs_exp
-        design = args.get('design', None)
-
-        fq1 = args.get('fq1', None)
-        fq2 = args.get('fq2', None)
-        genome = args.get('genome', None)
-        outdir = args.get('outdir', None)
-
-        smp_path = args.get('smp_path', None)
-        dirs_ctl = args.get('dirs_ctl', None)
-        dirs_exp = args.get('dirs_exp', None)
-
-        chk1 = design is None
-        chk2 = smp_path is None
-        chk3 = dirs_ctl is None and dirs_exp is None
-        chk4 = all([i is None for i in [fq1, fq2, genome, outdir]])
-        # if config is None and not all(chk2):
-        if all([chk1, chk2, chk3, chk4]):
-            sys.exit('required: --design, or --fq1, --fq2, --genome, --outdir or --smp-path, --dirs-ctl, --dirs-exp')
-
+        # design = args.get('design', None)
+        # fq1 = args.get('fq1', None)
+        # fq2 = args.get('fq2', None)
+        # genome = args.get('genome', None)
+        # outdir = args.get('outdir', None)
+        # smp_path = args.get('smp_path', None)
+        # dirs_ctl = args.get('dirs_ctl', None)
+        # dirs_exp = args.get('dirs_exp', None)
+        # chk1 = design is None
+        # chk2 = smp_path is None
+        # chk3 = dirs_ctl is None and dirs_exp is None
+        # chk4 = all([i is None for i in [fq1, fq2, genome, outdir]])
+        # # if config is None and not all(chk2):
+        # if all([chk1, chk2, chk3, chk4]):
+        #     sys.exit('required: --design, or --fq1, --fq2, --genome, \
+        #         --outdir or --smp-path, --dirs-ctl, --dirs-exp')
         RNAseq(**args).run()
 
 
@@ -342,7 +338,6 @@ class Hiseq(object):
         parser = add_rnaseq_args2()
         args = parser.parse_args(sys.argv[2:])
         args = vars(args) # convert to dict
-
         RNAseqPipe(**args).run()
 
 

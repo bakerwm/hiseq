@@ -624,7 +624,7 @@ class Bam2bw(object):
         if os.path.exists(bw) and not self.overwrite:
             log.info('file exists, bigWig skipped ..., {}'.format(bw))
         else:
-            stdout, stderr = run_shell_cmd(cmd)
+            _, stdout, stderr = run_shell_cmd(cmd)
             with open(bw_log, 'wt') as w:
                 w.write(stdout + '\n' + stderr + '\n')
                 # p1 = subprocess.run(shlex.split(cmd), stdout=w, stderr=w)
@@ -845,7 +845,7 @@ class Bam2bw2(object):
         if os.path.exists(bw) and not self.overwrite:
             log.info('file exists, bigWig skipped ..., {}'.format(bw))
         else:
-            stdout, stderr = run_shell_cmd(cmd)
+            _, stdout, stderr = run_shell_cmd(cmd)
             with open(bw_log, 'wt') as w:
                 w.write(stdout + '\n' + stderr + '\n')
                 # p1 = subprocess.run(shlex.split(cmd), stdout=w, stderr=w)
@@ -1040,7 +1040,7 @@ class Bam2cor(object):
         if os.path.exists(self.bam_npz) and not self.overwrite:
             log.warning('file exists: {}'.format(self.bam_npz))
         else:
-            stdout, stderr = run_shell_cmd(cmd)
+            _, stdout, stderr = run_shell_cmd(cmd)
             with open(self.log, 'wt') as w:
                 w.write(stdout + '\n' + stderr + '\n')
 
@@ -1069,7 +1069,7 @@ class Bam2cor(object):
         if os.path.exists(self.plot_cor_heatmap_png) and not self.overwrite:
             log.warning('file exists: {}'.format(self.plot_cor_heatmap_png))
         else:
-            stdout, stderr = run_shell_cmd(cmd)
+            _, stdout, stderr = run_shell_cmd(cmd)
             with open(self.log_heatmap, 'wt') as w:
                 w.write(stdout + '\n' + stderr + '\n')
 
@@ -1096,7 +1096,7 @@ class Bam2cor(object):
         if os.path.exists(self.plot_cor_pca_png) and not self.overwrite:
             log.warning('file exists: {}'.format(self.bam_npz))
         else:
-            stdout, stderr = run_shell_cmd(cmd)
+            _, stdout, stderr = run_shell_cmd(cmd)
             with open(self.log_pca, 'wt') as w:
                 w.write(stdout + '\n' + stderr + '\n')
 
@@ -1316,7 +1316,7 @@ class PeakIDR(object):
             peakA_nrow = file_row_counter(peakA)
             peakB_nrow = file_row_counter(peakB)
             if peakA_nrow >= 100 and peakB_nrow >= 100:
-                stdout, stderr = run_shell_cmd(cmd)
+                _, stdout, stderr = run_shell_cmd(cmd)
                 with open(idr_log, 'wt') as w:
                     w.write(stdout + '\n' + stderr + '\n')
             else:
