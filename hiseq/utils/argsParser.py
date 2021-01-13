@@ -307,10 +307,8 @@ def add_rnaseq_args():
     parser.add_argument('-b', '--build-design', dest='build_design', 
         action='store_true',
         help='Create design for fastq files')
-
     parser.add_argument('-d', '--design', default=None,
         help='design for RNAseq, json format, ignore fq1, fq2')
-
     parser.add_argument('--wt', nargs='+', default=None, dest='wildtype',
         help='read1 fq files for control sample')
     parser.add_argument('--wt-fq2', nargs='+', dest='wildtype_fq2', 
@@ -319,29 +317,24 @@ def add_rnaseq_args():
         help='read2 fq files for treatment sample')
     parser.add_argument('--mut-fq2', nargs='+', dest='mutant_fq2', 
         default=None, help='read2 fq files for treatment sample')
-
     parser.add_argument('-1', '--fq1', nargs='+', default=None,
         help='read1 files, (or read1 of PE reads)')
     parser.add_argument('-2', '--fq2', nargs='+', default=None,
         help='read2 of PE reads')
-
     parser.add_argument('-c', '--wt-dir', nargs='+', dest='wildtype_dir',
         default=None, help='path to the dirs of control samples')
     parser.add_argument('-t', '--mut-dir', nargs='+', dest='mutant_dir',
         default=None, help='path to the dirs of experiment samples')
-
     parser.add_argument('-o', '--outdir', default=None,
         help='The directory to save results, default, \
         current working directory.')
     parser.add_argument('-g', '--genome', default=None,
         choices=['dm3', 'dm6', 'hg19', 'hg38', 'mm9', 'mm10'],
         help='Reference genome : dm3, dm6, hg19, hg38, mm10, default: hg38')
-
     parser.add_argument('--gtf', default=None,
         help='The gtf file for quantification, defaut: genome.gtf (None)')
     parser.add_argument('--gene-bed', dest='gene_bed', default=None,
         help='The BED or GTF of genes')
-
     # optional arguments - 0
     parser.add_argument('--trimmed', action='store_true',
         help='specify if input files are trimmed')
@@ -351,23 +344,20 @@ def add_rnaseq_args():
         not cut')
     parser.add_argument('--recursive', action='store_true',
         help='trim adapter recursively')
-
     # optional arguments - 1
     parser.add_argument('--overwrite', action='store_true',
         help='if spcified, overwrite exists file')
-
     ## extra: index
     parser.add_argument('-k', '--spikein', default=None,
         choices=[None, 'dm3', 'hg19', 'hg38', 'mm10'],
         help='Spike-in genome : dm3, hg19, hg38, mm10, default: None')
-    parser.add_argument('-x', '--extra-index', nargs='+', dest="extra_index",
+    parser.add_argument('-x', '--extra-index', dest="extra_index",
         help='Provide alignment index(es) for alignment, support multiple\
         indexes. if specified, ignore -g, -k')
     parser.add_argument('--aligner', default='STAR',
         choices=['STAR', 'bowtie', 'bowtie2', 'bwa', 'hisat2', 'kallisto',
             'salmon'],
         help='Aligner option: [STAR, bowtie, bowtie2, bwa], default: [STAR]')
-
     parser.add_argument('-p', '--threads', default=1, type=int,
         help='Number of threads for each job, default [1]')
     parser.add_argument('-j', '--parallel-jobs', default=1, type=int, 
@@ -589,42 +579,36 @@ def add_trackhub_args():
         prog='get_trackhub',
         description='Generate trackhub for bigWig and bigBed files',
         epilog='Example: \n\
-               python get_trackhub.py -i bigWig -n ChIPseq -g dm6')
-    parser.add_argument('-i', '--data-dir', required=True, dest='data_dir',
-        help='The directory of bigWig and bigBed files')
-    parser.add_argument('-o', '--remote-dir', required=True, dest='remote_dir',
-        help='The directory to save the track files')
-    parser.add_argument('-r', '--recursive', action='store_true',
-        help='search files in data_dir Recursively')
-    parser.add_argument('-n', '--hub-name', metavar='hub_name', required=False,
-        default=None, help='hub name')
-    parser.add_argument('-g', '--genome', metavar='GENOME', required=False,
-        default='dm6', help='genome for the trackhub, UCSC genome build, \
-        [hg19, hg38, mm9, mm10, dm3, dm6]')
-    parser.add_argument('-l', '--short-label', default=None, dest='short_label',
-        help='short label for the hub, default: [--hub-name]')
-    parser.add_argument('-L', '--long-label', default=None, dest='long_label',
-        help='long label for the hub, default: [--hub]')
-    parser.add_argument('-u', '--user', default='UCSC',
-        help='Who maintain the trackhub')
-    parser.add_argument('-e', '--email', default='abc@abc.com',
-        help='email of the maintainer')
-    parser.add_argument('-m', '--mirror', default='usa',
-        help='The mirror of UCSC, [usa|asia|euro], or custome mirror, input \
-        url of your UCSC_mirror: default: [usa]')
-    parser.add_argument('-s', '--subgroup-config', dest='subgroup_config',
-        default=None,
-        help='The config for subgroups, default: [None]')
-    parser.add_argument('-t', '--http-config', dest='http_config',
-        default=None,
-        help='The config for http, open access, including host, root_dir, \
-        default [None]')
-    parser.add_argument('--http-host', dest='http_host', default=None,
-        help='The http server host url, example: http://abc.com/upload')
-    parser.add_argument('--http-root-dir', dest='http_root_dir', default=None,
-        help='The http server, root_dir, example: /data/upload')
+               python get_trackhub.py --config config.yaml')
+    parser.add_argument('-d', '--demo', action='store_true',
+        help='Show the tutorial')
     parser.add_argument('--dry-run', dest='dry_run', action='store_true',
-        help='Do not copy the files')
+        help='Generate trackhub files, Do not copy track files to remote_dir')
+    parser.add_argument('-c', '--config', default=None,
+        help='Config file, run -d, generate the template')
+    # parser.add_argument('-i', '--data-dir', required=False, dest='data_dir',
+    #     help='The directory of bigWig and bigBed files')
+    # parser.add_argument('-s', '--subgroup-config', dest='subgroups_yaml',
+    #     help='Define the subgroups, subgroups.yaml')
+    # parser.add_argument('-n', '--hub-name', metavar='hub_name', required=False,
+    #     default=None, help='hub name')
+    # parser.add_argument('-g', '--genome', metavar='GENOME', required=False,
+    #     default='dm6', help='genome for the trackhub, UCSC genome build, \
+    #     [hg19, hg38, mm9, mm10, dm3, dm6]')
+    # parser.add_argument('-u', '--user', default='UCSC',
+    #     help='Who maintain the trackhub')
+    # parser.add_argument('-e', '--email', default='abc@abc.com',
+    #     help='email of the maintainer')
+    # parser.add_argument('--dry-run', dest='dry_run', action='store_true',
+    #     help='Do not copy the files')
+    # parser.add_argument('-l', '--short-label', default=None, dest='short_label',
+    #     help='short label for the hub, default: [--hub-name]')
+    # parser.add_argument('-L', '--long-label', default=None, dest='long_label',
+    #     help='long label for the hub, default: [--hub]')
+    # parser.add_argument('-d', '--description-url', default='',
+    #     help='URL for description')
+    # parser.add_argument('-r', '--recursive', action='store_true',
+    #     help='search files in data_dir Recursively')
     return parser
 
 
