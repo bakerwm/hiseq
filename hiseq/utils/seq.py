@@ -9,9 +9,10 @@ Functions for sequence, fastx
 import os
 import sys
 import re
+import shutil
 from xopen import xopen
 import collections # Fastx().collapse()
-from .helper import *
+from hiseq.utils.helper import *
 
 
 class Fastx(object):
@@ -26,15 +27,22 @@ class Fastx(object):
     7. sample: [seqkit sample -n]
     ...    
     """
-
     def __init__(self, input, **kwargs):
         """
         read fastq/a file
         """
+        self = update_obj(self, kwargs, force=True)
         self.input = input
         self.format = self.fx_type(input)
-        self.count = self.fq_counter(input) if self.format == 'fastq' else self.fa_counter(input)
         self.cat = 'zcat' if input.endswith('.gz') else 'cat'
+
+
+    def is_not_empty(self, x):
+        """Check the file is empty or not
+        plain text: 0
+        gzip.txt: 20
+        """
+        return os.stat(x).st_size > 20
 
 
     def is_fastq(self):
@@ -52,37 +60,40 @@ class Fastx(object):
         """
         assert isinstance(fn, str)
 
-        d = {}
-        counter = 0
-        with xopen(fn) as fh:
-            for line in fh:
-                counter += 1
-                if counter > top_n:
-                    break
-                elif counter % 4 == 1: # for 1st line of fastq; and fa
-                    base = line[0] # the first character
-                    if base.lower() in 'acgtn': # sequence line in fasta
+        if self.is_not_empty(fn):
+            d = {}
+            counter = 0
+            with xopen(fn) as fh:
+                for line in fh:
+                    counter += 1
+                    if counter > top_n:
+                        break
+                    elif counter % 4 == 1: # for 1st line of fastq; and fa
+                        base = line[0] # the first character
+                        if base.lower() in 'acgtn': # sequence line in fasta
+                            continue
+                        d[base] = d.get(base, 0) + 1
+                    else:
                         continue
-                    d[base] = d.get(base, 0) + 1
-                else:
-                    continue
 
-        ## percentage
-        x = sorted(d.items(), key=lambda kv:kv[1], reverse=True)
-        ## the top1 character
-        x_top1 = x[0][0]
-        x_top1_pct = x[0][1] / sum(d.values())
+            ## percentage
+            x = sorted(d.items(), key=lambda kv:kv[1], reverse=True)
+            ## the top1 character
+            x_top1 = x[0][0]
+            x_top1_pct = x[0][1] / sum(d.values())
 
-        ## check
-        if x_top1 == '@':
-            fx_type = 'fastq'
-        elif x_top1 == '>':
-            fx_type = 'fasta'
+            ## check
+            if x_top1 == '@':
+                fx_type = 'fastq'
+            elif x_top1 == '>':
+                fx_type = 'fasta'
+            else:
+                fx_type = None
+
+            ## if top1_pct < 90%
+            if x_top1_pct < 0.9:
+                fx_type = None
         else:
-            fx_type = None
-
-        ## if top1_pct < 90%
-        if x_top1_pct < 0.9:
             fx_type = None
 
         return fx_type
@@ -153,58 +164,54 @@ class Fastx(object):
         """
         assert isinstance(n, int)
         assert isinstance(p, float)
-
-        seqkit_exe = which('seqkit')
-        if seqkit_exe is None:
-            raise Exception('command not found in $PATH: seqkit')
-
-        # log.info('extracting sub-sample: n=%d' % n)
+        outdir = os.path.dirname(out)
+        check_path(outdir)
 
         ## warning
-        if n > 1000000 or p > 0.1:
-            log.warning('choose a smaller number.')
+        if n > 1000000:
+            log.warning('too-big n={}, change to 1000000'.format(n))
+            n = 1000000
+        if p > 0.1:
+            p = 0.1
+            
+        ## cmd
+        cmd = ' '.join([
+            '{}'.format(shutil.which('seqkit')),
+            'sample -n {}'.format(n),
+            '-o {}'.format(out),
+            '{}'.format(self.input)
+            ])
 
-        cmd = '{} | {} sample -n {} > {}'.format(
-            self.cat,
-            self.input,
-            seqkit_exe,
-            n,
-            out)
-
-        run_shell_cmd(cmd)
-
-        return self.output
+        try:
+            run_shell_cmd(cmd)
+        except:
+            log.error('sample_random() faied, {}'.format(self.input))
 
 
-    def sample(self, outdir, sample_size=1000000, gzipped=True):
+    def sample(self, out, n=1000):
         """
         Create a subsample of input fastq files, default: 1M reads
         Run the whole process for demostration
         """
-        s = 4 if self.format == 'fastq' else 2
-        nsize = s * sample_size
-
-        # update args
+        outdir = os.path.dirname(out)
         check_path(outdir)
         
-        # subsample
-        fx_out = os.path.join(outdir, os.path.basename(self.input))
-        
-        # gzip output
-        if not self.input.endswith('.gz') and gzipped:
-            fx_out += '.gz'
-
-        # run
-        if os.path.exists(fx_out):
-            log.info('file eixsts, {}'.format(fx_out))
+        if file_exists(out):
+            log.info('file eixsts, {}'.format(out))
         else:
-            with xopen(self.input, 'rt') as r, xopen(fx_out, 'wt') as w:
-                i = 0 # counter
-                for line in r:
+            i = 0
+            with xopen(self.input, 'rt') as r, xopen(out, 'wt') as w:
+                for name, seq, qual in self.readfq(r):
                     i += 1
-                    if i > nsize: # fastq file: 4 lines per read
+                    if i > n:
                         break
-                    w.write(line)
+                    if self.format == 'fastq':
+                        fx = '@{}\n{}\n+\n{}'.format(name, seq, qual)
+                    elif self.format == 'fasta':
+                        fx = '>{}\n{}'.format(name, seq)
+                    else:
+                        continue
+                    w.write(fx+'\n')
 
 
     def fa2fq(self, out):
@@ -300,7 +307,7 @@ class Fastx(object):
         Count fastq records
         N = (total lines) / 4
         """
-        return self.count(x) / 4
+        return int(self.count(x) / 4)
 
 
     def fa_counter(self, x):
@@ -318,6 +325,124 @@ class Fastx(object):
             return sum(buf.count(b'\n>') for buf in _make_gen(fh.read))
 
 
+    def number_of_seq(self):
+        """
+        Number of sequences
+        fa, fq
+        """
+        return self.fq_counter(self.input) if self.format == 'fastq' else self.fa_counter(self.input)
+
+
+    def region_to_pos(self, region=None):
+        """
+        Extract substring by region: 
+        Convert 1-indexed region to 0-indexed python style
+        The region cloud be: 1-indexed
+        1:20,   the first 20 bases
+        -20:-1, the last 20 bases
+        1:-1,   the full length
+        """
+        if region is None:
+            region = '1:-1' # the full length
+        # convert "7,-7" to "7:-7"
+        region = region.replace(',', ":")
+
+        p = re.compile('^(-?\d+):(-?\d+)$')
+        m = p.search(region)
+        if m:
+            pass
+        else:
+            log.error('unknown region format, expect: 1:-1, got: {}'.format(region))
+
+        # 0-indexed
+        start = int(m.group(1))
+        end = int(m.group(2))
+        if start > 0:
+            start = start - 1
+
+        if end < 0:
+            end = end + 1
+
+        return (start, end)
+
+
+    def sub_string(self, s, start, end):
+        """
+        Extract substring, by start, end (0-index)
+        convert to python style
+        """
+        if start == 0 and end == 0:
+            pass
+        elif start == 0:
+            s = s[:end]
+        elif end == 0:
+            s = s[start:]
+        else:
+            s = s[start:end]
+
+        return s
+
+
+    def subseq(self, out, region=None):
+        """
+        Get subseq by region
+
+        The region cloud be: 1-indexed
+        1:20,   the first 20 bases
+        -20:-1, the last 20 bases
+        1:-1,   the full length
+        """
+        start, end = self.region_to_pos(region)
+
+        with xopen(self.input) as r, xopen(out, 'wt') as w:
+            for name, seq, qual in self.readfq(r):
+                seq = self.sub_string(seq, start, end)
+                # specific length
+                if len(seq) < self.len_min:
+                    continue
+
+                if qual is None: # fasta
+                    w.write('\n'.join(['>'+name, seq]) + '\n')
+                else:
+                    qual = self.sub_string(qual, start, end)
+                    w.write('\n'.join(['@'+name, seq, '+', qual]) + '\n')
+
+
+    def subseq_pe(self, input2, out1, out2, region=None):
+        """
+        Get subseq by region, for paired end reads; filter by length
+
+        The region cloud be: 1-indexed
+        1:20,   0:20 , the first 20 bases
+        -20:-1, -21: , the last 20 bases
+        1:-1,   0:   , the full length
+        """
+        start, end = self.region_to_pos(region)
+
+        with xopen(self.input) as r1, xopen(input2) as r2, \
+            xopen(out1, 'wt') as w1, xopen(out2, 'wt') as w2:
+            for read1, read2 in zip(self.readfq(r1), self.readfq(r2)):
+                name1, seq1, qual1 = read1
+                name2, seq2, qual2 = read2
+                seq1 = self.sub_string(seq1, start, end)
+                seq2 = self.sub_string(seq2, start, end)
+
+                # specific length
+                if len(seq1) < self.len_min or len(seq2) < self.len_min:
+                    continue
+
+                # write
+                if qual1 is None: # fa
+                    w1.write('\n'.join(['>' + name1, seq1]) + '\n')
+                    w2.write('\n'.join(['>' + name2, seq2]) + '\n')
+                else:
+                    qual1 = self.sub_string(qual1, start, end)
+                    qual2 = self.sub_string(qual2, start, end)
+                    w1.write('\n'.join(['@' + name1, seq1, '+', qual1]) + '\n')
+                    w2.write('\n'.join(['@' + name2, seq2, '+', qual2]) + '\n')
+
+
+    # Deprecated: (see: subseq)
     def cut(self, out, len_min=15, **kwargs):
         """
         Cut bases from either ends of fasta/q
@@ -364,6 +489,19 @@ class Fastx(object):
                     return x
             else:
                 raise Exception('unknown format, cut_to_length={}'.format(cut_to_length))
+            # if isinstance(cut_to_length, int):
+            #     if cut_to_length > 0: # cut from 3' end
+            #         x2 = x[:cut_to_length]
+            #     else: # cut from 5' end
+            #         n = len(x) - abs(cut_to_length)
+            #         if n < 0:
+            #             n = 0
+            #         x2 = x[n:]
+            #     return x2
+            # else:
+            #     log.error('unknown x, expect int, got {}'.format(cut_to_length))
+            #     return x
+
 
         # merge two funcs
         def cut_cut(x):
@@ -389,6 +527,7 @@ class Fastx(object):
                     w.write('\n'.join(['@'+name, seq, '+', qual]) + '\n')
 
 
+    # Deprecated: (see: subseq)
     def cut_pe(self, input2, out1, out2, len_min=15, **kwargs):
         """
         Cut bases from either ends of fasta/q
@@ -495,5 +634,62 @@ class Fastx(object):
                     w.write('\n'.join(['@'+name, key, '+', qual]) + '\n')
                 else:
                     w.write('\n'.join(['>'+name, key]) + '\n')
+
+
+    def detect_adapter(self):
+        """
+        Guess adapters, sampling the first 1000000 records
+        TruSeq    AGATCGGAAGAGC
+        Nextera   CTGTCTCTTATACACATCT
+        smallRNA  TGGAATTCTCGG
+
+        to-do
+        specific type of adapters
+        """
+        ad = {
+            'truseq': 'AGATCGGAAGAGC',
+            'nextera': 'CTGTCTCTTATA',
+            'smallrna': 'TGGAATTCTCGG'
+        }
+
+        # count 
+        d = {}
+        n_max = 1000000
+        n = 0
+        with xopen(self.input) as r:
+            for _, seq, _ in self.readfq(r):
+                n += 1
+                if n > n_max:
+                    break
+                # check
+                if ad['truseq'] in seq:
+                    d['truseq'] = d.get('truseq', 0) + 1
+                elif ad['nextera'] in seq:
+                    d['nextera'] = d.get('nextera', 0) + 1
+                elif ad['smallrna'] in seq:
+                    d['smallrna'] = d.get('smallrna', 0) + 1
+                else:
+                    continue
+
+        # summary
+        msg = '\n'.join([
+            '{}\t{}\t{}\t{}\t{}'.format('Type', 'sequence', 'total', 'count', 'percent'),
+            '{}\t{}\t{}\t{}\t{:.2f}%'.format('TruSeq', ad['truseq'], n_max, d.get('truseq', 0), d.get('truseq', 0)/n_max * 100),
+            '{}\t{}\t{}\t{}\t{:.2f}%'.format('Nextera', ad['nextera'], n_max, d.get('nextera', 0), d.get('nextera', 0)/n_max * 100),
+            '{}\t{}\t{}\t{}\t{:.2f}%'.format('smallRNA', ad['smallrna'], n_max, d.get('smallrna', 0), d.get('smallrna', 0)/n_max * 100)
+            ])
+
+        print(msg)
+
+        # sort
+        ds = sorted(d.items(), key=lambda kv: kv[1])
+        dd = collections.OrderedDict(ds)
+        return dd
+
+
+
+
+
+
 
 

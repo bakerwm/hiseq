@@ -18,9 +18,8 @@ class Macs2(object):
     3. macs2 bdgcmp -t {prefix}_treat_pileup.bdg -c {prefix}_control_lambda.bdg -o {prefix}.FE.bdg -m FE
     4. macs2 bdgcmp -t {prefix}_treat_pileup.bdg -c {prefix}_control_lambda.bdg -o {prefix}.logLR.bdg -m logLR -p 0.00001
     """
-
     def __init__(self, ip, genome, output, prefix=None, control=None, 
-        atac=False, overwrite=False, genome_size=0, **kwargs):
+        atac=False, overwrite=False, genome_size=0, gsize_file=None, **kwargs):
         """Parse the parameters
         venv, the virtualenv created for macs2, running in Python2
         """
@@ -30,6 +29,7 @@ class Macs2(object):
         self.control = control
         self.overwrite = overwrite
         self.genome_size = genome_size
+        self.gsize_file = gsize_file
         self.prefix = prefix
         self.atac = atac
 
@@ -40,6 +40,11 @@ class Macs2(object):
         self.gsize = self.get_gsize()
         if self.gsize is None:
             raise ValueError('unknown genome: {}'.format(genome))
+
+        # get gsize_file, only for genome=None
+        if not isinstance(genome, str):
+            if genome_size == 0 or gsize_file is None:
+                raise ValueError('genome_size and gsize_file required, if genome=None')
 
         is_path(self.output)
 
@@ -76,7 +81,7 @@ class Macs2(object):
 
     def callpeak(self):
         """Call peaks using MACS"""
-        log = os.path.join(self.output, self.prefix + '.macs2.callpeak.out')
+        callpeak_log = os.path.join(self.output, self.prefix + '.macs2.callpeak.out')
         if self.atac is True:
             # ATAC-seq
             macs2_cmd = 'macs2 callpeak --nomodel --shift -100 --extsize 200 \
@@ -85,12 +90,12 @@ class Macs2(object):
                     self.gsize,
                     self.output,
                     self.prefix,
-                    log)
+                    callpeak_log)
             peak = os.path.join(self.output, self.prefix + '_peaks.narrowPeak')
         else:
             # ChIP-seq
-            macs2_cmd = 'macs2 callpeak -t {} -g {} --outdir {} -n {} \
-                --keep-dump auto -B --SPMR'.format(
+            macs2_cmd = 'macs2 callpeak --nomodel --extsize 150 -t {} -g {} --outdir {} -n {} \
+                --keep-dup auto -B --SPMR'.format(
                     self.ip, 
                     self.gsize,
                     self.output,
@@ -98,17 +103,24 @@ class Macs2(object):
             if not self.control is None:
                 macs2_cmd += ' -c {}'.format(self.control)
 
-            macs2_cmd += ' 2> {}'.format(log)
+            macs2_cmd += ' 2> {}'.format(callpeak_log)
             # peak file
             peak = os.path.join(self.output, self.prefix + '_peaks.narrowPeak')
+            # save cmd
+            cmd_txt = os.path.join(self.output, 'cmd.sh')
+            with open(cmd_txt, 'wt') as w:
+                w.write(macs2_cmd + '\n')
 
        # output file
         # macs2_out = os.path.join(self.output, self.prefix + '_peaks.xls')
-        if os.path.exists(peak) and self.overwrite is False:
-            logging.info('file exists, skip macs2 callpeak')
-        else:
-            logging.info('run macs2 callpeak')
-            run_shell_cmd(macs2_cmd)
+        try:
+            if os.path.exists(peak) and self.overwrite is False:
+                logging.info('file exists, skip macs2 callpeak')
+            else:
+                logging.info('run macs2 callpeak')
+                run_shell_cmd(macs2_cmd)
+        except:
+            logging.error('callpeak() failed')
 
         return peak
 
@@ -139,21 +151,24 @@ class Macs2(object):
         if os.path.exists(out_bdg) and self.overwrite is False:
             logging.info('file exists, skip macs2 bdgcmp')
         else:
-            # self.python2_run(c)
             run_shell_cmd(cmd1)
 
         # sort output *.bdg
         cmd2 = 'sort -k1,1 -k2,2n -o {} {}'.format(out_bdg, out_bdg)
 
         # cnvert *.bdg to *.bigWig
-        gsize_file = Genome(self.genome).get_fasize()
+        gsize_file = self.gsize_file
         out_bw  = os.path.join(self.output, self.prefix + '.' + opt + '.bigWig')
         cmd3 = 'bedGraphToBigWig {} {} {}'.format(out_bdg, gsize_file, out_bw)
-        if os.path.exists(out_bw) and self.overwrite is False:
-            logging.info('file exists, skip bg2bw')
-        else:
-            run_shell_cmd(cmd2)
-            run_shell_cmd(cmd3)
+
+        try:
+            if os.path.exists(out_bw) and self.overwrite is False:
+                logging.info('file exists, skip bg2bw')
+            else:
+                run_shell_cmd(cmd2)
+                run_shell_cmd(cmd3)
+        except:
+            logging.error('bdgcmp() failed')
 
 
     def bdgpeakcall(self):
@@ -214,13 +229,17 @@ class Macs2(object):
             peak_log = peak_anno + '.log'
             cmd = 'perl {} {} {} 1> {} 2> {}'.format(
                 anno_exe, peak_file, self.genome, peak_anno, peak_log)
-            # check existence
-            if os.path.exists(peak_anno) and self.overwrite is False:
-                log.info('file exists, skip annotation: {}'.format(peak_anno))
-            else:
-                run_shell_cmd(cmd)
+            
+            try:
+                # check existence
+                if os.path.exists(peak_anno) and self.overwrite is False:
+                    log.info('file exists, skip annotation: {}'.format(peak_anno))
+                else:
+                    run_shell_cmd(cmd)
 
-            anno_list.append(peak_anno)
+                anno_list.append(peak_anno)
+            except:
+                logging.error('annotation() failed')
 
         return anno_list
 
@@ -245,7 +264,10 @@ class Macs2(object):
         cmd = 'perl {} {} {} 1> {} 2> {}'.format(
             anno_exe, broadpeak, self.genome, anno_peak, anno_log)
 
-        run_shell_cmd(cmd)
+        try:
+            run_shell_cmd(cmd)
+        except:
+            logging.error('broadpeak_annotation() failed')
         
         return anno_peak
 

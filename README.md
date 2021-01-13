@@ -22,6 +22,14 @@ This is a package for High-throughput sequencing data analysis. including pipeli
 
 ## to-do
 
+1. Support `YAML` format  
+2. add feature: `waiting`, check status every N minitues for each subfunction  
+3. Fix RNAseq, kallisto, salmon, + DESeq2; kallisto + sleuth; ...   
+
+
+
+
+
 1. `hiseq demx`
 
   - Check fq, MD5 from the same dir   

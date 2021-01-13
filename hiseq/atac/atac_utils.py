@@ -20,6 +20,28 @@ import pybedtools
 from collections import OrderedDict
 from hiseq.utils.helper import *
 from hiseq.utils.seq import Fastx
+import deeptools.countReadsPerBin as crpb
+
+
+def update_obj(obj, d, force=True, remove=False):
+    """
+    d: dict
+    force: bool, update exists attributes
+    remove: bool, remove exists attributes
+    Update attributes from dict
+    force exists attr
+    """
+    # fresh start
+    if remove is True:
+        for k in obj.__dict__:
+            delattr(obj, k)
+    # add attributes
+    if isinstance(d, dict):
+        for k, v in d.items():
+            if not hasattr(obj, k) or force:
+                setattr(obj, k, v)
+
+    return obj
 
 
 def fasize(x, sum_all=False):
@@ -41,15 +63,24 @@ def symlink(src, dest, absolute_path=True):
     Create symlinks within output dir
     ../src
     """
-    if absolute_path:
-        # support: ~, $HOME,
-        srcname = os.path.abspath(os.path.expanduser(os.path.expandvars(src)))
+    if src is None or dest is None:
+        log.warning('symlink skipped: {}, to: {}'.format(src, dest))
+    elif file_exists(dest):
+        log.warning('symlink skipped, target exists...'.format(dest))
     else:
-        # only for directories within the same folder
-        srcname = os.path.join('..', os.path.basename(src))
+        if absolute_path:
+            # support: ~, $HOME,
+            srcname = os.path.abspath(os.path.expanduser(os.path.expandvars(src)))
+        else:
+            # only for directories within the same folder
+            srcname = os.path.join('..', os.path.basename(src))
 
-    if not os.path.exists(dest):
-        os.symlink(srcname, dest)
+        # if not os.path.exists(dest):
+        try:
+            if not file_exists(dest):
+                os.symlink(srcname, dest)
+        except:
+            log.error('symlink() failed')
 
 
 def in_dict(d, k):
@@ -294,46 +325,34 @@ def bam2bigwig(bam, genome, outdir, strandness=0, binsize=1, overwrite=False, **
         log.error('unkown strandness: [0|1|2|12], {} got'.format(strandness))
 
 
-def peak_FRiP(inbed, inbam, genome="dm6"):
+def peak_FRiP(inbed, inbam, threads=4):
     """Calculate FRiP for ChIP-seq/ATAC-seq peaks
     Fraction of reads in called peak regions
     input: bam, peak (bed)
 
     using: bedtools intersect 
     count reads in peaks
+
+    Using: Deeptools
     """
-    # total map
-    # index
-    Bam(inbam).index()
-    bam = pysam.AlignmentFile(inbam)
-    total = bam.mapped
+    # init data
+    frip = 0
+    rip = 0
+    total = 0
 
-    gsize = Genome(genome).get_fasize()
-    tmp = os.path.basename(inbed) + '.count.tmp'
+    if file_exists(inbed):
+        if file_row_counter(inbed) > 10:
+            # reads in peak
+            cr = crpb.CountReadsPerBin([inbam], bedFile=inbed, numberOfProcessors=threads)
+            crn = cr.run()
+            rip = crn.sum(axis=0)[0]
+            # fraction
+            bam = pysam.AlignmentFile(inbam)
+            total = bam.mapped
+            frip = float(rip) / total
 
-    try:
-        # reads in peak
-        cmd = ' '.join([
-            'sort -k1,1 -k2,2n {}'.format(inbed),
-            '| bedtools intersect -c -a - -b {} > {}'.format(inbam, tmp)])
-        run_shell_cmd(cmd)
-
-        x = 0 # init
-        with open(tmp) as r:
-            for line in r:
-                p = line.strip().split('\t').pop()
-                x += eval(p)
-
-        frip = '{:.2f}%'.format(x/total*100)
-
-        os.remove(tmp)
-    except:
-        log.warning('cal_FRiP() failed, skip {}'.format(inbed))
-        if os.path.exists(tmp):
-            os.remove(tmp)
-        frip = x = total = 0 # init
-
-    return (frip, x, total)
+    # output
+    return (frip, rip, total)
 
 
 def frag_length(infile, outfile=None):
@@ -605,7 +624,228 @@ class Bam2bw(object):
         if os.path.exists(bw) and not self.overwrite:
             log.info('file exists, bigWig skipped ..., {}'.format(bw))
         else:
-            stdout, stderr = run_shell_cmd(cmd)
+            _, stdout, stderr = run_shell_cmd(cmd)
+            with open(bw_log, 'wt') as w:
+                w.write(stdout + '\n' + stderr + '\n')
+                # p1 = subprocess.run(shlex.split(cmd), stdout=w, stderr=w)
+        if not os.path.exists(bw):
+            log.error('Bam2bw() failed, bw not found: {}'.format(self.bw))
+            # raise ValueError('output file is missing, check log file: %s' % bw_log)
+
+
+    def run_fwd(self):
+        # bedtools cmd
+        cmd = ' '.join([
+            '{} -b {} -o {}'.format(self.bamcoverage, self.bam, self.bw_fwd),
+            '--binSize {}'.format(self.binsize), 
+            '--effectiveGenomeSize {}'.format(self.genome_size),
+            '--filterRNAstrand forward',
+            '--numberOfProcessors {}'.format(self.threads), 
+            '--scaleFactor {}'.format(self.scaleFactor),
+            '--normalizeUsing {}'.format(self.normalizeUsing),
+            '2> {}'.format(self.bw_log)
+            ])
+        cmd_txt = os.path.join(self.outdir, 'cmd_fwd.txt')
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+
+        self.run_cmd(cmd, self.bw_fwd, self.bw_fwd_log)
+
+
+    def run_rev(self):
+        # bedtools cmd
+        cmd = ' '.join([
+            '{} -b {} -o {}'.format(self.bamcoverage, self.bam, self.bw_rev),
+            '--binSize {}'.format(self.binsize), 
+            '--effectiveGenomeSize {}'.format(self.genome_size),
+            '--filterRNAstrand reverse',
+            '--numberOfProcessors {}'.format(self.threads), 
+            '--scaleFactor {}'.format(self.scaleFactor),
+            '--normalizeUsing {}'.format(self.normalizeUsing)])
+        cmd_txt = os.path.join(self.outdir, 'cmd_rev.txt')
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + 'n')
+
+        self.run_cmd(cmd, self.bw_rev, self.bw_rev_log)
+        
+
+    def run_non(self):
+        # bedtools cmd
+        cmd = ' '.join([
+            '{} -b {} -o {}'.format(self.bamcoverage, self.bam, self.bw),
+            '--binSize {}'.format(self.binsize),
+            '--effectiveGenomeSize {}'.format(self.genome_size),
+            '--numberOfProcessors {}'.format(self.threads), 
+            '--scaleFactor {}'.format(self.scaleFactor),
+            '--normalizeUsing  {}'.format(self.normalizeUsing)])
+
+        cmd_txt = os.path.join(self.outdir, 'cmd.txt')
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+
+        self.run_cmd(cmd, self.bw, self.bw_log)
+        
+
+    def run(self):
+        """
+        determined by: strandness
+        exit by: flag
+        """
+        if self.flag is False:
+            log.error('bam2bw skipped, ...')
+        elif self.strandness == 1:
+            self.run_fwd()
+        elif self.strandness == 2:
+            self.run_rev()
+        elif self.strandness == 12:
+            self.run_fwd()
+            self.run_rev()
+        elif self.strandness == 0:
+            self.run_non()
+        else:
+            log.error('unknown strandness')
+
+
+class Bam2bw2(object):
+    """
+    Convert bam to bigWig
+    version-2: bedtools genomecov -bdg , bedGraphToBigWig, ...
+
+    !!! strandness
+    default: dUTP-based library (read2 is sense strand, read1 is anti-sense strand)
+    general RNA library: (NSR, small-RNA-library), read1 is sense, read2 is antisense
+    """
+    def __init__(self, **kwargs):
+        """
+        bam, file to bam file
+        outdir, str, path to save all files
+        genome, dm3,dm6,...
+        binsize, int, default: 50
+        strandness, 0, [0|1|2|12], 1=fwd, 2=rev, 12=rev,rev, 0=non-strandness
+        reference, str, fasta file
+        overwrite, bool, False
+
+        Required:
+        bam, outdir, genome, binsize, strandness, overwrite, reference
+        """
+        # update self (obj)
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+        # update, defaults
+        self.init_args()
+        args_logger(self.__dict__, self.config_txt)
+
+
+    def init_args(self):
+        args_init = {
+            'bam': None,
+            'outdir': str(pathlib.Path.cwd()),
+            'binsize': 50,
+            'strandness': 0,
+            'overwrite': False,
+            'reference': None,
+            'genome': None,
+            'genome_size': None,
+            'norm_size': 1000000, # 1 million
+            'fragment': True,
+            'threads': 4,
+            'config_txt': os.path.join(self.outdir, 'arguments.txt'),
+            'flag': True # whether run/not
+        }
+        # update
+        for k, v in args_init.items():
+            if hasattr(self, k):
+                continue
+            setattr(self, k, v)
+
+        # cmd
+        self.bamcoverage = which('bamCoverage')
+
+        # bam
+        if not file_exists(self.bam):
+            self.flag = False
+        Bam(self.bam).index()
+
+        # name
+        self.prefix = os.path.splitext(os.path.basename(self.bam))[0]
+        self.bw_fwd = os.path.join(self.outdir, self.prefix + '.fwd.bigWig')
+        self.bw_rev = os.path.join(self.outdir, self.prefix + '.rev.bigWig')
+        self.bw = os.path.join(self.outdir, self.prefix + '.bigWig')
+        self.bw_fwd_log = os.path.join(self.outdir, self.prefix + '.fwd.deeptools.log')
+        self.bw_rev_log = os.path.join(self.outdir, self.prefix + '.rev.deeptools.log')
+        self.bw_log = os.path.join(self.outdir, self.prefix + '.deeptools.log')
+
+        # outdir
+        check_path(self.outdir)
+
+        # binsize
+        if not isinstance(self.binsize, int):
+            log.warning('binsize: int expected. {} got, auto-set: 50'.format(self.binsize))
+            self.binsize = 50
+
+        # norm size
+        # default: 1 million
+        if isinstance(self.norm_size, int):
+            if self.norm_size < 1:
+                self.norm_size = 1000000 # 1 million
+        else:
+            self.norm_size = 1000000 # 1 million
+
+        # strand
+        if not self.strandness in [0, 1, 2, 12]:
+            log.warning('strandness: [0|1|2|12] expected, {} got, auto-set: 0'.format(self.strandness))
+            self.strandness = 0
+
+        # overwrite
+        if not isinstance(self.overwrite, bool):
+            log.warning('overwrite: bool expected, {} got, auto-set: False'.format(self.overwrite))
+            self.overwrite = False
+
+        # genome/genome_size/reference
+        if self.genome in effsize:
+            self.genome_size = effsize.get(self.genome, None)
+        elif isinstance(self.genome_size, int):
+            pass
+        elif not self.reference is None:
+            self.genome_size = fasize(self.reference, sum_all=True)
+        else:
+            log.error('genome, genome_size, reference; one of arg is requred')
+            self.flag = False # do not run
+
+
+    def get_reads(self, fragment=False):
+        """
+        fragment, pair of PE reads
+        normalize to 1 million mapped reads
+        RPM, CPM
+        """
+        b = Bam(self.bam)
+        b_is_paired = b.isPaired()
+        b_reads = b.getNumReads()
+        if fragment and b_is_paired:
+            b_frag = b_reads / 2
+        else:
+            b_frag = b_reads
+
+        return b_frag
+
+
+    def get_scale(self):
+        """
+        Norm to 1 million reads
+        """
+        r = self.get_reads(fragment=self.fragment)
+
+        # norm by reads/fragment
+        return r/self.norm_size
+
+
+    def run_cmd(self, cmd, bw, bw_log):
+        if os.path.exists(bw) and not self.overwrite:
+            log.info('file exists, bigWig skipped ..., {}'.format(bw))
+        else:
+            _, stdout, stderr = run_shell_cmd(cmd)
             with open(bw_log, 'wt') as w:
                 w.write(stdout + '\n' + stderr + '\n')
                 # p1 = subprocess.run(shlex.split(cmd), stdout=w, stderr=w)
@@ -744,7 +984,7 @@ class Bam2cor(object):
 
         # outname
         if self.prefix is None:
-            prefix = 'multibam'
+            self.prefix = 'multibam'
 
         # outdir
         check_path(self.outdir)
@@ -773,16 +1013,16 @@ class Bam2cor(object):
 
         # files
         self.config_txt = os.path.join(self.outdir, 'arguments.txt')
-        self.bam_npz = os.path.join(self.outdir, prefix + '.npz')        
-        self.log = os.path.join(self.outdir, prefix + '.deeptools.log')
+        self.bam_npz = os.path.join(self.outdir, self.prefix + '.npz')
+        self.log = os.path.join(self.outdir, self.prefix + '.deeptools.log')
         # heatmap
-        self.plot_cor_heatmap_png = os.path.join(self.outdir, prefix + '.cor_heatmap.png')
-        self.log_heatmap = os.path.join(self.outdir, prefix + '.cor_heatmap.log')
-        self.cor_counts = os.path.join(self.outdir, prefix + '.cor_counts.tab')        
-        self.cor_matrix = os.path.join(self.outdir, prefix + '.cor.matrix')
+        self.plot_cor_heatmap_png = os.path.join(self.outdir, self.prefix + '.cor_heatmap.png')
+        self.log_heatmap = os.path.join(self.outdir, self.prefix + '.cor_heatmap.log')
+        self.cor_counts = os.path.join(self.outdir, self.prefix + '.cor_counts.tab')        
+        self.cor_matrix = os.path.join(self.outdir, self.prefix + '.cor.matrix')
         # PCA plot
-        self.plot_cor_pca_png = os.path.join(self.outdir, prefix + '.cor_PCA.png')
-        self.log_pca = os.path.join(self.outdir, prefix + '.cor_PCA.log')        
+        self.plot_cor_pca_png = os.path.join(self.outdir, self.prefix + '.cor_PCA.png')
+        self.log_pca = os.path.join(self.outdir, self.prefix + '.cor_PCA.log')        
 
 
     def bam_summary(self):
@@ -793,14 +1033,14 @@ class Bam2cor(object):
             '--outRawCounts {}'.format(self.cor_counts),
             '--bamfiles {}'.format(self.bam_list)
         ])
-        cmd_txt = os.path.join(self.outdir, 'cmd.sh')
+        cmd_txt = os.path.join(self.outdir, self.prefix + '.bam_cor.sh')
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + '\n')
 
         if os.path.exists(self.bam_npz) and not self.overwrite:
             log.warning('file exists: {}'.format(self.bam_npz))
         else:
-            stdout, stderr = run_shell_cmd(cmd)
+            _, stdout, stderr = run_shell_cmd(cmd)
             with open(self.log, 'wt') as w:
                 w.write(stdout + '\n' + stderr + '\n')
 
@@ -822,14 +1062,14 @@ class Bam2cor(object):
             '--outFileCorMatrix {}'.format(self.cor_matrix)
             ])
 
-        cmd_txt = os.path.join(self.outdir, 'cmd_cor_plot.sh')
+        cmd_txt = os.path.join(self.outdir, self.prefix + '.heatmap.sh')
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + '\n')
 
         if os.path.exists(self.plot_cor_heatmap_png) and not self.overwrite:
             log.warning('file exists: {}'.format(self.plot_cor_heatmap_png))
         else:
-            stdout, stderr = run_shell_cmd(cmd)
+            _, stdout, stderr = run_shell_cmd(cmd)
             with open(self.log_heatmap, 'wt') as w:
                 w.write(stdout + '\n' + stderr + '\n')
 
@@ -849,14 +1089,14 @@ class Bam2cor(object):
             '-o {}'.format(self.plot_cor_pca_png),
             '-T "PCA for Bam files"'
             ])
-        cmd_txt = os.path.join(self.outdir, 'cmd.pca.sh')
+        cmd_txt = os.path.join(self.outdir, self.prefix + '.pca.sh')
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + '\n')
 
         if os.path.exists(self.plot_cor_pca_png) and not self.overwrite:
             log.warning('file exists: {}'.format(self.bam_npz))
         else:
-            stdout, stderr = run_shell_cmd(cmd)
+            _, stdout, stderr = run_shell_cmd(cmd)
             with open(self.log_pca, 'wt') as w:
                 w.write(stdout + '\n' + stderr + '\n')
 
@@ -873,6 +1113,102 @@ class Bam2cor(object):
         if self.make_plot is True:
             self.cor_heatmap_plot()
             self.cor_pca_plot()
+
+
+class Bam2fingerprint(object):
+    """
+    QC for bam files
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+
+
+    def init_args(self):
+        """
+        Required arguments for ATACseq analysis
+        """
+        args_init = {
+            'bam_dir': None,
+            'bam_list': None,
+            'threads': 8,
+            'outdir': None,
+            'prefix': None,
+            'title': 'BAM_fingerprint',
+            'labels': None,
+            'overlap': False,
+            'overwrite': False
+            }
+        self = update_obj(self, args_init, force=False)
+
+        ## bam_dir
+        if isinstance(self.bam_dir, str):
+            self.bam_list = listfile(self.bam_dir, '*.bam')
+
+        ## bam_list
+        if not isinstance(self.bam_list, list):
+            raise ValueError('bam_list, expect list, got {}'.format(type(self.bam_list).__name__))
+
+        if not all(file_exists(self.bam_list)):
+            raise ValueError('bam_list, file not exists')
+
+        ## outdir
+        if self.outdir is None:
+            self.outdir = str(pathlib.Path.cwd())
+        self.outdir = file_abspath(self.outdir)
+        check_path(self.outdir)
+
+        ## labels
+        bam_names = [os.path.splitext(os.path.basename(i))[0] for i in self.bam_list]
+        if self.labels is None:
+            self.labels = bam_names
+
+        if not isinstance(self.labels, list):
+            raise ValueError('labels, expect list, got {}'.format(type(self.labels).__name))
+
+        if abs(len(self.bam_list) - len(self.labels)) > 0:
+            log.warning('bam_list, labels are not in equal in length')
+            self.labels = bam_names
+
+        ## output files
+        prefix = re.sub('[^A-Za-z0-9-.]', '_', self.title)
+        prefix = re.sub('_+', '_', prefix) # format string
+        if isinstance(self.prefix, str):
+            prefix = self.prefix
+        else:
+            self.prefix = prefix
+
+        self.fp_png = os.path.join(self.outdir, prefix + '.png')
+        self.fp_tab = os.path.join(self.outdir, prefix + '.tab')
+
+
+    def run(self):
+        # check bam index
+        [Bam(i).index() for i in self.bam_list]
+
+        cmd = ' '.join([
+            '{}'.format(shutil.which('plotFingerprint')),
+            '--minMappingQuality 30 --skipZeros --numberOfSamples 50000',
+            '-p {}'.format(self.threads),
+            '--plotFile {}'.format(self.fp_png),
+            '--outRawCounts {}'.format(self.fp_tab),
+            '-b {}'.format(' '.join(self.bam_list)),
+            '--labels {}'.format(' '.join(self.labels))
+            ])
+
+        # save cmd
+        cmd_txt = os.path.join(self.outdir, self.prefix + '_cmd.sh')
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+
+        # run
+        if file_exists(self.fp_png) and not self.overwrite:
+            log.info('Bam2fingerprint() skipped, file exists: {}'.format(self.fp_png))
+        else:
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.error('Bam2fingerprint() failed, see {}'.format(self.outdir))
 
 
 class PeakIDR(object):
@@ -898,6 +1234,7 @@ class PeakIDR(object):
             'peak': None,
             'idr_cmd': shutil.which('idr'),
             'outdir': str(pathlib.Path.cwd()),
+            'prefix': None,
             'input_type': 'narrowPeak', # broadPeak, bed, gff
             'cor_method': 'pearson', # spearman
             'overwrite': False,
@@ -909,7 +1246,7 @@ class PeakIDR(object):
                 setattr(self, k, v)
 
         # file
-        self.config_txt = os.path.join(self.outdir, 'arguments.txt')
+        self.config_txt = os.path.join(self.outdir, self.prefix + '.config.txt')
 
         # outdir
         check_path(self.outdir)
@@ -952,6 +1289,9 @@ class PeakIDR(object):
         pB = os.path.splitext(os.path.basename(peakB))[0] #
         prefix = '{}.vs.{}.idr'.format(pA, pB)
 
+        if isinstance(self.prefix, str):
+            prefix = self.prefix
+
         # files
         cmd_txt = os.path.join(self.outdir, prefix + '.cmd.sh')
         idr_txt = os.path.join(self.outdir, prefix + '.txt')
@@ -976,7 +1316,7 @@ class PeakIDR(object):
             peakA_nrow = file_row_counter(peakA)
             peakB_nrow = file_row_counter(peakB)
             if peakA_nrow >= 100 and peakB_nrow >= 100:
-                stdout, stderr = run_shell_cmd(cmd)
+                _, stdout, stderr = run_shell_cmd(cmd)
                 with open(idr_log, 'wt') as w:
                     w.write(stdout + '\n' + stderr + '\n')
             else:
@@ -997,6 +1337,110 @@ class PeakIDR(object):
             for peakA, peakB in combinations(self.peak, 2):
                 self.idr(peakA, peakB)
     
+
+class PeakFRiP(object):
+    """
+    Calculate the FRiP 
+    see ENCODE: https://www.encodeproject.org/data-standards/terms/#enrichment
+
+    1. bedtools intersect
+    2. featureCounts
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+
+
+    def init_args(self):
+        args_init = {
+            'peak': None,
+            'bam': None,
+            'method': 'bedtools', # featureCounts
+            'gsize': None
+        }
+        self = update_obj(self, args_init, force=False)
+
+        if not file_exists(self.peak):
+            raise ValueError('peak, file not exists: {}'.format(self.peak))
+
+        if not file_exists(self.bam):
+            raise ValueError('bam, file not exists: {}'.format(self.bam))
+
+        if not self.method in ['bedtools', 'featureCounts']:
+            self.method = 'bedtools' # default
+
+
+    def run_bedtools(self):
+        """
+        see: https://www.biostars.org/p/337872/#338646
+
+        sort -k1 -k2,2n -o peak.bed peak.bed
+        bedtools intersect -c -a peak.bed -b file.bam -sorted -g ref | awk '{i+=$n}END{print i}'
+        """
+        # total reads
+        total = Bam(self.bam).count()
+
+        # peak reads
+        rip_txt = self._tmp(delete=False)
+        cmd = ' '.join([
+            'sort -k1,1 -k2,2n -o {} {}'.format(self.peak, self.peak),
+            '&& bedtools intersect -c -a {} -b {} -g {}'.format(
+                self.peak, self.bam, self.gsize),
+            r"| awk '{i+=$NF}END{print i}'",
+            ' > {}'.format(rip_txt)
+            ])
+        run_shell_cmd(cmd)
+
+        with open(rip_txt, 'rt') as r:
+            rip = int(r.read().strip())
+
+        # output
+        if total > 0:
+            frip = round(rip/total, 4) #  '{:.2f}'.format(rip/total*100)
+        else:
+            frip = 0
+
+        # fragments (PE)
+        if Bam(self.bam).isPaired():
+            total = int(total / 2.0)
+            rip = int(rip / 2.0)
+
+        # remove temp file
+        file_remove(rip_txt, ask=False)
+        return (total, rip, frip)
+
+
+    def run_featureCounts(self):
+        """
+        see: https://www.biostars.org/p/337872/#337890
+
+        -p , fragments
+        """
+        fc = FeatureCounts(gtf=self.peak, bam_list=self.bam)
+        fc.run()
+        df = fc.wrap_log()
+        # df = pd.DataFrame(stat).T
+        # df.columns = ['total', 'map', 'FRiP']
+        return df.values.tolist()[0] # list
+
+
+    def _tmp(self, delete=True):
+        """
+        Create a tmp filename
+        """
+        tmp = tempfile.NamedTemporaryFile(prefix='tmp', suffix='.txt', delete=delete)
+        return tmp.name
+
+
+    def run(self):
+        if self.method == 'bedtools':
+            return self.run_bedtools()
+        elif self.method == 'featureCounts':
+            return self.run_featureCounts()
+        else:
+            log.error('method, unknown, [bedtools|featureCounts], got {}'.format(
+                self.method))
+
 
 class BedOverlap(object):
     """
@@ -1114,4 +1558,43 @@ def convert_image(x, out_fmt='PNG'):
     else:
         img = Image.open(x)
         img.save(out_img, out_fmt)
+
+
+def bwCompare(bw1, bw2, bw_out, operation='log2', **kwargs):
+    """
+    Compare two bigWig files: ip over input
+
+    example:
+    bigwigCompare -b1 bw1 -b2 bw2 --operation 
+    {log2, ratio, subtract, add, mean, reciprocal_ratio, 
+    first, second}
+    -o out.bw
+    """
+    binsize = kwargs.get('binsize', 50)
+    threads = kwargs.get('threads', 1)
+    overwrite = kwargs.get('overwrite', False)
+
+    cmd = ' '.join([
+        '{}'.format(shutil.which('bigwigCompare')),
+        '--bigwig1 {} --bigwig2 {}'.format(bw1, bw2),
+        '--operation {}'.format(operation),
+        '--skipZeroOverZero',
+        '--skipNAs',
+        '--binSize {}'.format(binsize),
+        '-p {}'.format(threads),
+        '-o {}'.format(bw_out)])
+
+    # savd cmd 
+    bw_out_dir = os.path.dirname(bw_out)
+    check_path(bw_out_dir)
+    cmd_txt = os.path.join(bw_out_dir, 'cmd.txt')
+    with open(cmd_txt, 'wt') as w:
+        w.write(cmd + '\n')
+
+    # run
+    if os.path.exists(bw_out) and not overwrite:
+        log.info('bwCompare() skipped, file exists: {}'.format(bw_out))
+    else:
+        run_shell_cmd(cmd)
+
 

@@ -20,12 +20,14 @@ from multiprocessing import Pool
 from .utils.argsParser import *
 from .demx.demx import Demx
 from .qc.fastqc import Fastqc
-from .trim.trimmer import Trimmer
+from .trim.trimmer import TrimRn
 from .align.alignment import Alignment
 from .atac.atac import Atac
 from .rnaseq.rnaseq import RNAseq
 from .rnaseq.rnaseq_pipe import RNAseqPipe
 from .rnaseq.deseq_pair import DeseqPair
+from .chipseq.chipseq import ChIPseq
+from .cnr.cnr import CnR
 from .go.go import Go
 from .utils import download as dl # download.main()
 from .utils.seq import Fastx
@@ -33,7 +35,9 @@ from .atac.atac_utils import Bam2bw, Bam2cor, PeakIDR, BedOverlap
 from .utils.helper import *
 from .fragsize.fragsize import BamPEFragSize2
 from .get_trackhub.get_trackhub import TrackHub 
-from .peak.call_peak import Macs2
+# from .peak.call_peak import Macs2
+from hiseq.peak.call_peak import Macs2
+from hiseq.sample.sample import FxSample
 
 
 class Hiseq(object):
@@ -53,6 +57,8 @@ class Hiseq(object):
         atac         ATACseq pipeline
         rnaseq       RNAseq pipeline
         rnaseq2      RNAseq pipeline, simplify version
+        chipseq      ChIPseq pipeline
+        cnr          CUN&RUN pipeline
 
         demx         Demultiplexing reads (P7, barcode)
         qc           quality control, fastqc
@@ -111,38 +117,47 @@ class Hiseq(object):
 
 
     def trim(self):
-        """Quality control,
-        cutadapt  : Trimming adapters from reads
-        trim_ends : Python scripts to trim ends of reads, usually, the barcode sequences
-        fastqc    : Create fastqc report the raw and clean files
+        """
+        Trim adapters
         """
         parser = add_trim_args()
-        args = parser.parse_args(sys.argv[2:])
-        args = vars(args) # convert to dict
+        args = vars(parser.parse_args(sys.argv[2:]))
+        TrimRn(**args).run()
 
-        # custom args
-        fq1_list = args.get('fq1', None) # list
-        outdir = args.get('outdir', None)
 
-        ## iterate all fq1
-        kwargs = args.copy()
-        if kwargs['fq2'] is None:
-            # SE mode
-            for fq1 in fq1_list:
-                kwargs['fq1'] = fq1
-                kwargs['fq2'] = None
-                kwargs['outdir'] = args.get('outdir', None)
-                Trimmer(**kwargs).run()
-        else:
-            # PE mode
-            if not len(fq1_list) == len(args['fq2']):
-                log.error('-i, --fq2 not in the same length')
+    # def trim(self):
+    #     """Quality control,
+    #     cutadapt  : Trimming adapters from reads
+    #     trim_ends : Python scripts to trim ends of reads, usually, the barcode sequences
+    #     fastqc    : Create fastqc report the raw and clean files
+    #     """
+    #     parser = add_trim_args()
+    #     args = parser.parse_args(sys.argv[2:])
+    #     args = vars(args) # convert to dict
 
-            for fq1, fq2 in zip(fq1_list, args['fq2']):
-                kwargs['fq1'] = fq1
-                kwargs['fq2'] = fq2
-                kwargs['outdir'] = args.get('outdir', None)
-                Trimmer(**kwargs).run()
+    #     # custom args
+    #     fq1_list = args.get('fq1', None) # list
+    #     outdir = args.get('outdir', None)
+
+    #     ## iterate all fq1
+    #     kwargs = args.copy()
+    #     if kwargs['fq2'] is None:
+    #         # SE mode
+    #         for fq1 in fq1_list:
+    #             kwargs['fq1'] = fq1
+    #             kwargs['fq2'] = None
+    #             kwargs['outdir'] = args.get('outdir', None)
+    #             Trimmer(**kwargs).run()
+    #     else:
+    #         # PE mode
+    #         if not len(fq1_list) == len(args['fq2']):
+    #             log.error('-i, --fq2 not in the same length')
+
+    #         for fq1, fq2 in zip(fq1_list, args['fq2']):
+    #             kwargs['fq1'] = fq1
+    #             kwargs['fq2'] = fq2
+    #             kwargs['outdir'] = args.get('outdir', None)
+    #             Trimmer(**kwargs).run()
 
 
     def align(self):
@@ -295,28 +310,24 @@ class Hiseq(object):
         # help
         if len(sys.argv) < 3:
             parser.parse_args(['-h'])
-        # main
         args = vars(args) # convert to dict
         # check design or --fq1,--fq2,--genome,--outdir or smp_path/dirs_ctl/dirs_exp
-        design = args.get('design', None)
-
-        fq1 = args.get('fq1', None)
-        fq2 = args.get('fq2', None)
-        genome = args.get('genome', None)
-        outdir = args.get('outdir', None)
-
-        smp_path = args.get('smp_path', None)
-        dirs_ctl = args.get('dirs_ctl', None)
-        dirs_exp = args.get('dirs_exp', None)
-
-        chk1 = design is None
-        chk2 = smp_path is None
-        chk3 = dirs_ctl is None and dirs_exp is None
-        chk4 = all([i is None for i in [fq1, fq2, genome, outdir]])
-        # if config is None and not all(chk2):
-        if all([chk1, chk2, chk3, chk4]):
-            sys.exit('required: --design, or --fq1, --fq2, --genome, --outdir or --smp-path, --dirs-ctl, --dirs-exp')
-
+        # design = args.get('design', None)
+        # fq1 = args.get('fq1', None)
+        # fq2 = args.get('fq2', None)
+        # genome = args.get('genome', None)
+        # outdir = args.get('outdir', None)
+        # smp_path = args.get('smp_path', None)
+        # dirs_ctl = args.get('dirs_ctl', None)
+        # dirs_exp = args.get('dirs_exp', None)
+        # chk1 = design is None
+        # chk2 = smp_path is None
+        # chk3 = dirs_ctl is None and dirs_exp is None
+        # chk4 = all([i is None for i in [fq1, fq2, genome, outdir]])
+        # # if config is None and not all(chk2):
+        # if all([chk1, chk2, chk3, chk4]):
+        #     sys.exit('required: --design, or --fq1, --fq2, --genome, \
+        #         --outdir or --smp-path, --dirs-ctl, --dirs-exp')
         RNAseq(**args).run()
 
 
@@ -327,8 +338,50 @@ class Hiseq(object):
         parser = add_rnaseq_args2()
         args = parser.parse_args(sys.argv[2:])
         args = vars(args) # convert to dict
-
         RNAseqPipe(**args).run()
+
+
+    def chipseq(self):
+        """
+        ChIPseq pipeline
+        """
+        parser = add_chipseq_args()
+        args = parser.parse_args(sys.argv[2:])
+        # help
+        if len(sys.argv) < 3:
+            parser.parse_args(['-h'])
+        
+        # main
+        args = vars(args) # convert to dict
+        # # check config or --fq1,--fq2,--genome,--outdir
+        # config = args.get('config', None)
+        # design = args.get('design', None)
+        # fq1 = args.get('fq1', None)
+        # fq2 = args.get('fq2', None)
+        # genome = args.get('genome', None)
+        # outdir = args.get('outdir', None)
+        # chk1 = config is None
+        # chk2 = design is None
+        # chk3 = [i is None for i in [fq1, fq2, genome, outdir]]
+        # 
+        # # if config is None and not all(chk2):
+        # if all([chk1, chk2, chk3]):
+        #     sys.exit('required: --config, or --design, or --fq1, --fq2, --genome, --outdir')
+
+        ChIPseq(**args).run()
+
+
+    def cnr(self):
+        """
+        CUN&RUN pipeline
+        """
+        parser = add_cnr_args()
+        args = parser.parse_args(sys.argv[2:])
+        if len(sys.argv) < 3:
+            parser.parse_args(['-h'])
+
+        args = vars(args)
+        CnR(**args).run()
 
 
     def fragsize(self):
@@ -355,8 +408,6 @@ class Hiseq(object):
         if len(sf) == 1:
             sf_list = sf * len(bam_list)
         elif not len(sf) == len(bam_list):
-            print('!AAAA-1', sf)
-            print('!AAAA-2', bam_list)
             raise ValueError('--scaleFactor not match bam files')
         else:
             sf_list = sf
@@ -411,39 +462,7 @@ class Hiseq(object):
         parser = add_sample_args()
         args = parser.parse_args(sys.argv[2:])
         args = vars(args)
-        input = args.get('input', None)
-        outdir = args.get('outdir', None) # os.getcwd())
-        nsize = args.get('sample_size', 100)
-        if outdir is None:
-            outdir = os.getcwd()
-
-        # get list
-        def get_fq(x):
-            if os.path.isdir(x):
-                # f_list = list_fq_files(x)
-                p = re.compile('\.f(ast)?(a|q)(.gz)?')
-                f_list = [i for i in listfile(x, "*") if p.search(i)]
-            elif os.path.isfile(x):
-                f_list = [x]
-            else:
-                raise ValueError('str,list expected, {} got'.format(type(input).__name__))
-
-            return f_list
-
-        # output
-        fq_list = []
-        if isinstance(input, list):
-            for i in input:
-                fq_list.extend(get_fq(i))
-        elif isinstance(input, str):
-            fq_list.extend(get_fq(input))
-        else:
-            raise ValueError('str,list expected, {} got'.format(type(input).__name__))
-
-        # run 
-        for i in fq_list:
-            log.info('sample fastq: {} {}'.format(i, nsize))
-            Fastx(i).sample(outdir, nsize)
+        FxSample(**args).run()
 
 
     def download(self):

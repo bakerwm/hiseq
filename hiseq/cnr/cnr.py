@@ -1,174 +1,114 @@
 """
-ATAC-seq pipeline
+CUT&RUN pipeline
 
-1. cutadapt, recursive trimming 
+workflow
+
+1. trimming
+double-trimming
+a. full length adapter 
+b. <6bp adapters
 
 2. Alignment
---very-sensitive -X 2000
+dovetail alignment using bowtie2
 
-3. Mito%
+--dovetail 
 
-pysam.idxstats(), chrM
+--local --very-sensitive --no-mixed --no-discordant --phred33 -I 10 -X 700
 
-4. Remove PCR duplicates
+## Extract the 9th column from the alignment sam file which is the fragment length
+samtools view -F 0x04 $projPath/alignment/sam/${histName}_bowtie2.sam | awk -F'\t' 'function abs(x){return ((x < 0.0) ? -x : x)} {print abs($9)}' | sort | uniq -c | awk -v OFS="\t" '{print $2, $1/2}' >$projPath/alignment/sam/fragmentLen/${histName}_fragmentLen.txt
 
-$ sambamba markdup
+optional: 
+spike-in
+chrM
 
-5. unique alignments
+3. remove duplicates
+remove or not
 
-$ samtools view -q 30
-
-
-6. proper mapped
-
-$ samtools view -F 1804 
-
-0x4 Read unmapped
-0x8 Mate unmapped 
-0x100 Not primary alignment 
-0x200 Read fails platform/vendor quality checks
-0x400 Read is PCR or optical duplicate
-
-7. merge replicate
-
-$ samtools merge 
-
-8. Shifting reads (For TF footprinting)
-For Tn5 insertion: +4, -5
-
-$ samtools sort -n 
-$ bedtools bamtobed -i in.bam -bedpe | awk -v OFS="\t" '{($9=="+"){print $1,$2+4,$6+4} \
-  ($9=="-"){print $1,$2-5,$6-5}}' > fragments.bed   
+picardCMD MarkDuplicates I=$projPath/alignment/sam/${histName}_bowtie2.sorted.sam 
+O=$projPath/alignment/removeDuplicate/${histName}_bowtie2.sorted.rmDup.sam 
+REMOVE_DUPLICATES=true METRICS_FILE=$projPath/alignment/removeDuplicate/picard_summary/${histName}_picard.rmDup.txt
 
 
-9. Peak calling (MACS2)
 
-$ macs2 callpeak --nomodel -f BAMPE --keep-dup all --cutoff-analysis 
-$ macs2 callpeak 
-
-10. bigWig
-
-$ bamCoverage --binSize 10 --normalizeUsing RPGC 
+4. peak calling
 
 
-# use --ATACshift
-alignmentSieve --numberOfProcessors 8 --ATACshift --bam sample1.bam -o sample1.tmp.bam
+5. cut metrix
 
-# the bam file needs to be sorted again
-samtools sort -@ 8 -O bam -o sample1.shifted.bam sample1.tmp.bam
-samtools index -@ 8 sample1.shifted.bam
-rm sample1.tmp.bam
 
-Working mode:
+Quality control
 
-1. ATACseqSingle(): for single sample/fastq  
-2. ATACseqMultiple(): for multiple sample/fastq files
-3. ATACseqSample(): for single sample (could have multiple replicates)
-4. ATACseq():
+1. fragment size (expected < 120bp)
+2. adapter content pct (10-15%)
+3. read duplication (10-15%)
+4. alignment pct (>90%)
+5. peaks ()
+6. enrichment of motif 
+7. 
 
-bam -> rmdup -> proper_paired -> peak/bw/...
 
-##
-AtacSingle()
-AtacMultiple()
-AtacReplicate()
-Atac()
+Directory structure:
 
-Input config file:
+raw_data
+clean_data
+align
+spike-in
+  - align
+  - scale
+with_dup
+  - bam_files
+  - peak
+  - motif
+rm_dup
+  - bam_files
+  - peak
+  - motif
+qc
+  - fastqc
+  - library size
+  - adapter pct
+  - align pct
+  - frag size 
+  - dup pct
+  - replicate cor
+  - peaks
+  - peaks overlap 
+  - motif
+  - overall: library size, duplicate rate%, unique mapping%
 
-genome    outdir    name    fq1    fq2
+scale_factor
+  - bam to bw
 
-Output:
+report
 
-- raw_data 
-- clean_data
-- align  
-- bam_files 
-- bw_files
-- peak 
-- motif 
-- report
-  - reads num
-  - peaks num 
-  - peaks annotation 
-  - qc 
- 
-####
 
-compare replicates:
+2020-11-12
 
-- bam_files
-- bw_files
-- peak
-- motif
-- report
-
-Mission:
-atac_r1: single
-atac_rn: merge replicates
-atac_rx: multiple groups
++ Add arg: keep_tmp (default: False)
 
 """
+
 
 import os
 import re
 import glob
-import random
-import string
-import collections
-import hiseq
 from multiprocessing import Pool
 from Levenshtein import distance
 from hiseq.utils.helper import *
 from hiseq.trim.trimmer import Trim
-from hiseq.align.alignment import AlignIndex
-# from hiseq.peak.call_peak import Macs2
+from hiseq.align.alignment import Alignment, AlignIndex
+from hiseq.peak.call_peak import Macs2
 from hiseq.atac.atac_utils import *
 from hiseq.fragsize.fragsize import BamPEFragSize
-
-
-def gen_random_string(slen=10):
-    return ''.join(random.sample(string.ascii_letters + string.digits, slen))
+import hiseq
+import collections
 
 
 def print_dict(d):
     d = collections.OrderedDict(sorted(d.items()))
     for k, v in d.items():
         print('{:>20s}: {}'.format(k, v))
-
-
-def check_fq(fq):
-    """
-    Make sure
-    fq: str or list, or None
-    """
-    if fq is None:
-        # raise ValueError('fq1 required, got None')
-        pass
-    elif isinstance(fq, list):
-        fq = file_abspath(fq)
-    elif isinstance(fq, str):
-        fq = [file_abspath(fq)]
-    else:
-        log.error('fq failed, Nont, str, list expected, got {}'.format(type(fq).__name__))
-
-    return fq
-
-
-def fq_paired(fq1, fq2):
-    """
-    Make sure fq1 and fq2, proper paired
-    """
-    fq1 = check_fq(fq1)
-    fq2 = check_fq(fq2)
-
-    if isinstance(fq1, str) and isinstance(fq2, str):
-        return distance(fq1, fq2) == 1
-    elif isinstance(fq1, list) and isinstance(fq2, list):
-        return [distance(i, j) == 1 for i, j in zip(fq1, fq2)]
-    else:
-        log.warning('fq not paired: {}, {}'.format(fq1, fq2))
-        return False
 
 
 def init_cpu(threads=1, parallel_jobs=1):
@@ -194,50 +134,89 @@ def init_cpu(threads=1, parallel_jobs=1):
     return (threads, parallel_jobs)
 
 
-class Atac(object):
+def dict2pickle(d, p, update=False):
+    """Save dict as pickle
+    d is dict
+    p is pickle file
     """
-    Main port for ATACseq analysis
-
-    if fq_groups >= 1:
-        (AtacRx <- AtacRn <- AtacR1) <- AtacRp
-
-    if fq1, fq2: (str)
-        AtacR1
-    """
-    def __init__(self, **kwargs):
-        self = update_obj(self, kwargs, force=True)
-        self.init_args()
-
-
-    def init_args(self):
-        obj_local = AtacConfig(**self.__dict__)
-        self = update_obj(self, obj_local.__dict__, force=True)
-
-        ## save arguments
-        # chk0 = args_checker(self.__dict__, self.config_pickle)
-        # chk1 = args_logger(self.__dict__, self.config_txt)
-
-
-    def run(self):
-        """
-        Run all
-        """
-        if self.atacseq_type == 'build_design':
-            AtacRd(**self.__dict__).run()
-        elif self.atacseq_type == 'atacseq_r1':
-            AtacR1(**self.__dict__).run()
-        elif self.atacseq_type == 'atacseq_rn':
-            AtacRn(**self.__dict__).run()
-        elif self.atacseq_type == 'atacseq_rx':
-            AtacRx(**self.__dict__).run()
+    if isinstance(d, dict) and isinstance(p, str):
+        if file_exists(p):
+            with open(p, 'rb') as r:
+                d_old = pickle.load(r)
         else:
-            raise ValueError('unknown atacseq_type: {}'.format(self.atacseq_type))
+            d_old = {}
+
+        # update
+        d_old.update(d)
+        d_new = d_old if update else d
+
+        # save to file
+        with open(p, 'wb') as w:
+            pickle.dump(d_new, w, protocol=pickle.HIGHEST_PROTOCOL)
+    else:
+        log.error('dict2pickle() failed, dict, str expect')
 
 
-class AtacRx(object):
+def pickle2dict(p):
     """
-    Run ATACseq for multiple groups
-    input: self.fq_groups
+    Read pickle, save as dict
+    """
+    d = {}
+    if file_exists(p):
+        with open(p, 'rb') as r:
+            d = pickle.load(r)
+    else:
+        log.error('pickle file illegal')
+
+    return d
+
+
+def check_fq(fq):
+    """
+    Make sure
+    fq: str or list, or None
+    """
+    if fq is None:
+        pass
+    elif isinstance(fq, list):
+        fq = file_abspath(fq)
+    elif isinstance(fq, str):
+        fq = [file_abspath(fq)]
+    else:
+        log.error('fq failed, Nont, str, list expected, got {}'.format(
+            type(fq).__name__))
+
+    return fq
+
+
+def fq_paired(fq1, fq2):
+    """
+    Make sure fq1 and fq2, proper paired
+    """
+    # convert fq to list
+    fq1 = check_fq(fq1)
+    fq2 = check_fq(fq2)
+
+    flag = False
+    if isinstance(fq1, list) and isinstance(fq2, list):
+        if len(fq1) == len(fq2):
+            flag = all([distance(i, j) == 1 for i, j in zip(fq1, fq2)])
+
+    return flag
+
+
+class CnR(object):
+    """
+    Main port for CnR analysis
+
+    if ip,ip-fq2, input,input-fq2: 
+        (CnRn + CnRn) -> CnRx
+
+    if ip_dir, input_dir:
+        CnRx
+
+    if fq1, f2:
+        CnRn or CnR1
     """
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
@@ -245,7 +224,7 @@ class AtacRx(object):
 
 
     def init_args(self):
-        obj_local = AtacRxConfig(**self.__dict__)
+        obj_local = CnRConfig(**self.__dict__)
         self = update_obj(self, obj_local.__dict__, force=True)
 
         ## save arguments
@@ -253,47 +232,427 @@ class AtacRx(object):
         chk1 = args_logger(self.__dict__, self.config_txt)
 
 
-    def run_group_single(self, d):
+    def run_CnR_design(self):
         """
-        d dict, contains fq1, fq2
-        the other args were saved in self (global)
+        Create design
         """
-        args_local = self.__dict__.copy()
+        CnRDesign(**self.__dict__).save()
 
-        args_required = {
-            'parallel_jobs': 1, # force
-            'build_design': False,            
-            'design': None,
-            'fq_dir': None,
-            'rep_list': d.get('rep_list', None),
-            'fq1': d.get('fq1', None),
-            'fq2': d.get('fq2', None)
-        }
-        args_local.update(args_required) # force
-        AtacRn(**args_local).run()
+
+    def run_CnR_r1(self):
+        """
+        Run single
+        """
+        CnR1(**self.__dict__).run()
+
+
+    def run_CnR_rn(self):
+        """
+        Run multiple samples, rep_list
+        """
+        CnRn(**self.__dict__).run()
+
+
+    def run_CnR_rx_single(self, d):
+        """
+        parsing arguments as dict
+        run CnRx
+        """
+        args_local = self.__dict__
+        args_local['parallel_jobs'] = 1 # force
+        args_local.update(d)
+        CnRx(**args_local).run()
+        # print('!AAAA-1', args_local.get('parallel_jobs', 1))
+
+
+    def run_CnR_from_design(self):
+        """
+        Run ChIPseq, multiple group
+
+        multiple projects
+        """
+        design = Json(self.design).reader()
+
+        if len(design) > 1 and self.parallel_jobs > 1:
+            # run Rx in parallel
+            with Pool(processes=self.parallel_jobs) as pool:
+                pool.map(self.run_CnR_rx_single, list(design.values()))
+        else:
+            # run Rn in parallel
+            for k, v in design.items():
+                args_local = self.__dict__ # init
+                args_local.update(v) # update
+                CnRx(**self.__dict__).run()
+                # print('!AAAA-2', args_local.get('parallel_jobs', 1))
+
+
+    def run_CnR_rx(self):
+        """
+        main:
+        Run whole pipeline
+
+        required args:
+        input_fq, ip_fq
+        """
+        CnRx(**self.__dict__).run()
+
+        # # for pipeline
+        # rx_args = self.__dict__
+        # rx_local = {
+        #     'ip_dir': ip.project_dir,
+        #     'input_dir': input.project_dir,
+        #     'fq1': None,
+        #     'fq2': None,
+        #     'ip': None,
+        #     'ip_fq2': None,
+        #     'input': None,
+        #     'input_fq2': None,
+        #     'spikein': self.spikein,
+        #     'spikein_index': self.spikein_index,
+        #     'extra_index': self.extra_index,
+        #     'gene_bed': self.gene_bed
+        # }
+        # rx_args.update(rx_local)
+        # rx = CnRx(**rx_args)
+        # rx.run()
 
 
     def run(self):
         """
-        self.fq_groups
-          - key: string
-          - value: fq1/fq2/rep_list
+        Run all
         """
-        if self.parallel_jobs > 1:
-            with Pool(processes=self.parallel_jobs) as pool:
-                pool.map(self.run_group_single, self.fq_groups.values())
+        if self.hiseq_type == 'build_design':
+            self.run_CnR_design()
+        elif self.hiseq_type == 'hiseq_from_design':
+            self.run_CnR_from_design()
+        elif self.hiseq_type == 'cnr_r1':
+            self.run_CnR_r1()
+        elif self.hiseq_type == 'cnr_rn':
+            self.run_CnR_rn()
+        elif self.hiseq_type == 'cnr_rx':
+            self.run_CnR_rx()
         else:
-            for d in list(self.fq_groups.values()):
-                self.run_group_single(d)
-
-        # run report for all samples
-        args_local = self.__dict__.copy()
-        AtacRp(**args_local).run()
+            raise ValueError('unknown hiseq_type: {}'.format(self.hiseq_type))
 
 
-class AtacRn(object):
+class CnRx(object):
     """
-    Run ATACseq for multiple replicates, merge replicates
+    Run ChIPseq for ip and input
+    input: ip_dir, input_dir
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+
+
+    def init_args(self):
+        obj_local = CnRxConfig(**self.__dict__)
+        self = update_obj(self, obj_local.__dict__, force=True)
+
+        ## save arguments
+        chk0 = args_checker(self.__dict__, self.config_pickle)
+        chk1 = args_logger(self.__dict__, self.config_txt)
+
+
+    def run_CnRn(self):
+        """
+        Run CnR for ip/input fastq files
+        or copy file from CnRn
+        """
+        c_ip = CnRReader(self.ip_dir).is_hiseq_rn
+        c_input = CnRReader(self.input_dir).is_hiseq_rn
+
+        if c_ip and c_input:
+            log.info('run CnRx for ip_dir and input_dir')
+        elif isinstance(self.ip, list) and isinstance(self.input, list):
+            # remove args
+            # rep_list, ip_dir, input_dir, ip, ip_fq2, input, input_fq2
+            args_local = self.__dict__.copy()
+            rm_args = ['rep_list', 'ip_dir', 'input_dir', 'ip', 'ip_fq2',
+                'input', 'input_fq2']
+            [args_local.pop(i, None) for i in rm_args] # remove
+
+            # for ip
+            log.info('run CnRn for ip')                
+            # for ip fastq files
+            ip_args = args_local.copy()
+            ip_local = {
+                'build_design': False,
+                'is_ip': True,
+                'fq1': self.ip,
+                'fq2': self.ip_fq2,
+                'spikein': self.spikein,
+                'spikein_index': self.spikein_index,
+                'extra_index': self.extra_index,
+                'genome_size': self.genome_size,
+                'gene_bed': self.gene_bed,
+                'hiseq_type': 'cnr_rn'
+                }
+            ip_args.update(ip_local)
+            CnRn(**ip_args).run()
+
+            # for input fastq
+            input_args = args_local.copy()
+            input_local = {
+                'build_design': False,
+                'is_ip': False,
+                'fq1': self.input,
+                'fq2': self.input_fq2,
+                'spikein': self.spikein,
+                'spikein_index': self.spikein_index,
+                'extra_index': self.extra_index,
+                'genome_size': self.genome_size,
+                'gene_bed': self.gene_bed,
+                'hiseq_type': 'cnr_rn'
+                }
+            input_args.update(input_local)
+            CnRn(**input_args).run()
+        else:
+            log.error('CnRx() failed, unknown args')
+
+        ## update 
+        self.ip_args = CnRReader(self.ip_dir).args
+        self.input_args = CnRReader(self.input_dir).args
+        self.ip_bam_from = self.ip_args.get('bam', None)
+        self.ip_bw_from = self.ip_args.get('bw', None)
+        self.input_bam_from = self.input_args.get('bam', None)
+        self.input_bw_from = self.input_args.get('bw', None)
+
+
+    def copy_bam_files(self):
+        """
+        Copy bam files
+        """
+        file_symlink(self.ip_bam_from, self.ip_bam)
+        file_symlink(self.input_bam_from, self.input_bam)
+        # file_copy(self.ip_bam_from, self.ip_bam)
+        # file_copy(self.input_from, self.input_bam)
+
+
+    def copy_bw_files(self):
+        """
+        Copy bw files
+        """
+        file_symlink(self.ip_bw_from, self.ip_bw)
+        file_symlink(self.input_bw_from, self.input_bw)
+        # file_copy(self.ip_bw_from, self.ip_bw)
+        # file_copy(self.input_bw_from, self.input_bw)
+
+
+    def get_ip_over_input_bw(self):
+        """
+        Copy bw files
+        """
+        # ip over input, subtract
+        try:
+            bwCompare(self.ip_bw, self.input_bw, self.ip_over_input_bw, 'subtract',
+                threads=self.threads, binsize=10)
+        except:
+            log.error('get_ip_over_input_bw() failed, see {}'.format(
+                self.bw_dir))
+
+
+    def call_peak2(self):
+        """
+        Call peaks using MACS2
+        ip, input
+        ...
+        """
+        args_global = self.__dict__.copy()
+        args_required = ['genome_size', 'genome_size_file']
+        args_local = dict((k, args_global[k]) for k in args_required if
+            k in args_global)
+
+        peak = Macs2(
+            ip=self.ip_args.get('bam', None),
+            control=self.input_args.get('bam', None),
+            genome=self.genome,
+            output=getattr(self, 'peak_dir', None),
+            prefix=self.ip_args.get('smp_name', None),            
+            # genome_size=self.genome_size,
+            # genome_size_file=self.genome_size_file,
+            **args_local)
+
+        ## call peaks
+        peak.callpeak()
+        # peak.bdgcmp(opt='ppois')
+        # peak.bdgcmp(opt='FE')
+        # peak.bdgcmp(opt='logLR')
+
+        # ## annotation
+        # peak.broadpeak_annotation()
+
+
+    def call_peak(self):
+        """
+        Call peaks using MACS2/SEACR
+        """
+        args_local = {
+            'ip': self.ip_bam,
+            'input': self.input_bam,
+            'outdir': self.peak_dir,
+            'genome': self.genome,
+            'genome_size': self.genome_size,
+            'genome_size_file': self.genome_size_file
+        }
+        CallPeak(**args_local).run()
+        CallPeak(method='macs2', **args_local).run()
+        CallPeak(method='seacr', **args_local).run()
+
+
+    def qc_tss_enrich(self):
+        """
+        Calculate the TSS enrichment
+        """
+        # bw_list = [self.ip_bw, self.input_bw, self.ip_over_input_bw]
+        bw_list = [self.ip_bw, self.input_bw]
+        bw_list_arg = ' '.join(bw_list)
+
+        cmd = ' '.join([
+            '{}'.format(shutil.which('computeMatrix')),
+            'reference-point',
+            '-R {}'.format(self.gene_bed),
+            '-S {}'.format(bw_list_arg),
+            '-o {}'.format(self.tss_enrich_matrix),
+            '--referencePoint TSS',
+            '-b 2000 -a 2000',
+            '--binSize 10 --sortRegions descend --skipZeros',
+            '--smartLabels',
+            '-p {}'.format(self.threads),
+            '2> {}'.format(self.tss_enrich_matrix_log),
+            '&& {}'.format(shutil.which('plotProfile')),
+            '-m {}'.format(self.tss_enrich_matrix),
+            '-o {}'.format(self.tss_enrich_png),
+            '--dpi 300',
+            '--perGroup'
+            ])
+
+        if file_exists(self.tss_enrich_png) and not self.overwrite:
+            log.info('qc_tss_enrich() skipped, file exists: {}'.format(
+                self.tss_enrich_png))
+        else:            
+            if not file_exists(self.gene_bed):
+                log.error('qc_tss() skipped, gene_bed not found')
+            else:
+                with open(self.tss_enrich_cmd, 'wt') as w:
+                    w.write(cmd + '\n')
+
+                try:
+                    run_shell_cmd(cmd)
+                except:
+                    log.error('qc_tss_enrich() failed, see: ')
+
+
+    def qc_genebody_enrich(self):
+        """
+        Calculate the TSS enrichment
+        """
+        # bw_list = [self.ip_bw, self.input_bw, self.ip_over_input_bw]
+        bw_list = [self.ip_bw, self.input_bw]
+        bw_list_arg = ' '.join(bw_list)
+
+        cmd = ' '.join([
+            '{}'.format(shutil.which('computeMatrix')),
+            'scale-regions',
+            '-R {}'.format(self.gene_bed),
+            '-S {}'.format(bw_list_arg),
+            '-o {}'.format(self.genebody_enrich_matrix),
+            '-b 2000 -a 2000 --regionBodyLength 2000',
+            '--binSize 10 --sortRegions descend --skipZeros',
+            '--smartLabels',
+            '-p {}'.format(self.threads),
+            '2> {}'.format(self.genebody_enrich_matrix_log),
+            '&& {}'.format(shutil.which('plotProfile')),
+            '-m {}'.format(self.genebody_enrich_matrix),
+            '-o {}'.format(self.genebody_enrich_png),
+            '--dpi 300',
+            '--perGroup'
+            ])
+
+        if file_exists(self.genebody_enrich_png) and not self.overwrite:
+            log.info('qc_genebody_enrich() skipped, file exists: {}'.format(
+                self.genebody_enrich_png))
+        else:
+            if not file_exists(self.gene_bed):
+                log.error('qc_tss() skipped, gene_bed not found')
+            else:
+                with open(self.genebody_enrich_cmd, 'wt') as w:
+                    w.write(cmd + '\n')
+                    
+                try:
+                    run_shell_cmd(cmd)
+                except:
+                    log.error('qc_genebody_enrich() failed, see: ')
+
+
+    def qc_bam_fingerprint(self):
+        """
+        Calculate fingerprint for bam files
+        """
+        try:
+            Bam2fingerprint(
+                bam_list=[self.ip_bam, self.input_bam],
+                prefix='09.fingerprint',
+                outdir=self.qc_dir,
+                threads=self.threads).run()
+        except:
+            log.error('Bam2fingerprint() failed, see {}'.format(self.qc_dir))
+
+
+    def report(self):
+        """
+        Create report for one sample
+        html
+        """
+        pkg_dir = os.path.dirname(hiseq.__file__)
+        qc_reportR = os.path.join(pkg_dir, 'bin', 'hiseq_report.R')
+        hiseq_report_html = os.path.join(self.report_dir, 'HiSeq_report.html')
+        hiseq_report_stdout = os.path.join(self.report_dir, 
+            'HiSeq_report.stdout')
+        hiseq_report_stderr = os.path.join(self.report_dir, 
+            'HiSeq_report.stderr')
+        cmd = 'Rscript {} {} {} 1> {} 2> {}'.format(
+            qc_reportR,
+            self.project_dir,
+            self.report_dir,
+            hiseq_report_stdout,
+            hiseq_report_stderr
+        )
+        cmd_shell = os.path.join(self.report_dir, 'cmd.sh')
+        with open(cmd_shell, 'wt') as w:
+            w.write(cmd + '\n')
+        if file_exists(hiseq_report_html):
+            log.info('report() skipped, file exists: {}'.format(
+                hiseq_report_html))
+        else:
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.error('report() failed, {}'.format(self.report_dir))
+
+
+    def run(self):
+        """
+        Run multiple samples in parallel
+        using
+        multipleprocess.Pool
+        """
+        # run
+        self.run_CnRn()
+        self.copy_bam_files()
+        self.copy_bw_files()
+        self.get_ip_over_input_bw()
+        self.call_peak()
+        # qc
+        self.qc_tss_enrich()
+        self.qc_genebody_enrich()
+        self.qc_bam_fingerprint()
+        self.report()
+
+
+class CnRn(object):
+    """
+    Run CnR for multiple replicates, merge replicates
     input: rep_list/fq1
     """
     def __init__(self, **kwargs):
@@ -302,7 +661,7 @@ class AtacRn(object):
 
 
     def init_args(self):
-        obj_local = AtacRnConfig(**self.__dict__)
+        obj_local = CnRnConfig(**self.__dict__)
         self = update_obj(self, obj_local.__dict__, force=True)
 
         ## save arguments
@@ -314,21 +673,21 @@ class AtacRn(object):
         """
         get the proper_mapped.bam files
         """
-        return [AtacReader(i).args.get('bam_rmdup', None) for i in self.rep_list]
+        return [CnRReader(i).args.get('bam', None) for i in self.rep_list]
 
 
     def get_bw_list(self):
         """
         get the proper_mapped.bam files
         """
-        return [AtacReader(i).args.get('bw', None) for i in self.rep_list]
+        return [CnRReader(i).args.get('bw', None) for i in self.rep_list]
 
 
     def get_peak_list(self):
         """
         get the .narrowPeak files
         """
-        return [AtacReader(i).args.get('peak', None) for i in self.rep_list]
+        return [CnRReader(i).args.get('peak', None) for i in self.rep_list]
 
 
     def merge_bam(self):
@@ -352,6 +711,11 @@ class AtacRn(object):
             except:
                 log.warning('merge_bam() failed.')
 
+        ## calculate norm scale
+        self.align_scale = self.cal_norm_scale(self.bam)
+        with open(self.align_scale_txt, 'wt') as w:
+            w.write('{:.4f}\n'.format(self.align_scale))
+
 
     def get_bam_rmdup(self, rmdup=True):
         """
@@ -367,13 +731,6 @@ class AtacRn(object):
                 else:
                     Bam(self.bam).rmdup(self.bam_rmdup)
                     Bam(self.bam_rmdup).index()
-        else:
-            file_symlink(self.bam, self.bam_rmdup)
-
-        ## calculate norm scale
-        self.align_scale = self.cal_norm_scale(self.bam_rmdup)
-        with open(self.align_scale_txt, 'wt') as w:
-            w.write('{:.4f}\n'.format(self.align_scale))
 
 
     def bam_to_bw(self, norm=1000000):
@@ -382,7 +739,7 @@ class AtacRn(object):
         bam -> bigWig
         """
         args_local = {
-            'bam': self.bam_rmdup,
+            'bam': self.bam,
             'scaleFactor': self.align_scale,
             'outdir': self.bw_dir,
             'genome': self.genome,
@@ -405,7 +762,7 @@ class AtacRn(object):
         cmd = ' '.join([
             '{}'.format(shutil.which('bedtools')),
             'genomecov -bg -scale {}'.format(self.align_scale),
-            '-ibam {}'.format(self.bam_rmdup),
+            '-ibam {}'.format(self.bam),
             '| sort -k1,1 -k2,2n > {}'.format(self.bg)
             ])
 
@@ -445,21 +802,46 @@ class AtacRn(object):
                 log.error('bg_to_bw() failed')
 
 
+    def call_peak2(self):
+        """
+        Call peaks using MACS2
+        ...
+        """
+        args_peak = self.__dict__.copy()
+        args_peak['genome_size'] = getattr(self, 'genome_size', 0)
+        
+        bam = self.bam
+        bed = os.path.splitext(bam)[0] + '.bed'
+        Bam(bam).to_bed(bed)
+        genome = args_peak.pop('genome', None)
+        output = args_peak.pop('peak_dir', None)
+        prefix = args_peak.pop('smp_name', None)
+        genome_size = getattr(self, 'genome_size', 0)
+        genome_size_file = getattr(self, 'genome_size_file', None)
+
+        if check_file(self.peak):
+            log.info('call_peak() skipped, file exists: {}'.format(
+                self.peak))
+        else:
+            Macs2(bed, genome, output, prefix, atac=False,
+                genome_size=genome_size, 
+                genome_size_file=genome_size_file).callpeak()
+
+
     def call_peak(self):
         """
         Call peaks using MACS2/SEACR
         """
         args_local = {
-            'ip': self.bam_rmdup,
+            'ip': self.bam,
             'input': None,
             'outdir': self.peak_dir,
-            'prefix': self.smp_name,
             'genome': self.genome,
             'genome_size': self.genome_size,
             'genome_size_file': self.genome_size_file
         }
         CallPeak(method='macs2', **args_local).run()
-        # CallPeak(method='seacr', **args_local).run()
+        CallPeak(method='seacr', **args_local).run()
 
 
     def cal_norm_scale(self, bam, norm=1000000):
@@ -483,7 +865,6 @@ class AtacRn(object):
         return n_scale
 
 
-    ## quality control ##
     def qc_bam_cor(self, window=500):
         """
         Compute correlation (pearson) between replicates
@@ -539,7 +920,7 @@ class AtacRn(object):
         Save all FRiP.txt file to one
         """
         # get list
-        self.frip_list = [AtacReader(i).args.get('frip_txt', None) for \
+        self.frip_list = [CnRReader(i).args.get('frip_txt', None) for \
             i in self.rep_list]
         self.frip_list = [i for i in self.frip_list if file_exists(i)]
 
@@ -563,7 +944,7 @@ class AtacRn(object):
                 self.frip_txt))
         else:
             # total, n, frip
-            s = PeakFRiP(peak=self.peak, bam=self.bam_rmdup, method='featureCounts').run()
+            s = PeakFRiP(peak=self.peak, bam=self.bam, method='featureCounts').run()
             s.append(self.project_name)
             s = list(map(str, s))
 
@@ -685,34 +1066,31 @@ class AtacRn(object):
         Create report for one sample
         html
         """
-        # run report for all samples
-        args_local = self.__dict__.copy()
-        AtacRp(**args_local).run()
-
-        # pkg_dir = os.path.dirname(hiseq.__file__)
-        # qc_reportR = os.path.join(pkg_dir, 'bin', 'hiseq_report.R')
-        # hiseq_report_html = os.path.join(
-        #     self.report_dir, 
-        #     'HiSeq_report.html')
-
-        # cmd = ' '.join([
-        #     'Rscript',
-        #     qc_reportR,
-        #     self.project_dir,
-        #     self.report_dir,
-        #     '1>',
-        #     self.report_log
-        #     ])
-
-        # cmd_txt = os.path.join(self.report_dir, 'cmd.sh')
-        # with open(cmd_txt, 'wt') as w:
-        #     w.write(cmd + '\n')
-
-        # if file_exists(hiseq_report_html):
-        #     log.info('report() skipped, file exists: {}'.format(
-        #         hiseq_report_html))
-        # else:
-        #     run_shell_cmd(cmd) 
+        pkg_dir = os.path.dirname(hiseq.__file__)
+        qc_reportR = os.path.join(pkg_dir, 'bin', 'hiseq_report.R')
+        hiseq_report_html = os.path.join(self.report_dir, 'HiSeq_report.html')
+        hiseq_report_stdout = os.path.join(self.report_dir, 
+            'HiSeq_report.stdout')
+        hiseq_report_stderr = os.path.join(self.report_dir, 
+            'HiSeq_report.stderr')
+        cmd = 'Rscript {} {} {} 1> {} 2> {}'.format(
+            qc_reportR,
+            self.project_dir,
+            self.report_dir,
+            hiseq_report_stdout,
+            hiseq_report_stderr
+        )
+        cmd_shell = os.path.join(self.report_dir, 'cmd.sh')
+        with open(cmd_shell, 'wt') as w:
+            w.write(cmd + '\n')
+        if file_exists(hiseq_report_html):
+            log.info('report() skipped, file exists: {}'.format(
+                hiseq_report_html))
+        else:
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.error('report() failed, {}'.format(self.report_dir))
 
 
     def pick_fq_samples(self, i):
@@ -767,7 +1145,7 @@ class AtacRn(object):
         args_local.update(args_input) # update fq1/rep_list/group
         args_local.update(args_init) #
 
-        AtacR1(**args_local).run()
+        CnR1(**args_local).run()
 
 
     def run(self):
@@ -779,10 +1157,12 @@ class AtacRn(object):
         # run each fq
         if isinstance(self.fq1, list):
             i_list = list(range(len(self.fq1)))
+
             # in parallel
             if self.parallel_jobs > 1:
                 with Pool(processes=self.parallel_jobs) as pool:
                     pool.map(self.run_fq_single, i_list)
+            # in sequential
             else:
                 for i in i_list:
                     self.run_fq_single(i)
@@ -814,8 +1194,8 @@ class AtacRn(object):
             # new files, symlinks
             log.warning('merge() skipped, Only 1 replicate detected')
             # copy files: bam, bw, peak
-            rep = AtacReader(self.rep_list[0]).args
-            bam = rep.get('bam_rmdup', None)
+            rep = CnRReader(self.rep_list[0]).args
+            bam = rep.get('bam', None)
             bg = rep.get('bg', None)
             bw = rep.get('bw', None)
             peak = rep.get('peak', None)
@@ -826,14 +1206,14 @@ class AtacRn(object):
 
             file_symlink(align_scale_txt, self.align_scale_txt)
             file_symlink(align_json, self.align_json)
-            file_symlink(bam, self.bam_rmdup)
-            Bam(self.bam_rmdup).index()
+            file_symlink(bam, self.bam)
+            Bam(self.bam).index()
             file_symlink(bg, self.bg)
             file_symlink(bw, self.bw)
             file_symlink(peak, self.peak)
-            # file_symlink(peak_seacr, self.peak_seacr)
+            file_symlink(peak_seacr, self.peak_seacr)
 
-            # self.get_peak_frip()
+            self.get_peak_frip()
             self.qc_frip()
             self.qc_tss_enrich()
             self.qc_genebody_enrich()
@@ -845,9 +1225,9 @@ class AtacRn(object):
             raise ValueError('merge() failed, no rep detected')
 
 
-class AtacR1(object):
+class CnR1(object):
     """
-    Run ATACseq basic for single fastq file (ip/input)
+    Run CUT&RUN basic for single fastq file (ip/input)
 
     align - bam - rmdup - proper_paired - peak - bw - qc - report
     """
@@ -857,7 +1237,7 @@ class AtacR1(object):
 
 
     def init_args(self):
-        obj_local = AtacR1Config(**self.__dict__)
+        obj_local = CnR1Config(**self.__dict__)
         self = update_obj(self, obj_local.__dict__, force=True)
 
         ## save arguments
@@ -866,8 +1246,16 @@ class AtacR1(object):
 
 
     # main pipeline #
-    def prep_raw(self):
+    def prep_raw(self, cut_to_length=0):
         """
+        Cut the reads to specific length, from the 3' end
+
+        For ATACseq, CUT&RUN, CUT&TAG experiment
+
+        suggest=50
+
+        if not: create a symlink
+        
         self.fq1, self.fq2 => raw_fq_list
         """
         raw_fq1, raw_fq2 = self.raw_fq_list
@@ -877,18 +1265,15 @@ class AtacR1(object):
 
     def trim(self, trimmed=False):
         """
-        Cut the reads to specific length, from the 3' end
-
-        For ATACseq, CUT&RUN, CUT&TAG experiment
-
-        suggest=50
-
-        if not: create a symlink
+        using bowtie2, --local
+        no need to trim adapters
 
         Trim reads:
-        Trim(fq1, outdir, fq2, cut_after_trim='9,-6').run()
+        Trimmer(fq1, outdir, fq2, cut_after_trim='9,-6').run()
 
-        if not:
+        if trimmed:
+            do
+        else:
             copy/links
         """
         fq1, fq2 = self.raw_fq_list
@@ -924,20 +1309,6 @@ class AtacR1(object):
     def align_genome(self):
         """
         Alignment PE reads to reference genome, using bowtie2
-        
-        --sensitive --local -X 2000 
-
-        samtools view -bhS -f 2 -F 1804
-        
-        include: -f
-            2    0x2    Read mapped in proper pair
-
-        exclude: -F
-            4    0x4    Read unmapped, 
-            8    0x8    Mate unmapped,
-            256  0x100  Not primary alignment, 
-            512  0x200  Reads fails platform quality checks,
-            1024 0x400  Read is PCR or optical duplicate
         """
         args_local = self.__dict__.copy()
         fq1, fq2 = args_local.get('clean_fq_list', [None, None])
@@ -950,8 +1321,7 @@ class AtacR1(object):
             'genome': self.genome,
             'extra_index': self.extra_index,
             'aligner': self.aligner,
-            'keep_tmp': self.keep_tmp,
-            'max_fragment': 2000 
+            'keep_tmp': self.keep_tmp
         }
         args_local.update(args_init)
 
@@ -963,7 +1333,7 @@ class AtacR1(object):
             Align(**args_local).run()
 
         # copy files
-        g = AtacReader(self.align_dir).args
+        g = CnRReader(self.align_dir).args
         g_bam = g.get('bam', None)
         g_align_bam = g.get('bam', None)
         g_align_stat = g.get('align_stat', None)
@@ -975,6 +1345,11 @@ class AtacR1(object):
         file_copy(g_align_stat, self.align_stat)
         file_copy(g_align_json, self.align_json)
         file_copy(g_align_flagstat, self.align_flagstat)
+
+        ## calculate norm scale
+        self.align_scale = self.cal_norm_scale(self.bam)
+        with open(self.align_scale_txt, 'wt') as w:
+            w.write('{:.4f}\n'.format(self.align_scale))
 
 
     def align_spikein(self):
@@ -1000,10 +1375,13 @@ class AtacR1(object):
         if file_exists(bam) and not self.overwrite:
             log.info('align() skipped, file exists: {}'.format(bam))
         else:
+            # print('!AAAA-1')
+            # print_dict(args_sp)
+            # sys.exit()
             Align(**args_sp).run()
 
         # copy files
-        sp = AtacReader(self.spikein_dir).args
+        sp = CnRReader(self.spikein_dir).args
         sp_bam = sp.get('bam', None)
         sp_align_bam = sp.get('bam', None)
         sp_align_stat = sp.get('align_stat', None)
@@ -1022,7 +1400,6 @@ class AtacR1(object):
             w.write('{:.4f}\n'.format(self.spikein_scale))
 
 
-    # Deprecated
     def get_bam(self, dir):
         """
         Get the align bam file
@@ -1039,6 +1416,11 @@ class AtacR1(object):
         Remove PCR dup from BAM file using sambamfa/Picard 
         save only proper paired PE reads
         """
+        bam_raw = self.get_bam(self.align_dir)
+
+        # symlink bam
+        file_symlink(bam_raw, self.bam)
+
         # remove dup
         if rmdup:
             Bam(self.bam).rmdup(self.bam_rmdup)
@@ -1046,30 +1428,21 @@ class AtacR1(object):
         else:
             file_symlink(self.bam, self.bam_rmdup)
 
-        ## calculate norm scale
-        self.align_scale = self.cal_norm_scale(self.bam_rmdup)
-        with open(self.align_scale_txt, 'wt') as w:
-            w.write('{:.4f}\n'.format(self.align_scale))
-
 
     def call_peak(self):
         """
         Call peaks using MACS2/SEACR
-        
-        -f BAMPE
-
         """
         args_local = {
-            'ip': self.bam_rmdup, # rm_dup
+            'ip': self.bam,
             'input': None,
             'outdir': self.peak_dir,
-            'prefix': self.smp_name,
             'genome': self.genome,
             'genome_size': self.genome_size,
             'genome_size_file': self.genome_size_file
         }
         CallPeak(method='macs2', **args_local).run()
-        # CallPeak(method='seacr', **args_local).run()
+        CallPeak(method='seacr', **args_local).run()
 
 
     def bam_to_bg(self):
@@ -1082,7 +1455,7 @@ class AtacR1(object):
         cmd = ' '.join([
             '{}'.format(shutil.which('bedtools')),
             'genomecov -bg -scale {}'.format(self.align_scale),
-            '-ibam {}'.format(self.bam_rmdup),
+            '-ibam {}'.format(self.bam),
             '| sort -k1,1 -k2,2n > {}'.format(self.bg)
             ])
 
@@ -1120,6 +1493,28 @@ class AtacR1(object):
                 run_shell_cmd(cmd)
             except:
                 log.error('bg_to_bw() failed')
+
+
+    def pipe_genome(self):
+        """
+        Run for genome
+        """
+        self.prep_raw(cut_to_length=self.cut_to_length)
+        self.trim(trimmed=self.trimmed)
+        self.align_genome()
+        self.get_bam_rmdup()
+        self.call_peak()
+        self.bam_to_bg()
+        self.bg_to_bw()
+
+
+    def pipe_spikein(self):
+        """
+        Run for spikein
+        """
+        if isinstance(self.spikein_index, str):
+            self.align_spikein() # run alignment
+
 
     # quality control #
     def cal_norm_scale(self, bam, norm=1000000):
@@ -1219,7 +1614,7 @@ class AtacR1(object):
             log.info('lendist() skipped: file exists: {}'.format(
                 self.lendist_txt))
         else:
-            BamPEFragSize(self.bam_rmdup).saveas(self.lendist_txt)
+            BamPEFragSize(self.bam).saveas(self.lendist_txt)
 
 
     def qc_frip(self):
@@ -1230,16 +1625,11 @@ class AtacR1(object):
             log.info('qc_frip() skipped, file exists: {}'.format(
                 self.frip_txt))
         else:
-            try:
-                # total, n, frip
-                s = PeakFRiP(peak=self.peak, bam=self.bam_rmdup, 
-                    method='featureCounts').run()
-            except:
-                log.error('PeakFRiP() failed, see ')
-                s = [0, 0, 0]
-
+            # total, n, frip
+            s = PeakFRiP(peak=self.peak, bam=self.bam, method='featureCounts').run()
             s.append(self.project_name)
             s = list(map(str, s))
+
             hd = ['total', 'peak_reads', 'FRiP', 'id']
 
             with open(self.frip_txt, 'wt') as w:
@@ -1253,7 +1643,7 @@ class AtacR1(object):
         """
         Mito reads, percentage
         """
-        lines = pysam.idxstats(self.bam_rmdup).splitlines()
+        lines = pysam.idxstats(self.bam).splitlines()
         # extract chrM, MT
         lines = [i for i in lines if re.search('^(chrM|MT)', i)]
 
@@ -1388,25 +1778,15 @@ class AtacR1(object):
                     log.error('qc_genebody_enrich() failed, see: ')
 
 
-    def pipe_genome(self):
+    def qc_bam_fingerprint(self):
         """
-        Run for genome
+        Calculate fingerprint for bam files
         """
-        self.prep_raw()
-        self.trim(trimmed=self.trimmed)
-        self.align_genome()
-        self.get_bam_rmdup()
-        self.call_peak()
-        self.bam_to_bg()
-        self.bg_to_bw()
-
-
-    def pipe_spikein(self):
-        """
-        Run for spikein
-        """
-        if isinstance(self.spikein_index, str):
-            self.align_spikein() # run alignment
+        Bam2fingerprint(
+            bam_list=self.get_bam_list(),
+            prefix='09.fingerprint',
+            outdir=self.qc_dir,
+            threads=self.threads).run()
 
 
     def pipe_qc(self):
@@ -1427,34 +1807,31 @@ class AtacR1(object):
         Create report for one sample
         html
         """
-        # run report for all samples
-        args_local = self.__dict__.copy()
-        AtacRp(**args_local).run()
-
-        # pkg_dir = os.path.dirname(hiseq.__file__)
-        # qc_reportR = os.path.join(pkg_dir, 'bin', 'hiseq_report.R')
-        # hiseq_report_html = os.path.join(
-        #     self.report_dir, 
-        #     'HiSeq_report.html')
-
-        # cmd = ' '.join([
-        #     'Rscript',
-        #     qc_reportR,
-        #     self.project_dir,
-        #     self.report_dir,
-        #     '1>',
-        #     self.report_log
-        #     ])
-
-        # cmd_txt = os.path.join(self.report_dir, 'cmd.sh')
-        # with open(cmd_txt, 'wt') as w:
-        #     w.write(cmd + '\n')
-    
-        # if file_exists(hiseq_report_html):
-        #     log.info('report() skipped, file exists: {}'.format(
-        #         hiseq_report_html))
-        # else:
-        #     run_shell_cmd(cmd)
+        pkg_dir = os.path.dirname(hiseq.__file__)
+        qc_reportR = os.path.join(pkg_dir, 'bin', 'hiseq_report.R')
+        hiseq_report_html = os.path.join(self.report_dir, 'HiSeq_report.html')
+        hiseq_report_stdout = os.path.join(self.report_dir, 
+            'HiSeq_report.stdout')
+        hiseq_report_stderr = os.path.join(self.report_dir, 
+            'HiSeq_report.stderr')
+        cmd = 'Rscript {} {} {} 1> {} 2> {}'.format(
+            qc_reportR,
+            self.project_dir,
+            self.report_dir,
+            hiseq_report_stdout,
+            hiseq_report_stderr
+        )
+        cmd_shell = os.path.join(self.report_dir, 'cmd.sh')
+        with open(cmd_shell, 'wt') as w:
+            w.write(cmd + '\n')
+        if file_exists(hiseq_report_html):
+            log.info('report() skipped, file exists: {}'.format(
+                hiseq_report_html))
+        else:
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.error('report() failed, {}'.format(self.report_dir))
 
 
     def run(self):
@@ -1475,161 +1852,19 @@ class AtacR1(object):
         #     file_remove(del_list, ask=False)
 
 
-class AtacRd(object):
-    """
-    Generate design.json for ATACseq
-    Prepare fq for ATACseq analysis
-    append/update
-
-    format:
-    input: fq1, fq2
-    """
-    def __init__(self, **kwargs):
-        self = update_obj(self, kwargs, force=True)
-        self.init_args()
-        self.init_design()
+class CnRt(object):
+    pass
 
 
-    def init_args(self):
-        obj_local = AtacRdConfig(**self.__dict__)
-        self = update_obj(self, obj_local.__dict__, force=True)
-        self.atacseq_type = 'atacseq_rd'
-        self.build_design = False # force
-        
-        ## check
-        self.design = file_abspath(self.design)
-        if not isinstance(self.design, str):
-            raise ValueError('--design, required')
-            
-
-    def init_design(self):
-        """
-        Save args in Json format， fq_groups
-        """
-        # design: init
-        if file_exists(self.design):
-            design_dict = Json(self.design).reader()
-        else:
-            design_dict = {}
-
-        # update
-        # check file exists
-        log.info('Check file exitence')
-        for g, d in self.fq_groups.items():
-            self.fq_input(d.get('fq1', None))
-            self.fq_input(d.get('fq2', None))
-
-            if d in design_dict.values():
-                log.warning('design exists, skipped ...')
-                continue
-            
-            if g in design_dict:
-                g = gen_random_string()
-                
-            # update
-            design_dict[g] = d
-        
-        # assign group number
-        i = 0
-        dout = {}
-        for k, v in design_dict.items():
-            i += 1
-            key = 'atacseq_{:03d}'.format(i)
-            dout[key] = v
-            
-        # update
-        self.fq_groups = dout
-
-
-    def fq_input(self, fq):
-        """
-        Check input file, str or list
-        
-        convert to absolute path
-        """
-        if isinstance(fq, str):
-            fq = [fq] # convert to list
-
-        if isinstance(fq, list):
-            for f in fq:
-                log.info('{} : {}'.format(file_exists(f), f))
-                
-            chk1 = file_exists(fq)
-            
-            if all(chk1):
-                return file_abspath(fq)
-            else:
-                log.error('fastq files not exists')
-        else:
-            raise ValueError('unknown fastq, list expected, got {}'.format(
-              type(fq).__name__))
-
-
-    def run(self):
-        # save to file
-        Json(self.fq_groups).writer(self.design)
-
-
-class AtacRp(object):
-    """
-    Run ATACseq for multiple samples
-    input: project_dir
-    """
-    def __init__(self, **kwargs):
-        self = update_obj(self, kwargs, force=True)
-        self.init_args()
-
-
-    def init_args(self):
-        obj_local = AtacRpConfig(**self.__dict__)
-        self = update_obj(self, obj_local.__dict__, force=True)
-
-
-    def report(self):
-        """
-        Create report for one sample
-        html
-        """
-        pkg_dir = os.path.dirname(hiseq.__file__)
-        qc_reportR = os.path.join(pkg_dir, 'bin', 'hiseq_report.R')
-        atac_report_html = os.path.join(
-            self.report_dir, 
-            'HiSeq_report.html')
-
-        cmd = ' '.join([
-            'Rscript',
-            qc_reportR,
-            self.project_dir,
-            self.report_dir,
-            '1>',
-            self.report_log
-            ])
-
-        cmd_txt = os.path.join(self.report_dir, 'cmd.sh')
-        with open(cmd_txt, 'wt') as w:
-            w.write(cmd + '\n')
-    
-        if file_exists(atac_report_html) and not self.overwrite:
-            log.info('report() skipped, file exists: {}'.format(
-                atac_report_html))
-        else:
-            run_shell_cmd(cmd) 
-
-
-    def run(self):
-        """
-        Create report for multiple samples (n groups)
-        """
-        self.report()
-
-
-class AtacConfig(object):
+class CnRConfig(object):
     """
     Global config for CnR analysis
     """
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
+        self.init_files()
+        self.init_fq()
         self.init_mission()
 
 
@@ -1641,30 +1876,32 @@ class AtacConfig(object):
             'build_design': False,
             'design': None,
             'rep_list': None,
+            'ip_dir': None,
+            'input_dir': None,
+            'ip': None,
+            'input': None,
+            'ip_fq2': None,
+            'input_fq2': None,
             'fq1': None,
             'fq2': None,
+            'genome': None,
             'outdir': None,
             'aligner': 'bowtie2',
-            'genome': None,
-            'genome_index': None,
-            'extra_index': None,
             'spikein': None,
             'spikein_index': None,
+            'extra_index': None,
             'threads': 1,
             'parallel_jobs': 1,
             'overwrite': False,
-            'binsize': 10,
+            'binsize': 50,
             'genome_size': 0,
-            'genome_size_file': 0,
-            'gene_bed': None,
-            'keep_tmp': None,
             'trimmed': False,
+            'keep_tmp': False,
             'cut_to_length': 0,
             'recursive': False
         }
         self = update_obj(self, args_init, force=False)
 
-        # outdir
         if self.outdir is None:
           self.outdir = str(pathlib.Path.cwd())
         self.outdir = file_abspath(self.outdir)
@@ -1676,10 +1913,6 @@ class AtacConfig(object):
         # threads
         self.threads, self.parallel_jobs = init_cpu(self.threads, 
             self.parallel_jobs)
-
-        # fq groups
-        self.fq_groups = Json(self.design).reader() if \
-            file_exists(self.design) else self.group_fq()
 
 
     def init_files(self, create_dirs=True):
@@ -1702,218 +1935,59 @@ class AtacConfig(object):
             check_path(self.config_dir)
 
 
-    def group_fq(self):
+    def init_fq(self):
         """
-        separate fastq files into groups, based on filename
+        Check fastq files
+        IP, Input
         """
-        if isinstance(self.fq_dir, str):
-            f1 = listfile(self.fq_dir, "*.fastq.gz")
-            f2 = listfile(self.fq_dir, "*.fq.gz")
-            f3 = listfile(self.fq_dir, "*.fastq")
-            f4 = listfile(self.fq_dir, "*.fq")
-            f_list = f1 + f2 + f3 + f4 # all fastq files
-        elif isinstance(self.fq1, list):
-            f_list = self.fq1 + self.fq2
-        elif isinstance(self.fq1, str):
-            f_list = [self.fq1, self.fq2]
-        else:
-            f_list = []
-        g_list = fq_name_rmrep(f_list)
-        g_list = sorted(list(set(g_list))) # unique
-
-        # split into groups
-        d = {} # 
-        for g in g_list:
-            # fq files for one group
-            g_fq = [i for i in f_list if g in os.path.basename(i)]
-            # for fq1, fq2
-            r1 = re.compile('1.f(ast)?q(.gz)?')
-            r2 = re.compile('2.f(ast)?q(.gz)?')
-            g_fq1 = [i for i in g_fq if r1.search(i)]
-            g_fq2 = [i for i in g_fq if r2.search(i)]
-            # save to dict
-            d[g] = {'fq1': g_fq1,
-                    'fq2': g_fq2,
-                    'group': g}
-
-        return d
+        chk1 = fq_paired(self.ip, self.ip_fq2)
+        chk2 = fq_paired(self.input, self.input_fq2)
 
 
     def init_mission(self):
         """
-        Determine the type of ATACseq analysis
+        Determine the type of CnR analysis
         1. build_design
         2. Single: IP/Input pair
         3. Multiple: IP/Input pair
         4. x, ip vs input
         """
-        self.atacseq_type = None
+        self.hiseq_type = None
 
         # 1st level
         if self.build_design:
-            self.atacseq_type = 'build_design'
-        elif len(self.fq_groups) >= 1:
-            self.atacseq_type = 'atacseq_rx'
-        # elif len(self.fq_groups) == 1:
-        #     self.atacseq_type = 'atacseq_rn'
+            self.hiseq_type = 'build_design'
+        elif file_exists(self.design):
+            self.hiseq_type = 'hiseq_from_design'
+        elif isinstance(self.ip_dir, str) and isinstance(self.input_dir, str):
+            self.hiseq_type = 'cnr_rx'
+        elif all([not i is None for i in [self.ip, self.input]]):
+            self.hiseq_type = 'cnr_rx'
+        elif isinstance(self.rep_list, list) or isinstance(self.fq1, list):
+            self.hiseq_type = 'cnr_rn'
         elif isinstance(self.fq1, str):
-            self.atacseq_type = 'atacseq_r1'
+            self.hiseq_type = 'cnr_r1'
         else:
-            raise ValueError('unknown ATACseq type')
+            raise ValueError('unknown CnR type')
 
         # check
-        if self.atacseq_type is None:
-            raise ValueError('unknown ATACseq')
+        if self.hiseq_type is None:
+            raise ValueError('unknown CnR')
 
 
-class AtacRxConfig(object):
+class CnRxConfig(object):
     """
-    Prepare directories for Rx: N groups
+    Prepare directories for Rx: IP vs Input
 
-    require: groups > 1
-    """
-    def __init__(self, **kwargs):
-        self = update_obj(self, kwargs, force=True)
-        self.init_args()
-        self.init_files()
-
-
-    def init_args(self):
-        """
-        Required:
-          - design, str
-          - fq_dir, str
-          - rep_list, list
-          - fq1, list
-          - fq2, list
-        """
-        args_init = {
-            'design': None,
-            'rep_list': None,
-            'fq1': None,
-            'fq2': None,
-            'outdir': None,
-            'aligner': 'bowtie2',
-            'genome': None,
-            'genome_index': None,
-            'extra_index': None,
-            'spikein': None,
-            'spikein_index': None,
-            'threads': 1,
-            'parallel_jobs': 1,
-            'overwrite': False,
-            'binsize': 10,
-            'genome_size': 0,
-            'genome_size_file': 0,
-            'gene_bed': None,
-            'keep_tmp': None,
-            'trimmed': False,
-            'cut_to_length': 0,
-            'recursive': False
-        }
-        self = update_obj(self, args_init, force=False)
-        self.atacseq_type = 'atacseq_rx' #
-
-        # aligner
-        if self.aligner is None:
-            self.aligner = 'bowtie2'
-
-        # threads
-        self.threads, self.parallel_jobs = init_cpu(self.threads, 
-            self.parallel_jobs)
-
-        # outdir
-        if self.outdir is None:
-            self.outdir = str(pathlib.Path.cwd())
-        self.outdir = file_abspath(self.outdir)
-
-        # groups
-        self.fq_groups = Json(self.design).reader() if \
-            file_exists(self.design) else self.group_fq()
-
-        if len(self.fq_groups) < 1:
-            raise ValueError('fastq groups failed')
-
-
-    def group_fq(self):
-        """
-        separate fastq files into groups, based on filename
-        """
-        if isinstance(self.fq_dir, str):
-            f1 = listfile(self.fq_dir, "*.fastq.gz")
-            f2 = listfile(self.fq_dir, "*.fq.gz")
-            f3 = listfile(self.fq_dir, "*.fastq")
-            f4 = listfile(self.fq_dir, "*.fq")
-            f_list = f1 + f2 + f3 + f4 # all fastq files
-        elif isinstance(self.fq1, list):
-            f_list = self.fq1 + self.fq2
-        elif isinstance(self.fq1, str):
-            f_list = [self.fq1, self.fq2]
-        else:
-            f_list = []
-            
-        # check fastq files
-        if len(f_list) < 1:
-            raise ValueError('fq_dir, fq1, fq2, fastq files not found')
-            
-        g_list = fq_name_rmrep(f_list)
-        g_list = sorted(list(set(g_list))) # unique group
-
-        # split into groups
-        d = {} # 
-        for g in g_list:
-            g_fq = [i for i in f_list if g in os.path.basename(i)]
-            # for fq1, fq2
-            r1 = re.compile('1.f(ast)?q(.gz)?')
-            r2 = re.compile('2.f(ast)?q(.gz)?')
-            g_fq1 = [i for i in g_fq if r1.search(i)]
-            g_fq2 = [i for i in g_fq if r2.search(i)]
-            ## pairing
-            if len(g_fq2) > 0: # PE reads
-                if not all(fq_paired(g_fq1, g_fq2)):
-                    raise ValueError('fq not paired')
-            # save to dict
-            d[g] = {'fq1': g_fq1,
-                    'fq2': g_fq2,
-                    'group': g}
-
-        return d
-
-
-    def init_files(self, create_dirs=True):
-        """
-        Prepare directories, files
-        """
-        # path, files
-        self.project_dir = os.path.join(self.outdir)
-        self.config_dir = os.path.join(self.project_dir, 'config')
-        self.report_dir = os.path.join(self.project_dir, 'report')
-
-        # files
-        default_files = {
-            'config_txt': self.config_dir + '/config.txt',
-            'config_pickle': self.config_dir + '/config.pickle',
-            'config_json': self.config_dir + '/config.json'
-        }
-        self = update_obj(self, default_files, force=True) # key
-
-        self.report_log = self.report_dir + '/report.log',  
-
-        check_path([self.config_dir, self.report_dir])
-
-
-class AtacRnConfig(object):
-    """
-    Prepare directories for R1 single replicates
-
-    Required:
-      - fq1: list
-      - fq2: list
-      - rep_list: list
+    require: ip_dir, input_dir
+    or:
+    ip,ip-fq2, input,input-fq2
     """
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
+        self.init_fq()
+        self.init_index()
         self.init_files()
 
 
@@ -1922,40 +1996,34 @@ class AtacRnConfig(object):
         required arguments for CnR analysis
         """
         args_init = {
-            'smp_name': None,
-            'group': None,
-            'fq1': None,
-            'fq2': None,
             'outdir': None,
-            'aligner': 'bowtie2',
+            'ip_dir': None,
+            'input_dir': None,
+            'ip': None,
+            'ip_fq2': None,
+            'input': None,
+            'input_fq2': None,
+            'smp_name': None,
             'genome': None,
             'genome_index': None,
-            'extra_index': None,
             'spikein': None,
             'spikein_index': None,
+            'aligner': 'bowtie2',
+            'extra_index': None,
             'threads': 1,
             'parallel_jobs': 1,
             'overwrite': False,
-            'binsize': 10,
+            'binsize': 50,
             'genome_size': 0,
-            'genome_size_file': 0,
-            'keep_tmp': None,
+            'genome_size_file': None,
+            'gene_bed': None,
+            'keep_tmp': False,
             'trimmed': False,
             'cut_to_length': 0,
             'recursive': False
         }
         self = update_obj(self, args_init, force=False)
-        self.atacseq_type = 'atacseq_rn' # 
-
-        # fq files
-        self.init_fq()
-
-        # alignment index
-        self.init_index()
-
-        # smp_name
-        self.group = fq_name_rmrep(self.rep_list).pop()
-        self.smp_name = self.group
+        self.hiseq_type = 'cnr_rx' # 
 
         # aligner
         if self.aligner is None:
@@ -1965,51 +2033,284 @@ class AtacRnConfig(object):
         self.threads, self.parallel_jobs = init_cpu(self.threads, 
             self.parallel_jobs)
 
-        # outdir
-        if self.outdir is None:
-            self.outdir = str(pathlib.Path.cwd())
         self.outdir = file_abspath(self.outdir)
 
 
     def init_fq(self):
         """
-        Required:
-          - fq1, list
-          - fq2, list
-          - rep_list, list
+        Support fastq files
+        ip, input
+        """
+        if isinstance(self.ip, list) and isinstance(self.input, list):
+            self.ip = file_abspath(self.ip)
+            self.ip_fq2 = file_abspath(self.ip_fq2)
+            self.input = file_abspath(self.input)
+            self.input_fq2 = file_abspath(self.input_fq2)
+
+            # file exists
+            if not all(file_exists(self.ip)):
+                raise ValueError('--ip, file not exists: {}'.format(
+                    self.ip))
+
+            if not all(file_exists(self.input)):
+                raise ValueError('--input, file not exists: {}'.format(
+                    self.ip))
+
+            # check, ip,input name
+            ip_names = set(map(fq_name_rmrep, self.ip))
+            input_names = set(map(fq_name_rmrep, self.input))
+            if len(ip_names) > 1:
+                raise ValueError('--ip failed, filename differ: {}'.format(
+                    ip_names))
+
+            if len(input_names) > 1:
+                raise ValueError('--input failed, filename differ: {}'.format(
+                    input_names))
+
+            # check paired
+            ip_pe = fq_paired(self.ip, self.ip_fq2)
+            input_pe = fq_paired(self.input, self.input_fq2)
+            if not ip_pe:
+                raise ValueError('--ip, --ip-fq2, not paired: {}, {}'.format(
+                    self.ip, self.ip_fq2))
+
+            if not input_pe:
+                raise ValueError('--input, --input-fq2, not paired: \
+                    {}, {}'.format(self.input, self.input_fq2))
+
+            # update ip_dir, input_dir
+            self.ip_name = ip_names.pop()
+            self.input_name = input_names.pop()
+            self.ip_dir = self.outdir + '/' + self.ip_name
+            self.input_dir = self.outdir + '/' + self.input_name
+
+        elif isinstance(self.ip_dir, str) and isinstance(self.input_dir, str):
+            self.ip_dir = file_abspath(self.ip_dir)
+            self.input_dir = file_abspath(self.input_dir)
+            
+            c_ip = CnRReader(self.ip_dir)
+            c_input = CnRReader(self.input_dir)
+
+            if not c_ip.is_hiseq_rn or not c_input.is_hiseq_rn:
+                raise ValueError('ip_dir, input_dir failed: {}, {}'.format(
+                    self.ip_dir, self.input_dir))
+
+            self.ip_name = c_ip.args.get('smp_name', None)
+            self.input_name = c_input.args.get('smp_name', None)
+
+        else:
+            raise ValueError('--ip, --input, or --ip-dir, --input-dir failed')
+
+        # update smp_name
+        self.smp_name = '{}.vs.{}'.format(self.ip_name, self.input_name)
+
+
+    def init_files(self, create_dirs=True):
+        """
+        Prepare directories, files
+        """
+        # path, files
+        self.project_name = self.smp_name
+        self.project_dir = self.outdir + '/' + self.project_name
+        self.config_dir = self.project_dir + '/config'
+
+        default_dirs = {
+            'bam_dir': 'bam_files',
+            'bw_dir': 'bw_files',
+            'peak_dir': 'peak',
+            'motif_dir': 'motif',
+            'qc_dir': 'qc',
+            'report_dir': 'report'
+        }
+        # convert to path
+        for k, v in default_dirs.items():
+            default_dirs[k] = os.path.join(self.project_dir, v)
+        self = update_obj(self, default_dirs, force=True) # key
+
+        # files
+        default_files = {
+            'config_txt': self.config_dir + '/config.txt',
+            'config_pickle': self.config_dir + '/config.pickle',
+            'config_json': self.config_dir + '/config.json',
+            'ip_bam': self.bam_dir + '/' + self.ip_name + '.bam',
+            'ip_bw': self.bw_dir + '/' + self.ip_name + '.bigWig',
+            'input_bam': self.bam_dir + '/' + self.input_name + '.bam',
+            'input_bw': self.bw_dir + '/' + self.input_name + '.bigWig',
+            'peak': self.peak_dir + '/' + self.project_name + '_peaks.narrowPeak',
+            'peak_seacr': self.peak_dir + '/' + self.project_name + '.stringent.bed',
+            'peak_seacr_top001': self.peak_dir + '/' + self.project_name + '.top0.01.stringent.bed',
+
+            'ip_over_input_bw': self.bw_dir + '/' + self.ip_name + '.ip_over_input.bigWig',
+            'bw': self.bw_dir + '/' + self.ip_name + '.bigWig',
+            'tss_enrich_matrix': self.qc_dir + '/04.tss_enrich.mat.gz',
+            'tss_enrich_matrix_log': self.qc_dir + '/04.tss_enrich.log',
+            'tss_enrich_png': self.qc_dir + '/04.tss_enrich.png',
+            'tss_enrich_cmd': self.qc_dir + '/04.tss_enrich.cmd.sh',
+            'genebody_enrich_matrix': self.qc_dir + '/05.genebody_enrich.mat.gz',
+            'genebody_enrich_matrix_log': self.qc_dir + '/05.genebody_enrich.log',
+            'genebody_enrich_png': self.qc_dir + '/05.genebody_enrich.png',
+            'genebody_enrich_cmd': self.qc_dir + '/05.genebody_enrich.cmd.sh',
+            'bam_fingerprint': self.qc_dir + '/09.fingerprint.png'
+        }
+        self = update_obj(self, default_files, force=True) # key
+
+        if create_dirs:
+            check_path([
+                self.project_dir, 
+                self.config_dir, 
+                self.bam_dir, 
+                self.bw_dir, 
+                self.peak_dir, 
+                self.motif_dir,
+                self.qc_dir, 
+                self.report_dir])
+
+
+    def init_index(self):
+        """
+        alignment index
+        genome, extra_index, genome_index
+
+        output: genome_index, spikein_index
+        """
+        # check genome size
+        if isinstance(self.extra_index, str):
+            self.genome_index = self.extra_index
+
+        ## check genome index
+        if isinstance(self.genome_index, str):
+            ai = AlignIndex(index=self.genome_index)
+
+            if self.genome_size < 1:
+                self.genome_size = ai.index_size()
+
+            if not isinstance(self.genome_size_file, str): 
+                self.genome_size_file = ai.index_size(return_file=True)
+
+        elif isinstance(self.genome, str):
+            self.genome_index = AlignIndex(aligner=self.aligner).search(
+                genome=self.genome, group='genome')
+
+            self.genome_size_file = Genome(genome=self.genome).get_fasize()
+
+            with open(self.genome_size_file, 'rt') as r:
+                s = [i.strip().split('\t')[1] for i in r.readlines()]
+            
+            if self.genome_size < 1:
+                self.genome_size = sum(map(int, s))
+            
+        else:
+            raise ValueError('index failed, extra_index, genome, genome_index')
+
+        # check spikein index
+        if isinstance(self.spikein_index, str):
+            ai = AlignIndex(index=self.spikein_index, aligner=self.aligner)
+
+            if not ai.is_index():
+                raise ValueError('spikein_index failed, {}'.format(
+                    self.spikein_index))
+
+        elif isinstance(self.spikein, str):
+            self.spikein_index = AlignIndex(aligner=self.aligner).search(
+                genome=self.spikein, group='genome')
+
+        else:
+            self.spikein_index = None
+
+
+class CnRnConfig(object):
+    """
+    Prepare directories for R1 single replicates
+
+    require: fq1/fq2, outdir, ...
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+        self.init_fq()
+        self.init_index()
+        self.init_files()
+
+
+    def init_args(self):
+        """
+        required arguments for CnR analysis
+        """
+        args_init = {
+            'is_ip': True,
+            'rep_list': None,
+            'fq1': None,
+            'fq2': None,
+            'genome': None,
+            'outdir': None,
+            'aligner': 'bowtie2',
+            'smp_name': None,
+            'genome_index': None,
+            'spikein': None,
+            'spikein_index': None,
+            'extra_index': None,
+            'threads': 1,
+            'parallel_jobs': 1,
+            'overwrite': False,
+            'binsize': 50,
+            'genome_size': 0,
+            'gsize_file': None,
+            'keep_tmp': False,
+            'trimmed': False,
+            'cut_to_length': 0,
+            'recursive': False
+        }
+        self = update_obj(self, args_init, force=False)
+        self.hiseq_type = 'cnr_rn' # 
+
+        # aligner
+        if self.aligner is None:
+            self.aligner = 'bowtie2'
+
+        # threads
+        self.threads, self.parallel_jobs = init_cpu(self.threads, 
+            self.parallel_jobs)
+
+        self.outdir = file_abspath(self.outdir)
+
+
+    def init_fq(self):
+        """
+        Support fastq files
+        fq1 (required)
+        fq2 (optional)
         """
         # rep_list
         if isinstance(self.rep_list, list):
             pass
-        else:
-            # fq1
-            if not isinstance(self.fq1, list):
-                raise ValueError('--fq1, list expected, got {}'.format(
-                    type(self.fq1).__name__))
 
-            if not all(file_exists(self.fq1)):
-                raise ValueError('--fq1, file not exists: {}'.format(
-                    self.fq1))
+        elif isinstance(self.fq1, list):
+            self.fq1 = file_abspath(self.fq1)
+
+            # file exists
+            if not file_exists(self.fq1):
+                raise ValueError('--fq1, file not exists: {}'.format(self.fq1))
+
+            # rep list
+            q_names = [fq_name(i, pe_fix=True) for i in self.fq1]
+            self.rep_list = [self.outdir + '/' + i for i in q_names]
 
             # fq2
-            if not isinstance(self.fq2, list):
-                raise ValueError('--fq2, list expected, got {}'.format(
-                    type(self.fq2).__name__))
+            if isinstance(self.fq2, list):
+                self.fq2 = file_abspath(self.fq2)
 
-            if not all(file_exists(self.fq2)):
-                raise ValueError('--fq2, file not exists: {}'.format(
-                    self.fq2))
+                if not file_exists(self.fq2):
+                    raise ValueError('--fq2, file not exists: {}'.format(
+                        self.fq2))
 
-            if not all(fq_paired(self.fq1, self.fq2)):
-                raise ValueError('fq1, fq2 not paired properly: {}, {}'.format(
-                    self.fq1, self.fq2))
+                # paired
+                if not fq_paired(self.fq1, self.fq2):
+                    raise ValueError('--fq1, --fq2, file not paired')
+        else:
+            raise ValueError('rep_list, fq1,fq2 required')
 
-            # update rep_list
-            fq_names = [fq_name(i, pe_fix=True) for i in self.fq1]
-            self.rep_list = [self.outdir + '/' + i for i in fq_names]
-
-            self.fq1 = file_abspath(self.fq1)
-            self.fq2 = file_abspath(self.fq2)
+        # smp_name
+        self.smp_name = fq_name_rmrep(self.rep_list).pop()
 
 
     def init_index(self):
@@ -2093,7 +2394,6 @@ class AtacRnConfig(object):
             'config_txt': self.config_dir + '/config.txt',
             'config_pickle': self.config_dir + '/config.pickle',
             'config_json': self.config_dir + '/config.json',
-            'report_log': self.report_dir + '/report.log',
             'bam_rmdup': self.bam_dir + '/' + self.smp_name + '.rmdup.bam',
             'bam_proper_pair': self.bam_dir + '/' + self.smp_name + '.proper_pair.bam',
             'bam': self.bam_dir + '/' + self.project_name + '.bam',
@@ -2103,7 +2403,7 @@ class AtacRnConfig(object):
             'peak_seacr_top001': self.peak_dir + '/' + self.project_name + '.top0.01.stringent.bed',
             'bg': self.bg_dir + '/' + self.project_name + '.bedGraph',
             'bw': self.bw_dir + '/' + self.project_name + '.bigWig',
-            'align_scale_txt': self.bam_dir + '/' + 'scale.txt',
+            'align_scale_txt': self.align_dir + '/' + 'scale.txt',
             'align_flagstat': self.align_dir + '/' + self.smp_name + '.flagstat',
             'align_stat': self.align_dir + '/' + self.smp_name + '.bowtie2.stat',
             'align_json': self.align_dir + '/' + self.smp_name + '.bowtie2.json',
@@ -2145,103 +2445,102 @@ class AtacRnConfig(object):
                 self.report_dir])
 
 
-class AtacR1Config(object):
+class CnR1Config(object):
     """
-    Prepare directories for R1 single replicate
+    Prepare directories for R1 single replicates
 
-    Required
-      - fq1, str
-      - fq2, str
+    require: fq1/fq2, outdir, ...
     """
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
+        self.init_fq()
+        self.init_index()
         self.init_files()
 
 
     def init_args(self):
         """
-        required arguments for ATACseq analysis
+        required arguments for CnR analysis
         """
         args_init = {
-            'smp_name': None,
-            'group': None,
+            'is_ip': True,
             'fq1': None,
             'fq2': None,
-            'outdir': None,
-            'aligner': 'bowtie2',
             'genome': None,
+            'outdir': None,
+            'smp_name': None,
+            'aligner': 'bowtie2',
             'genome_index': None,
-            'extra_index': None,
             'spikein': None,
             'spikein_index': None,
+            'extra_index': None,
             'threads': 1,
-            'parallel_jobs': 1,
             'overwrite': False,
-            'binsize': 10,
+            'binsize': 50,
             'genome_size': 0,
-            'genome_size_file': 0,
-            'keep_tmp': None,
+            'genome_size_file': None,
+            'gene_bed': None,
+            'keep_tmp': False,
             'trimmed': False,
             'cut_to_length': 0,
-            'recursive': False
+            'recursive': False 
         }
         self = update_obj(self, args_init, force=False)
-        self.atacseq_type = 'atacseq_r1' #
+        self.hiseq_type = 'cnr_r1' # 
 
-        # output
-        if self.outdir is None:
-            self.outdir = str(pathlib.Path.cwd())
-        self.outdir = file_abspath(self.outdir)
-
-        # fq files
-        self.init_fq()
-
-        # alignment index
-        self.init_index()
+        # aligner
+        if self.aligner is None:
+            self.aligner = 'bowtie2'
 
         # smp_name
-        self.smp_name = getattr(self, 'smp_name', None)
-        if self.smp_name is None:
+        if not isinstance(self.smp_name, str):
             self.smp_name = fq_name(self.fq1, pe_fix=True) # the first one
 
-        # threads
-        self.threads, self.parallel_jobs = init_cpu(
-            self.threads, 
-            self.parallel_jobs)
+        self.outdir = file_abspath(self.outdir)
 
 
     def init_fq(self):
         """
         Support fastq files
         fq1 (required)
-        fq2 (required)
+        fq2 (optional)
         """
         # fq1
         if not isinstance(self.fq1, str):
             raise ValueError('--fq1, str expected, got {}'.format(
                 type(self.fq1).__name__))
 
-        # fq2
-        if not isinstance(self.fq2, str):
-            raise ValueError('--fq2, str expected, got {}'.format(
-                type(self.fq2).__name__))
-
-        if not fq_paired(self.fq1, self.fq2):
-            raise ValueError('fq1, fq2 not paired properly: {}, {}'.format(
-                self.fq1, self.fq2))            
-
         # abs
         self.fq1 = file_abspath(self.fq1)
-        self.fq2 = file_abspath(self.fq2)
+
+        # file exists
+        if not file_exists(self.fq1):
+            raise ValueError('--fq1, file not exists: {}'.format(self.fq1))
+
+        # fq2
+        if not self.fq2 is None:
+            if not isinstance(self.fq2, str):
+                raise ValueError('--fq2, None or str expected, got {}'.format(
+                    type(self.fq2).__name__))
+
+            # abs
+            self.fq2 = file_abspath(self.fq2)
+
+            if not file_exists(self.fq2):
+                raise ValueError('--fq2, file not exists: {}'.format(self.fq2))
+
+            # paired
+            if not fq_paired(self.fq1, self.fq2):
+                raise ValueError('--fq1, --fq2, file not paired')
 
 
     def init_index(self):
         """
         alignment index
-        genome, extra_index, genome_index, spikein, spikein_index
+        genome, extra_index, genome_index
 
-        output: genome_index | spikein_index
+        output: genome_index, spikein_index
         """
         # check genome size
         if isinstance(self.extra_index, str):
@@ -2290,9 +2589,9 @@ class AtacR1Config(object):
 
     def init_files(self, create_dirs=True):
         """
-        for single fastq file
-        prepare directories
+        Prepare directories, files
         """
+        # path, files
         self.project_name = self.smp_name
         self.project_dir = os.path.join(self.outdir, self.project_name)
         self.config_dir = os.path.join(self.project_dir, 'config')
@@ -2320,7 +2619,6 @@ class AtacR1Config(object):
             'config_txt': self.config_dir + '/config.txt',
             'config_pickle': self.config_dir + '/config.pickle',
             'config_json': self.config_dir + '/config.json',
-            'report_log': self.report_dir + '/report.log',
             'bam_rmdup': self.bam_dir + '/' + self.smp_name + '.rmdup.bam',
             'bam_proper_pair': self.bam_dir + '/' + self.smp_name + '.proper_pair.bam',
             'bam': self.bam_dir + '/' + self.project_name + '.bam',
@@ -2331,8 +2629,8 @@ class AtacR1Config(object):
             'peak_seacr_top001': self.peak_dir + '/' + self.project_name + '.top0.01.stringent.bed',
             'bw': self.bw_dir + '/' + self.project_name + '.bigWig',
 
-            'align_scale_txt': self.bam_dir + '/' + 'scale.txt',
             'trim_stat_txt': self.clean_dir + '/' + self.project_name + '/' + self.project_name + '.trim.stat',
+            'align_scale_txt': self.align_dir + '/' + 'scale.txt',
             'align_flagstat': self.align_dir + '/' + self.smp_name + '.flagstat',
             'align_stat': self.align_dir + '/' + self.smp_name + '.bowtie2.stat',
             'align_json': self.align_dir + '/' + self.smp_name + '.bowtie2.json',
@@ -2391,137 +2689,28 @@ class AtacR1Config(object):
                 self.report_dir])
 
 
-class AtacRdConfig(object):
+class CnRtConfig(object):
+    pass
+
+
+class CnRReader(object):
     """
-    Generate ATACseq design.json
-
-    output: fq_dir/fq1,fq2
-    """
-    def __init__(self, **kwargs):
-        self = update_obj(self, kwargs, force=True)
-        self.init_args()
-
-
-    def init_args(self):
-        """
-        required arguments for ATACseq design
-        """
-        args_init = {
-          'fq_dir': None,
-          'fq1': None,
-          'fq2': None,
-          'design': None,
-          'append': True}
-        self = update_obj(self, args_init, force=False)
-        
-        # fastq files
-        self.fq_groups = self.group_fq()
-
-
-    def group_fq(self):
-        """
-        separate fastq files into groups, based on filename
-        """
-        if isinstance(self.fq_dir, str):
-            f1 = listfile(self.fq_dir, "*.fastq.gz")
-            f2 = listfile(self.fq_dir, "*.fq.gz")
-            f3 = listfile(self.fq_dir, "*.fastq")
-            f4 = listfile(self.fq_dir, "*.fq")
-            f_list = f1 + f2 + f3 + f4 # all fastq files
-        elif isinstance(self.fq1, list):
-            f_list = self.fq1 + self.fq2
-        elif isinstance(self.fq1, str):
-            f_list = [self.fq1, self.fq2]
-        else:
-            f_list = []
-            
-        # check fastq files
-        if len(f_list) < 1:
-            raise ValueError('fq_dir, fq1,fq2, fq files not found')
-            
-        g_list = fq_name_rmrep(f_list)
-        g_list = sorted(list(set(g_list))) # unique
-
-        # split into groups
-        d = {} # 
-        for g in g_list:
-            g_fq = [i for i in f_list if g in os.path.basename(i)]
-            # for fq1, fq2
-            r1 = re.compile('1.f(ast)?q(.gz)?')
-            r2 = re.compile('2.f(ast)?q(.gz)?')
-            g_fq1 = [i for i in g_fq if r1.search(i)]
-            g_fq2 = [i for i in g_fq if r2.search(i)]
-            ## pairing
-            if len(g_fq2) > 0: # PE reads
-                if not all(fq_paired(g_fq1, g_fq2)):
-                    raise ValueError('fq not paired')
-            # save to dict
-            d[g] = {'fq1': g_fq1,
-                    'fq2': g_fq2,
-                    'group': g}
-
-        return d
-
-
-class AtacRpConfig(object):
-    """
-    Give report for ATACseq directories
-
-    output: config, report
-    """
-    def __init__(self, **kwargs):
-        self = update_obj(self, kwargs, force=True)
-        self.init_args()
-        self.init_dirs()
-
-
-    def init_args(self):
-        """
-        required arguments for ATACseq analysis
-        """
-        args_init = {
-            'project_dir': None}
-        self = update_obj(self, args_init, force=False)
-        self.atacseq_type = 'atacseq_rt'
-
-
-        # get sample list from project_dir !!!!
-        if not isinstance(self.project_dir, str):
-            raise ValueError('project_dir, str expected, got {}'.format(
-                type(self.project_dir).__name__))
-
-
-    def init_dirs(self, create_dirs=True):
-        """
-        for single fastq file
-        prepare directories
-        """
-        # path, files
-        self.report_dir = os.path.join(self.project_dir, 'report')
-        self.report_log = os.path.join(self.report_dir, 'report.log')
-
-        if create_dirs:
-            check_path(self.report_dir)
-
-
-class AtacReader(object):
-    """
-    Read config.txt/pickle
+    Read config.pickle from the local directory
     """
     def __init__(self, x):
         self.x = x
         self.read()
-        self.atacseq_type = self.args.get('atacseq_type', None)
+        self.hiseq_type = self.args.get('hiseq_type', None)
 
-        self.is_atacseq_r1 = self.atacseq_type == 'atacseq_r1'
-        self.is_atacseq_rn = self.atacseq_type == 'atacseq_rn'
-        self.is_atacseq_rx = self.atacseq_type == 'atacseq_rx'
-        self.is_atacseq_rt = self.atacseq_type == 'atacseq_rt'
-        self.is_atacseq_rd = self.atacseq_type == 'build_design'
+        self.is_hiseq_r1 = self.hiseq_type == 'cnr_r1'
+        self.is_hiseq_rn = self.hiseq_type == 'cnr_rn'
+        self.is_hiseq_rx = self.hiseq_type == 'cnr_rx'
+        self.is_hiseq_rt = self.hiseq_type == 'cnr_rt'
+        self.is_hiseq_rd = self.hiseq_type == 'build_design'
 
 
-        if isinstance(self.atacseq_type, str):
-            self.is_hiseq = self.atacseq_type.startswith('atacseq_')
+        if isinstance(self.hiseq_type, str):
+            self.is_hiseq = self.hiseq_type.startswith('hiseq_')
         else:
             self.is_hiseq = False
 
@@ -2551,6 +2740,126 @@ class AtacReader(object):
             self.args = pickle2dict(p2[0])
         else:
             self.args = {}
+
+
+class CnRDesign(object):
+    """
+    Prepare ip/input samples for CnR analysis
+    append/update
+
+    format:
+    ip: fq1, fq2
+    input: fq1, fq2
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+
+
+    def init_args(self):
+        args_init = {
+            'ip': None,
+            'ip_fq2': None,
+            'input': None,
+            'input_fq2': None,
+            'design': None,
+            'append': True
+        }
+        self = update_obj(self, args_init, force=False)
+
+        ## check
+        self.design = file_abspath(self.design)
+        if not isinstance(self.design, str):
+            raise ValueError('--design, required')
+
+        ## check fastq files
+        log.info('Check fastq file existence:')
+        self.ip = self.fq_input(self.ip)
+        self.input = self.fq_input(self.input)
+        
+        if self.ip_fq2:
+            self.ip_fq2 = self.fq_input(self.ip_fq2)
+        if self.input_fq2:
+            self.input_fq2 = self.fq_input(self.input_fq2)
+
+        ## pairing
+        self.fq_paired(self.ip, self.ip_fq2)
+        self.fq_paired(self.input, self.input_fq2)
+
+
+    def fq_input(self, fq):
+        """
+        Check input file, str or list
+        
+        convert to absolute path
+        """
+        if isinstance(fq, str):
+            fq = [fq] # convert to list
+
+        if isinstance(fq, list):            
+            chk1 = file_exists(fq)
+            for v, f in zip(chk1, fq):
+                log.info('{} : {}'.format(v, f))
+
+            if all(chk1):
+                return file_abspath(fq)
+            else:
+                log.error('fastq files not exists')
+        else:
+            raise ValueError('unknown fastq, list expected, got {}'.format(type(fq).__name__))
+
+
+    def fq_paired(self, fq1, fq2):
+        """
+        Check fq1, fq2, (list)
+        """
+        if fq2 is None:
+            chk = True
+        elif isinstance(fq1, str) and isinstance(fq2, str):
+            chk = distance(fq1, fq2) == 1 and all(file_exists([fq1, fq2]))
+        elif isinstance(fq1, list) and isinstance(fq2, list):
+            chk = all([fq_paired(i, j) for i, j in zip(fq1, fq2)]) and all(file_exists(fq1 + fq2))
+        else:
+            chk = False
+
+        if not chk:
+            log.warning('fastq pairing failed')
+
+        return chk
+
+
+    def save(self, design=None):
+        """
+        Save args in Json format
+        """
+        # design: init
+        if file_exists(self.design):
+            design_dict = Json(self.design).reader()
+        else:
+            design_dict = {}
+
+        # local
+        args_local = {
+            'design': self.design,
+            'ip': self.ip,
+            'ip_fq2': self.ip_fq2,
+            'input': self.input,
+            'input_fq2': self.input_fq2}
+
+        # update design
+        if self.append:
+            key = 'chipseq_{:03d}'.format(len(design_dict) + 1)
+
+            if args_local in list(design_dict.values()):
+                log.warning('design exists, skipped ...')
+            else:
+                design_dict[key] = args_local
+        else:
+            key = 'chipseq_001'
+            design_dict = dict((key, args_local))
+
+        # save to file
+        Json(design_dict).writer(self.design)
 
 
 class Align(object):
@@ -2688,25 +2997,11 @@ class Align(object):
     def prep_cmd(self):
         """
         Alignment for CUT&RUN, CUT&TAG, ATACseq, ...
-        
-        samtools view -bhS -f 2 -F 1804
-
-        include: -f
-            2    0x2    Read mapped in proper pair
-
-        exclude: -F
-            4    0x4    Read unmapped, 
-            8    0x8    Mate unmapped,
-            256  0x100  Not primary alignment, 
-            512  0x200  Reads fails platform quality checks,
-            1024 0x400  Read is PCR or optical duplicate
-
         """
         self.cmd = ' '.join([
             '{}'.format(shutil.which('bowtie2')),
             '--mm -p {}'.format(self.threads),
-            '--local --very-sensitive --no-mixed --no-discordant',
-            '-I 10',
+            '--local --very-sensitive --no-mixed --no-discordant -I 10',
             '-X {}'.format(self.max_fragment),
             '-x {}'.format(self.index),
             '-1 {} -2 {}'.format(self.fq1, self.fq2),
@@ -2714,7 +3009,7 @@ class Align(object):
             '1> {} 2> {}'.format(self.sam, self.align_log),
             '&& samtools view -@ {} -bS'.format(self.threads),
             '<(samtools view -H {} ;'.format(self.sam),
-            "samtools view -q 30 -f 2 -F 1804 {} | grep 'YT:Z:CP')".format(self.sam),
+            "samtools view -F 2048 {} | grep 'YT:Z:CP')".format(self.sam),
             '| samtools sort -@ {} -o {} -'.format(self.threads, self.bam),
             '&& samtools index {}'.format(self.bam),
             '&& samtools flagstat {} > {}'.format(self.bam, self.align_flagstat),
@@ -2969,7 +3264,7 @@ class CallPeak(object):
         }
         self = update_obj(self, default_files, force=True) # key
 
-        ## genome_size
+        ## gsize
         # self.genome_size_file = Genome(genome=self.genome).get_fasize()
         
 
@@ -2982,7 +3277,7 @@ class CallPeak(object):
             '-g {} -f BAMPE'.format(self.genome_size),
             '-n {}'.format(self.outdir + '/' + self.prefix),
             '-q 0.1 --keep-dup all',
-            '--nomodel --shift -100 --extsize 200',
+            '--nomodel --extsize 150',
             '2> {}'.format(self.macs2_log)
             ])
 
@@ -3108,40 +3403,4 @@ class CallPeak(object):
         # remove files
         del_list = []
 
-
-def dict2pickle(d, p, update=False):
-    """Save dict as pickle
-    d is dict
-    p is pickle file
-    """
-    if isinstance(d, dict) and isinstance(p, str):
-        if file_exists(p):
-            with open(p, 'rb') as r:
-                d_old = pickle.load(r)
-        else:
-            d_old = {}
-
-        # update
-        d_old.update(d)
-        d_new = d_old if update else d
-
-        # save to file
-        with open(p, 'wb') as w:
-            pickle.dump(d_new, w, protocol=pickle.HIGHEST_PROTOCOL)
-    else:
-        log.error('dict2pickle() failed, dict, str expect')
-
-
-def pickle2dict(p):
-    """
-    Read pickle, save as dict
-    """
-    d = {}
-    if file_exists(p):
-        with open(p, 'rb') as r:
-            d = pickle.load(r)
-    else:
-        log.error('pickle file illegal')
-
-    return d
 
