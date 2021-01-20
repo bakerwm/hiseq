@@ -459,7 +459,7 @@ class AtacRn(object):
             'genome_size_file': self.genome_size_file
         }
         CallPeak(method='macs2', **args_local).run()
-        # CallPeak(method='seacr', **args_local).run()
+        CallPeak(method='seacr', **args_local).run()
 
 
     def cal_norm_scale(self, bam, norm=1000000):
@@ -1069,7 +1069,7 @@ class AtacR1(object):
             'genome_size_file': self.genome_size_file
         }
         CallPeak(method='macs2', **args_local).run()
-        # CallPeak(method='seacr', **args_local).run()
+        CallPeak(method='seacr', **args_local).run()
 
 
     def bam_to_bg(self):
