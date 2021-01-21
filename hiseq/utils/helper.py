@@ -16,6 +16,7 @@ import signal
 import json
 import yaml
 import toml
+import numbers
 import pickle
 import fnmatch
 import tempfile
@@ -1096,6 +1097,371 @@ class Toml(object):
                     type(x).__name__))
         else:
             log.warning('Expect input for Toml(x=)')
+
+
+class Config(object):
+    """Working with config, in dict/yaml/toml/pickle formats
+    load/dump
+
+    read/write data
+    """
+    def __init__(self, x=None, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.x = x
+
+
+    def load(self, x=None):
+        """Read data from x, auto-recognize the file-type
+        toml
+        json
+        pickle
+        txt
+        ...
+        """
+        if x == None:
+            x = self.x # dict or str
+
+        if x is None:
+            x_dict = None # {} ?
+        elif isinstance(x, dict):
+            x_dict = collections.OrderedDict(sorted(x.items()))
+        elif isinstance(x, str):
+            reader = self.get_reader(x)
+            if reader is None:
+                x_dict = None
+                log.error('unknown x, {}'.format(x))
+            else:
+                x_dict = reader(x)
+        else:
+            x_dict = None
+            log.warning('dump(x=) dict,str expect, got {}'.format(
+                type(x).__name__))
+
+        return x_dict
+
+
+    def dump(self, d=None, x=None):
+        """Write data to file x, auto-recognize the file-type
+        d str or dict, data
+        x str file to save data(dict)
+
+        toml
+        json
+        pickle
+        txt
+        ...
+        """
+        if d is None:
+            d = self.load(self.x)
+        # make sure: dict
+        if isinstance(x, str):
+            writer = self.get_writer(x)
+            if writer is None:
+                log.error('unknown x, {}'.format(x))
+            else:
+                writer(d, x)
+        else:
+            log.warning('dump(x=) expect str, got {}'.format(
+                type(x).__name__))
+
+
+    def guess_format(self, x):
+        """Guess the file format, by file extension
+    
+        file format:
+        - toml
+        - yaml
+        - json
+        - pickle
+
+        data format:
+        - dict
+        """
+        formats = {
+            'json': 'json',
+            'yaml': 'yaml',
+            'yml': "yaml",
+            'toml': 'toml',
+            'pickle': 'pickle'
+        }
+
+        if isinstance(x, str):
+            x_ext = os.path.splitext(x)[1]
+            x_ext = x_ext.lstrip('.').lower()
+            x_format = formats.get(x_ext, None)
+        elif isinstance(x, dict):
+            x_format = 'dict'
+        else:
+            x_format = None
+
+        return x_format
+
+
+    def get_reader(self, x):
+        """Get the reader for file x, based on the file extension
+    
+        could be: json/yaml/toml/pickle
+        """
+        x_format = self.guess_format(x)
+        readers = {
+            'json': self.from_json,
+            'yaml': self.from_yaml,
+            'toml': self.from_toml,
+            'pickle': self.from_pickle
+        }
+        return readers.get(x_format, None)
+
+
+    def get_writer(self, x):
+        """Get the reader for file x, based on the file extension
+
+        could be: json/yaml/toml/pickle
+        """
+        x_format = self.guess_format(x)
+        writers = {
+            'json': self.to_json,
+            'yaml': self.to_yaml,
+            'toml': self.to_toml,
+            'pickle': self.to_pickle
+        }
+        return writers.get(x_format, None)
+
+
+    def from_json(self, x):
+        """Loding data from JSON file
+        x should be file
+        """
+        d = None
+        if file_exists(x):
+            try:
+                with open(x, 'r') as r:
+                    if os.path.getsize(x) > 0:
+                        d = json.load(r)
+                        # d = collections.OrderedDict(sorted(d.items()))
+            except:
+                log.warning('from_json() failed, could not write \
+                    to file: {}'.format(x))
+            finally:
+                return d
+        else:
+            log.error('from_json() failed, file not exists: {}'.format(x))
+
+
+    def from_yaml(self, x):
+        """Loding data from YAML file
+        x should be file
+        """
+        d = None
+        if file_exists(x):
+            try:
+                with open(x, 'r') as r:
+                    if os.path.getsize(x) > 0:
+                        d = yaml.load(r, Loader=yaml.FullLoader)
+                        # d = collections.OrderedDict(sorted(d.items()))
+                    else:
+                        print('!AAAA-3')
+            except:
+                log.warning('from_yaml() failed, could not read \
+                    to file: {}'.format(x))
+            finally:
+                return d
+        else:
+            log.error('from_yaml() failed, file not exists: {}'.format(x))
+        # with open(x, 'r') as r:
+        #     try:
+        #         d = yaml.safe_load(r)
+        #         return collections.OrderedDict(sorted(d.items()))
+        #     except yaml.YAMLError as exc:
+        #         log.warning(exc)
+
+
+    def from_toml(self, x):
+        """Loding data from TOML file
+        x should be file
+        """
+        d = None
+        if file_exists(x):
+            try:
+                with open(x, 'r') as r:
+                    if os.path.getsize(x) > 0:
+                        d = toml.load(x)
+                        # d = collections.OrderedDict(sorted(d.items()))
+            except:
+                log.warning('from_toml() failed, could not write\
+                    to file: {}'.format(x))
+            finally:
+                return d
+        else:
+            log.error('from_toml() failed, file not exists: {}'.format(x))
+
+
+    def from_pickle(self, x):
+        """Loding data from pickle file
+        x should be file
+        """
+        d = None
+        if file_exists(x):
+            try:
+                with open(x, 'rb') as r:
+                    if os.path.getsize(x) > 0:
+                        d = pickle.load(r)
+                        # d = collections.OrderedDict(sorted(d.items()))
+            except:
+                log.warning('from_pickle() failed, could not write\
+                    to file: {}'.format(x))
+            finally:
+                return d
+        else:
+            log.error('from_pickle() failed, file not exists: {}'.format(x))
+
+
+    def to_json(self, d, x):
+        """Writing data to JSON file
+        d dict, data to file
+        x None or str, path to JSON file, or return string
+        """
+        x = file_abspath(x)
+        if not isinstance(d, dict):
+            log.error('to_json(d=) failed, dict expect, got {}'.format(
+                type(d).__name__))
+        elif not isinstance(x, str):
+            log.error('to_json(d=) failed, str expect, got {}'.format(
+                type(x).__name__))
+        elif not file_exists(os.path.dirname(x), isfile=False):
+            log.error('to_json(x=) failed, file not exists: {}'.format(x))
+        else:
+            try:
+                with open(x, 'wt') as w:
+                    json.dump(d, w, indent=4, sort_keys=True)
+                # return x
+            except:
+                log.error('to_json() failed, could not write to file: {}'.format(
+                    type(x).__name__))
+
+
+    def to_yaml(self, d, x):
+        """Writing data to YAML file
+        d dict, data to file
+        x str, path to YAML file
+
+        yaml.dump(), does not support OrderedDict
+        Solution: OrderedDict -> json -> dict
+        """        
+        x = file_abspath(x)
+        if not isinstance(d, dict):
+            log.error('to_yaml(d=) failed, dict expect, got {}'.format(
+                type(d).__name__))
+        elif not isinstance(x, str):
+            log.error('to_yaml(d=) failed, str expect, got {}'.format(
+                type(x).__name__))
+        elif not file_exists(os.path.dirname(x), isfile=False):
+            log.error('to_yaml(x=) failed, file not exists: {}'.format(x))
+        else:
+            try:
+                with open(x, 'wt') as w:
+                    yaml.safe_dump(d, w)
+                # return x
+            except:
+                log.error('to_yaml() failed, could not write to file: {}'.format(
+                    type(x).__name__))
+            # finally:
+            #     return x
+
+
+    def to_toml(self, d, x):
+        """Writing data to TOML file
+        d dict, data to file
+        x str, path to TOML file
+        """        
+        x = file_abspath(x)
+        if not isinstance(d, dict):
+            log.error('to_toml(d=) failed, dict expect, got {}'.format(
+                type(d).__name__))
+        elif not isinstance(x, str):
+            log.error('to_toml(d=) failed, str expect, got {}'.format(
+                type(x).__name__))
+        elif not file_exists(os.path.dirname(x), isfile=False):
+            log.error('to_toml(d=) failed, file not exists: {}'.format(x))
+        else:
+            try:
+                with open(x, 'wt') as w:
+                    toml.dump(d, w)
+                # return x
+            except:
+                log.error('to_toml() failed, could not write to file: {}'.format(
+                    type(x).__name__))
+            # finally:
+            #     return x
+
+
+    def to_pickle(self, d, x):
+        """Writing data to pickle file
+        d dict, data to file
+        x str, path to pickle file
+        """        
+        x = file_abspath(x)
+        if not isinstance(d, dict):
+            log.error('to_pickle(d=) failed, dict expect, got {}'.format(
+                type(d).__name__))
+        elif not isinstance(x, str):
+            log.error('to_pickle(x=) failed, str expect, got {}'.format(
+                type(x).__name__))
+        elif not file_exists(os.path.dirname(x), isfile=False):
+            log.error('to_pickle(x=) failed, file not exists: {}'.format(x))
+        else:
+            try:
+                with open(x, 'wb') as w:
+                    pickle.dump(d, w, protocol=pickle.HIGHEST_PROTOCOL)
+                # return x
+            except:
+                log.error('to_pickle() failed, could not write to file: {}'.format(
+                    type(x).__name__))
+
+
+    def to_log(self, d, x, stdout=False):
+        """Writing data to log file: key: value format
+        d dict, data to file
+        x str, path to pickle file
+        """
+        x = file_abspath(x)
+        if not isinstance(d, dict):
+            log.error('to_log(d=) failed, dict expect, got {}'.format(
+                type(d).__name__))
+        elif not isinstance(x, str):
+            log.error('to_log(x=) failed, str expect, got {}'.format(
+                type(x).__name__))
+        elif not file_exists(os.path.dirname(x), isfile=False):
+            log.error('to_log(x=) failed, file not exists: {}'.format(x))
+        else:
+            try:
+                # organize msg
+                msg = []
+                for k, v in d.items():
+                    if isinstance(v, str) or isinstance(v, numbers.Number) or isinstance(v, bool):
+                        v = str(v)
+                    elif isinstance(v, list):
+                        v = ', '.join(map(str, v))
+                    else:
+                        v = '...' # skip
+                    msg.append('{:30s} | {:<40s}'.format(k, v))
+                # save
+                with open(x, 'wt') as w:
+                    w.write('\n'.join(msg) + '\n')
+                if stdout:
+                    print('\n'.join(msg))
+                # return x
+            except:
+                log.error('to_log() failed, could not write to file: {}'.format(
+                    type(x).__name__))
+
+
+    def _tmp(self, suffix='.txt'):
+        """
+        Create a tmp file to save json object
+        """
+        tmp = tempfile.NamedTemporaryFile(prefix='tmp', suffix=suffix,
+            delete=False)
+        return tmp.name
 
 
 def in_dict(d, k):
