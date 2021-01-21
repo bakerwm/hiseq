@@ -1237,7 +1237,7 @@ class Config(object):
                 with open(x, 'r') as r:
                     if os.path.getsize(x) > 0:
                         d = json.load(r)
-                        # d = collections.OrderedDict(sorted(d.items()))
+                        d = collections.OrderedDict(sorted(d.items()))
             except:
                 log.warning('from_json() failed, could not write \
                     to file: {}'.format(x))
@@ -1257,9 +1257,7 @@ class Config(object):
                 with open(x, 'r') as r:
                     if os.path.getsize(x) > 0:
                         d = yaml.load(r, Loader=yaml.FullLoader)
-                        # d = collections.OrderedDict(sorted(d.items()))
-                    else:
-                        print('!AAAA-3')
+                        d = collections.OrderedDict(sorted(d.items()))
             except:
                 log.warning('from_yaml() failed, could not read \
                     to file: {}'.format(x))
@@ -1285,7 +1283,7 @@ class Config(object):
                 with open(x, 'r') as r:
                     if os.path.getsize(x) > 0:
                         d = toml.load(x)
-                        # d = collections.OrderedDict(sorted(d.items()))
+                        d = collections.OrderedDict(sorted(d.items()))
             except:
                 log.warning('from_toml() failed, could not write\
                     to file: {}'.format(x))
@@ -1305,7 +1303,7 @@ class Config(object):
                 with open(x, 'rb') as r:
                     if os.path.getsize(x) > 0:
                         d = pickle.load(r)
-                        # d = collections.OrderedDict(sorted(d.items()))
+                        d = collections.OrderedDict(sorted(d.items()))
             except:
                 log.warning('from_pickle() failed, could not write\
                     to file: {}'.format(x))
@@ -1346,7 +1344,11 @@ class Config(object):
 
         yaml.dump(), does not support OrderedDict
         Solution: OrderedDict -> json -> dict
-        """        
+        """
+        x_yaml = x
+        x = os.path.splitext(x_yaml)[0] + '.toml'
+        log.warning('OrderedDict is not supported in YAML, save as TOML instead: {}'.format(x_toml))
+        # check
         x = file_abspath(x)
         if not isinstance(d, dict):
             log.error('to_yaml(d=) failed, dict expect, got {}'.format(
@@ -1359,13 +1361,11 @@ class Config(object):
         else:
             try:
                 with open(x, 'wt') as w:
-                    yaml.safe_dump(d, w)
+                    toml.dump(d, w)
                 # return x
             except:
                 log.error('to_yaml() failed, could not write to file: {}'.format(
                     type(x).__name__))
-            # finally:
-            #     return x
 
 
     def to_toml(self, d, x):
@@ -1390,8 +1390,6 @@ class Config(object):
             except:
                 log.error('to_toml() failed, could not write to file: {}'.format(
                     type(x).__name__))
-            # finally:
-            #     return x
 
 
     def to_pickle(self, d, x):
