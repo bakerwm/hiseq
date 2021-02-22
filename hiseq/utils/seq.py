@@ -10,6 +10,8 @@ import os
 import sys
 import re
 import shutil
+import numpy as np
+import pandas as pd
 from xopen import xopen
 import collections # Fastx().collapse()
 from hiseq.utils.helper import *
@@ -687,9 +689,60 @@ class Fastx(object):
         return dd
 
 
+    def calFreq(self, x):
+        """Calculate the frequency of list
+        return dataframe
+
+        index count
+        """
+        if isinstance(x, list):
+            var, freq = np.unique(x, return_counts=True)
+            df = pd.DataFrame(data=freq, index=var, columns=['count']).reset_index()
+            df.columns = ['length', 'count']
+        else:
+            df = pd.DataFrame(columns=['length', 'count'])
+        return df
 
 
+    def len_dist(self, n_max=0, csv_file=None):
+        """Calculate the length distribution of the fx
+        fq
+        fa
 
-
+        >fragsize.csv
+        length count
+        """
+        chunk = 1000000
+        counter = 0
+        fragSizes = []
+        frames = []
+        with xopen(self.input) as r:
+            for name, seq, qual in self.readfq(r):
+                counter += 1
+                fragSizes.append(len(seq))
+                # last record
+                if n_max > 0 and counter  >= n_max:
+                    log.info('Stopped at limit: {}'.format(n_max))
+                    break # stop
+                # chunk
+                if counter > 0 and counter%chunk == 0:
+                    frames.append(self.calFreq(fragSizes))
+                    fragSizes = [] # empty
+                    log.info('{} : {}'.format('Processed', counter))
+            # last chunk
+            if len(fragSizes) > 0:
+                frames.append(self.calFreq(fragSizes))
+                fragSizes = [] # empty
+                log.info('{} : {}'.format('Processed', counter))
+        # overall
+        df = pd.concat(frames, axis=0).groupby(['length']).sum().reset_index()
+        df['id'] = fq_name(self.input)
+        # save to file
+        if isinstance(csv_file, str):
+            if os.path.exists(os.path.dirname(csv_file)):
+                df.to_csv(csv_file, index=False)
+        # output
+        return df
+        
 
 
