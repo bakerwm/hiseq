@@ -34,11 +34,206 @@ log = logging.getLogger(__name__)
 log.setLevel('INFO')
 
 
+class BamFragSize(object):
+    """Calculate the read size of SE
+    single BAM file
+
+    sample size = 1000 (SE or PE)
+
+    > Table.csv
+    length strand count
+    """
+    def __init__(self, bam, labels=None, asPE=False, maxRecords=0, 
+        strandness=False, csv_file=None):
+        self.bam = bam
+        self.asPE = asPE # fragment sizes
+        self.maxRecords = maxRecords
+        self.strandness = strandness
+        self.csv_file = csv_file
+        # only for single bam file
+        if not isinstance(bam, str):
+            raise Exception('str expected, {} got'.format(type(bam).__name__))
+        if not self.isBam(bam):
+            raise Exception('bam={}, is not bam file'.format(bam))
+        # asPE: paired end only
+        if asPE and not self.isBamPE(bam):
+            raise Exception('asPE=True, but bam is not paired')
+        bam_name = os.path.splitext(os.path.basename(bam))[0]
+        self.labels = labels if labels else bam_name
+        self.freqTable = self.calFragSize(bam) # dataframe
+
+
+    def isBam(self, bam):
+        """Check input is BAM file
+        update: self.bam
+
+        string
+        *.bam
+        """
+        if bam is None:
+            bam = self.bam
+        flag = False
+        if isinstance(self.bam, str):
+            flag = self.bam.endswith('.bam') and os.path.exists(self.bam)
+        return flag
+
+
+    def isBamPE(self, bam, topn=1000):
+        """Check input bam is Paired end alignment"""
+        flag = False
+        if self.isBam(bam):
+            samfile = pysam.AlignmentFile(bam)
+            flag = [read.is_paired for read in samfile.head(topn)]
+            samfile.close()
+        return all(flag)
+
+
+    def calFreq(self, x, return_dataframe=True):
+        """Calculate the frequency of list
+        ['length', 'strand']
+        return dataframe
+        """
+        header = ['length', 'strand', 'count']
+        if isinstance(x, list):
+            df = pd.DataFrame(x, columns=header).groupby(['length', 'strand']).count().reset_index()
+        else:
+            df = pd.DataFrame(columns=header)
+        if not self.strandness:
+            df['strand'] = '*'
+        return df
+
+
+    def calFragSize(self, bam=None, chunk=1000000):
+        """Extract the read length
+        length count id
+        """
+        if bam is None:
+            bam = self.bam
+        # for SE or PE
+        if self.isBamPE(bam):
+            pass
+        else:
+            pass
+        # read sam/bam file
+        sam = pysam.AlignmentFile(bam)
+        counter  = 0
+        fragSizes = []
+        frames = []
+        for read in sam:
+            if self.asPE:
+                # fragment sizes
+                if read.is_proper_pair \
+                and not read.is_unmapped \
+                and not read.mate_is_unmapped \
+                and not read.is_read1 \
+                and not read.is_duplicate \
+                and read.template_length > 0:
+                    flag += 1
+                    fragSizes.append([read.template_length, strand, 1])
+            else:
+                # reads sizes
+                if not read.is_unmapped \
+                and not read.is_duplicate > 0:
+                    counter += 1
+                    strand = '-' if read.is_reverse else '+'
+                    fragSizes.append([read.infer_query_length(), strand, 1])
+            # sample size
+            if self.maxRecords > 0 and counter  > self.maxRecords:
+                log.info('stop at: {}'.format(counter ))
+                break # stop
+            # chunk
+            if counter > 0 and counter%chunk == 0:
+                frames.append(self.calFreq(fragSizes))
+                fragSizes = [] # empty
+                log.info('{} : {} {}'.format('Processed', counter , self.labels))
+        # last chunk
+        if len(fragSizes) > 0:
+            frames.append(self.calFreq(fragSizes))
+            fragSizes = [] # empty
+            log.info('{} : {} {}'.format('Processed', counter , self.labels))
+        # overall
+        df = pd.concat(frames, axis=1).groupby(['length', 'strand']).sum().reset_index()
+        df['id'] = self.labels
+        return df
+
+
+    def distribution(self):
+        """Basic statistics values
+        value + freq
+
+        mean, medium, mode, std, min, max, Q1, Q2, Q3
+        """
+        val = self.freqTable['length']
+        freq = self.freqTable['count']
+        inserts = np.repeat(val, freq)
+        # statistics
+        q_mean = np.mean(inserts)
+        q_median = np.median(inserts)
+        q_median_dev = np.median(np.absolute(inserts - q_median))
+        q_mode = val[np.argmax(freq)]
+        q_std = np.std(inserts)
+        q_min = np.min(inserts)
+        q_max = np.max(inserts)
+        q_qual = np.quantile(inserts, [0.25, 0.5, 0.75], axis=0)
+        # core distribution
+        s = np.array([q_mean, q_median, q_mode, q_std, q_min, q_max]).round(2)
+        s = np.append(s, q_qual)
+        return s
+
+
+    def _tmp(self):
+        """
+        Create a tmp file to save json object
+        """
+        tmp = tempfile.NamedTemporaryFile(prefix='tmp', suffix='.csv',
+            delete=False)
+        return tmp.name
+
+
+    def saveas(self, csv_file=None):
+        """Save to file"""
+        if csv_file is None:
+            csv_file = self.csv_file # default
+        if csv_file is None:
+            csv_file = self._tmp()
+        log.info('saving to file: {}'.format(csv_file))
+        try:
+            self.freqTable.to_csv(csv_file, index=False)
+            # save statistics
+            stat_file = csv_file + '.stat'
+            da = self.distribution()
+            pd.DataFrame(da).T.to_csv(stat_file, sep="\t", index=False, 
+                header=['mean', 'median', 'mode', 'std', 'min', 'max', 'Q1', 'Q2', 'Q3'])
+        except:
+            log.warning('failed saving file: {}'.format(csv_file))
+
+
+    def plot(self, plot_file):
+        """Generate freq table plot
+        line plot, hist
+        """
+        # to-do: matplotlib function
+        hiseq_dir = os.path.dirname(hiseq.__file__)
+        fragPlotR = os.path.join(hiseq_dir, 'bin', 'qc_fragsize.R')
+        # output files
+        csv_file = os.path.splitext(plot_file)[0] + '.csv'
+        self.saveas(csv_file)
+        cmd = ' '.join(['Rscript', fragPlotR, plot_file, csv_file])
+        try:
+            os.system(cmd)
+        except:
+            log.warning('fragsize.py failed')
+        return(plot_file)
+
+
 class BamPEFragSize(object):
-    """Calculate insert size of PE fragment
+    """Calculate insert size of PE
     single BAM input
 
-    sample size = 10000
+    sample size = 1000
+
+    > Table.csv
+    length strand count
     """
     def __init__(self, bam, labels=None, maxRecords=0):
         self.bam = bam
@@ -196,13 +391,11 @@ class BamPEFragSize(object):
         """Save to file"""
         if csv_file is None:
             csv_file = self._tmp()
-
         log.info('saving to file: {}'.format(csv_file))
 
         try:
             # save table
             self.freqTable.to_csv(csv_file, index=False)
-
             # save statistics
             stat_file = csv_file + '.stat'
             da = self.distribution()
@@ -245,7 +438,7 @@ class BamPEFragSize(object):
 
         # create df
         frames = [self.calFragSize(b) for b in bam_list]
-        df = pd.concat(frames, axis=0)
+        df = pd.concat(frames, axis=1)
 
         # save to txt
         df.to_csv(frag_stat, index=False)
@@ -310,6 +503,8 @@ class BamPEFragSize2(object):
         args_init = {
             'bam': None,
             'outdir': str(pathlib.Path.cwd()),
+            'asPE': False,
+            'strandness': False,
             'labels': None,
             'maxRecords': 0, # all
             'maxLength': 1000, #
@@ -351,15 +546,14 @@ class BamPEFragSize2(object):
         """
         bam_i = self.bam.index(bam) # index for bam file
         labels = self.labels[bam_i] # labels for bam
-
         # output file
-        # csv_file = os.path.join(self.outdir, labels + '.frag_size.csv')
         pdf_file = os.path.join(self.outdir, labels + '.frag_size.pdf')
-
         if os.path.exists(pdf_file) and not self.overwrite:
             log.info('file exists, frag_size() skipped, {}'.format(pdf_file))
         else:
-            BamPEFragSize(bam, labels=labels).plot(pdf_file) # save to csv
+            # BamPEFragSize(bam, labels=labels).plot(pdf_file)
+            BamFragSize(bam, labels=labels, asPE=self.asPE,
+                strandness=self.strandness).plot(pdf_file) # save to csv
 
 
     def run(self):
@@ -382,20 +576,6 @@ class BamPEFragSize2(object):
             os.system(cmd)
         except:
             log.warning('fragsize.py failed')
-
-
-def main():
-    if len(sys.argv) < 3:
-        sys.exit('fragsize.py <outdir> <bam1> [bam2, ...]')
-
-    outdir = sys.argv[1]
-    bam_list = sys.argv[2:]
-
-    BamPEFragSize2(bam=bam_list, outdir=outdir).run()
-
-
-if __name__ == '__main__':
-    main()
 
 
 def frag_size_picard(bam, out):
@@ -452,3 +632,16 @@ def frag_size_samtools(infile, outfile=None):
 
     return d
 
+
+def main():
+    if len(sys.argv) < 3:
+        sys.exit('fragsize.py <outdir> <bam1> [bam2, ...]')
+
+    outdir = sys.argv[1]
+    bam_list = sys.argv[2:]
+
+    BamFragSize2(bam=bam_list, outdir=outdir).run()
+
+
+if __name__ == '__main__':
+    main()
