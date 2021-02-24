@@ -212,7 +212,10 @@ class Atac(object):
     def init_args(self):
         obj_local = AtacConfig(**self.__dict__)
         self = update_obj(self, obj_local.__dict__, force=True)
-        Config().dump(self.__dict__, self.config_toml)
+
+        ## save arguments
+        # chk0 = args_checker(self.__dict__, self.config_pickle)
+        # chk1 = args_logger(self.__dict__, self.config_txt)
 
 
     def run(self):
@@ -244,7 +247,10 @@ class AtacRx(object):
     def init_args(self):
         obj_local = AtacRxConfig(**self.__dict__)
         self = update_obj(self, obj_local.__dict__, force=True)
-        Config().dump(self.__dict__, self.config_toml)
+
+        ## save arguments
+        chk0 = args_checker(self.__dict__, self.config_pickle)
+        chk1 = args_logger(self.__dict__, self.config_txt)
 
 
     def run_group_single(self, d):
@@ -298,7 +304,10 @@ class AtacRn(object):
     def init_args(self):
         obj_local = AtacRnConfig(**self.__dict__)
         self = update_obj(self, obj_local.__dict__, force=True)
-        Config().dump(self.__dict__, self.config_toml)
+
+        ## save arguments
+        chk0 = args_checker(self.__dict__, self.config_pickle)
+        chk1 = args_logger(self.__dict__, self.config_txt)
 
 
     def get_bam_list(self):
@@ -850,7 +859,10 @@ class AtacR1(object):
     def init_args(self):
         obj_local = AtacR1Config(**self.__dict__)
         self = update_obj(self, obj_local.__dict__, force=True)
-        Config().dump(self.__dict__, self.config_toml)
+
+        ## save arguments
+        chk0 = args_checker(self.__dict__, self.config_pickle)
+        chk1 = args_logger(self.__dict__, self.config_txt)
 
 
     # main pipeline #
@@ -1165,7 +1177,7 @@ class AtacR1(object):
                 'out_pct': 100,
                 'rm_pct': 0
             }
-        Config().dump(d, self.trim_summary_json)
+        Json(d).writer(self.trim_summary_json)
 
 
     def qc_align_summary(self):
@@ -1173,7 +1185,7 @@ class AtacR1(object):
         Save summary to file
         """
         # align to genome
-        align = Config().load(self.align_json)
+        align = Json(self.align_json).reader()
 
         # duplicates
         nodup = Bam(self.bam_rmdup)
@@ -1190,12 +1202,13 @@ class AtacR1(object):
         else:
             n_spikein = 0
 
+        # Json(align).writer()
         align['nodup'] = n_nodup
         align['spikein'] = n_spikein
         align['chrM'] = self.qc_mito()
 
         # save to file
-        Config().dump(align, self.align_summary_json)
+        Json(align).writer(self.align_summary_json)
 
 
     def qc_lendist(self):
@@ -1495,7 +1508,7 @@ class AtacRd(object):
         """
         # design: init
         if file_exists(self.design):
-            design_dict = Config().load(self.design)
+            design_dict = Json(self.design).reader()
         else:
             design_dict = {}
 
@@ -1554,7 +1567,7 @@ class AtacRd(object):
 
     def run(self):
         # save to file
-        Config().dump(self.fq_groups, self.design)
+        Json(self.fq_groups).writer(self.design)
 
 
 class AtacRp(object):
@@ -1627,7 +1640,6 @@ class AtacConfig(object):
         args_init = {
             'build_design': False,
             'design': None,
-            'fq_dir': None,
             'rep_list': None,
             'fq1': None,
             'fq2': None,
@@ -1666,10 +1678,8 @@ class AtacConfig(object):
             self.parallel_jobs)
 
         # fq groups
-        self.fq_groups = Config().load(self.design) \
-            if file_exists(self.design) else self.group_fq()
-        # init 
-        self.init_files()
+        self.fq_groups = Json(self.design).reader() if \
+            file_exists(self.design) else self.group_fq()
 
 
     def init_files(self, create_dirs=True):
@@ -1682,7 +1692,9 @@ class AtacConfig(object):
 
         # files
         default_files = {
-            'config_toml': self.config_dir + '/config.toml',
+            'config_txt': self.config_dir + '/config.txt',
+            'config_pickle': self.config_dir + '/config.pickle',
+            'config_json': self.config_dir + '/config.json'
         }
         self = update_obj(self, default_files, force=True) # key
 
@@ -1742,6 +1754,8 @@ class AtacConfig(object):
             self.atacseq_type = 'build_design'
         elif len(self.fq_groups) >= 1:
             self.atacseq_type = 'atacseq_rx'
+        # elif len(self.fq_groups) == 1:
+        #     self.atacseq_type = 'atacseq_rn'
         elif isinstance(self.fq1, str):
             self.atacseq_type = 'atacseq_r1'
         else:
@@ -1814,7 +1828,7 @@ class AtacRxConfig(object):
         self.outdir = file_abspath(self.outdir)
 
         # groups
-        self.fq_groups = Config().load(self.design) if \
+        self.fq_groups = Json(self.design).reader() if \
             file_exists(self.design) else self.group_fq()
 
         if len(self.fq_groups) < 1:
@@ -1876,8 +1890,10 @@ class AtacRxConfig(object):
         self.report_dir = os.path.join(self.project_dir, 'report')
 
         # files
-        default_files = {          
-            'config_toml': self.config_dir + '/config.toml',
+        default_files = {
+            'config_txt': self.config_dir + '/config.txt',
+            'config_pickle': self.config_dir + '/config.pickle',
+            'config_json': self.config_dir + '/config.json'
         }
         self = update_obj(self, default_files, force=True) # key
 
@@ -2074,7 +2090,9 @@ class AtacRnConfig(object):
 
         # files
         default_files = {
-            'config_toml': self.config_dir + '/config.toml', # updated
+            'config_txt': self.config_dir + '/config.txt',
+            'config_pickle': self.config_dir + '/config.pickle',
+            'config_json': self.config_dir + '/config.json',
             'report_log': self.report_dir + '/report.log',
             'bam_rmdup': self.bam_dir + '/' + self.smp_name + '.rmdup.bam',
             'bam_proper_pair': self.bam_dir + '/' + self.smp_name + '.proper_pair.bam',
@@ -2299,7 +2317,9 @@ class AtacR1Config(object):
 
         # files
         default_files = {
-            'config_toml': self.config_dir + '/config.toml', # updated
+            'config_txt': self.config_dir + '/config.txt',
+            'config_pickle': self.config_dir + '/config.pickle',
+            'config_json': self.config_dir + '/config.json',
             'report_log': self.report_dir + '/report.log',
             'bam_rmdup': self.bam_dir + '/' + self.smp_name + '.rmdup.bam',
             'bam_proper_pair': self.bam_dir + '/' + self.smp_name + '.proper_pair.bam',
@@ -2486,63 +2506,24 @@ class AtacRpConfig(object):
 
 class AtacReader(object):
     """
-    Read config.toml, or pickle
+    Read config.txt/pickle
     """
     def __init__(self, x):
         self.x = x
-        self.args = self.read()
-        # self = update_obj(self, args, force=True)
-        if self.args is None:
-            log.error('Failed to read: {}'.format(x))
-            self.is_hiseq = False
+        self.read()
+        self.atacseq_type = self.args.get('atacseq_type', None)
+
+        self.is_atacseq_r1 = self.atacseq_type == 'atacseq_r1'
+        self.is_atacseq_rn = self.atacseq_type == 'atacseq_rn'
+        self.is_atacseq_rx = self.atacseq_type == 'atacseq_rx'
+        self.is_atacseq_rt = self.atacseq_type == 'atacseq_rt'
+        self.is_atacseq_rd = self.atacseq_type == 'build_design'
+
+
+        if isinstance(self.atacseq_type, str):
+            self.is_hiseq = self.atacseq_type.startswith('atacseq_')
         else:
-            if 'atacseq_type' in self.args:
-                self.atacseq_type = self.args.get('atacseq_type', None)
-                self.is_atacseq_r1 = self.atacseq_type == 'atacseq_r1'
-                self.is_atacseq_rn = self.atacseq_type == 'atacseq_rn'
-                self.is_atacseq_rx = self.atacseq_type == 'atacseq_rx'
-                self.is_atacseq_rt = self.atacseq_type == 'atacseq_rt'
-                self.is_atacseq_rd = self.atacseq_type == 'build_design'
-                self.is_hiseq = self.atacseq_type.startswith('atacseq')
-            else:
-                self.is_hiseq = False
-
-
-    def list_config(self):
-        """List the config files
-        Support: toml, pickle, yaml, json, ... [priority]
-
-        return file list
-
-        # hiseq
-        hiseq
-          |-config
-          |   |-config.toml
-
-        # alignment
-        align_dir
-          |- smp_nmae
-          |    |- index
-          |    |    |- config.pickle
-        """
-        c_files = ['config.' + i for i in ['toml', 'pickle', 'yaml', 'json']]
-
-        # search config files
-        for f in c_files:
-            c1 = os.path.join(self.x, 'config', f)
-            c2 = os.path.join(self.x, '*', '*', f)
-            c1x = glob.glob(c1)
-            c2x = glob.glob(c2)
-            if len(c1x) > 0:
-                config_file = c1x[0]
-                break
-            elif len(c2x) > 0:
-                config_file = c2x[0]
-                break
-            else:
-                config_file = None        #
-
-        return config_file
+            self.is_hiseq = False
 
 
     def read(self):
@@ -2550,7 +2531,7 @@ class AtacReader(object):
         # hiseq
         hiseq
           |-config
-          |   |-config.toml
+          |   |-config.pickle
 
         # alignment
         align_dir
@@ -2558,8 +2539,18 @@ class AtacReader(object):
           |    |- index
           |    |    |- config.pickle
         """
-        config_file = self.list_config()
-        return Config().load(config_file)
+        p1x = os.path.join(self.x, 'config', 'config.pickle')
+        p2x = os.path.join(self.x, '*', '*', 'config.pickle')
+        p1 = glob.glob(p1x)
+        p2 = glob.glob(p2x)
+
+        # read config
+        if len(p1) == 1:
+            self.args = pickle2dict(p1[0])
+        elif len(p2) == 1:
+            self.args = pickle2dict(p2[0])
+        else:
+            self.args = {}
 
 
 class Align(object):
@@ -2677,7 +2668,7 @@ class Align(object):
         prefix = os.path.join(subdir, self.smp_name)
         default_files = {
             'subdir': subdir,
-            'config_toml': os.path.join(subdir, 'config.toml'), # updated
+            'config_pickle': os.path.join(subdir, 'config.pickle'),
             'cmd_shell': os.path.join(subdir, 'cmd.txt'),
             'bam': prefix + '.bam',
             'sam': prefix + '.sam',
@@ -2830,7 +2821,7 @@ class Align(object):
 
         ## save to json
         if to_json:
-            Config().dump(dd, self.align_json)
+            Json(dd).writer(self.align_json)
 
         return dd['total'], dd['map'], dd['unique'], dd['multiple'], dd['unmap']
 
@@ -2845,7 +2836,7 @@ class Align(object):
         check_path(self.subdir)
 
         # save config
-        Config().dump(self.__dict__, self.config_toml)
+        dict2pickle(self.__dict__, self.config_pickle)
 
         # run cmd
         if file_exists(self.bam) and not self.overwrite:
@@ -2965,7 +2956,7 @@ class CallPeak(object):
     def init_files(self):
         # files
         default_files = {
-            'config_toml': self.outdir + '/config.toml',
+            'config_pickle': self.outdir + '/config.pickle',
             'macs2_peak': self.outdir + '/' + self.prefix + '_peaks.narrowPeak',
             'macs2_log': self.outdir + '/' + self.prefix + '.callpeak.log',
             'macs2_peak_xls': self.outdir + '/' + self.prefix + '_peaks.xls',
@@ -3103,7 +3094,7 @@ class CallPeak(object):
 
     def run(self):
         # save config
-        Config().dump(self.__dict__, self.config_toml)
+        dict2pickle(self.__dict__, self.config_pickle)
 
         # generate cmd
         if self.method.lower() == 'macs2':
@@ -3117,4 +3108,40 @@ class CallPeak(object):
         # remove files
         del_list = []
 
+
+def dict2pickle(d, p, update=False):
+    """Save dict as pickle
+    d is dict
+    p is pickle file
+    """
+    if isinstance(d, dict) and isinstance(p, str):
+        if file_exists(p):
+            with open(p, 'rb') as r:
+                d_old = pickle.load(r)
+        else:
+            d_old = {}
+
+        # update
+        d_old.update(d)
+        d_new = d_old if update else d
+
+        # save to file
+        with open(p, 'wb') as w:
+            pickle.dump(d_new, w, protocol=pickle.HIGHEST_PROTOCOL)
+    else:
+        log.error('dict2pickle() failed, dict, str expect')
+
+
+def pickle2dict(p):
+    """
+    Read pickle, save as dict
+    """
+    d = {}
+    if file_exists(p):
+        with open(p, 'rb') as r:
+            d = pickle.load(r)
+    else:
+        log.error('pickle file illegal')
+
+    return d
 
