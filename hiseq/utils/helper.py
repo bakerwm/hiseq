@@ -1102,6 +1102,15 @@ class Toml(object):
 class Config(object):
     """Working with config, in dict/yaml/toml/pickle formats
     load/dump
+    
+    Example:
+    1. write to file
+    >>> Config(d).dump('out.json')
+    >>> Config(d).dump('out.toml')
+    >>> Config(d).dump('out.pickle')
+    
+    2. load from file
+    >>> d = Config().load('in.yaml')
 
     read/write data
     """
@@ -1238,9 +1247,8 @@ class Config(object):
                     if os.path.getsize(x) > 0:
                         d = json.load(r)
                         d = collections.OrderedDict(sorted(d.items()))
-            except:
-                log.warning('from_json() failed, could not write \
-                    to file: {}'.format(x))
+            except Exception as exc:
+                log.error('from_json() failed, {}'.format(exc))
             finally:
                 return d
         else:
@@ -1258,9 +1266,8 @@ class Config(object):
                     if os.path.getsize(x) > 0:
                         d = yaml.load(r, Loader=yaml.FullLoader)
                         d = collections.OrderedDict(sorted(d.items()))
-            except:
-                log.warning('from_yaml() failed, could not read \
-                    to file: {}'.format(x))
+            except Exception as exc:
+                log.error('from_yaml() failed, {}'.format(exc))
             finally:
                 return d
         else:
@@ -1284,9 +1291,8 @@ class Config(object):
                     if os.path.getsize(x) > 0:
                         d = toml.load(x)
                         d = collections.OrderedDict(sorted(d.items()))
-            except:
-                log.warning('from_toml() failed, could not write\
-                    to file: {}'.format(x))
+            except Exception as exc:
+                log.error('from_toml() failed, {}'.format(exc))
             finally:
                 return d
         else:
@@ -1304,9 +1310,8 @@ class Config(object):
                     if os.path.getsize(x) > 0:
                         d = pickle.load(r)
                         d = collections.OrderedDict(sorted(d.items()))
-            except:
-                log.warning('from_pickle() failed, could not write\
-                    to file: {}'.format(x))
+            except Exception as exc:
+                log.error('from_pickle() failed, {}'.format(exc))
             finally:
                 return d
         else:
@@ -1332,9 +1337,8 @@ class Config(object):
                 with open(x, 'wt') as w:
                     json.dump(d, w, indent=4, sort_keys=True)
                 # return x
-            except:
-                log.error('to_json() failed, could not write to file: {}'.format(
-                    type(x).__name__))
+            except Exception as exc:
+                log.error('to_json() failed, {}'.format(exc))
 
 
     def to_yaml(self, d, x):
@@ -1347,7 +1351,7 @@ class Config(object):
         """
         x_yaml = x
         x = os.path.splitext(x_yaml)[0] + '.toml'
-        log.warning('OrderedDict is not supported in YAML, save as TOML instead: {}'.format(x_toml))
+        log.warning('OrderedDict is not supported in YAML, save as TOML instead: {}'.format(x))
         # check
         x = file_abspath(x)
         if not isinstance(d, dict):
@@ -1363,9 +1367,8 @@ class Config(object):
                 with open(x, 'wt') as w:
                     toml.dump(d, w)
                 # return x
-            except:
-                log.error('to_yaml() failed, could not write to file: {}'.format(
-                    type(x).__name__))
+            except Exception as exc:
+                log.error('to_yaml() failed, {}'.format(exc))
 
 
     def to_toml(self, d, x):
@@ -1387,9 +1390,8 @@ class Config(object):
                 with open(x, 'wt') as w:
                     toml.dump(d, w)
                 # return x
-            except:
-                log.error('to_toml() failed, could not write to file: {}'.format(
-                    type(x).__name__))
+            except Exception as exc:
+                log.error('to_toml() failed, {}'.format(exc))
 
 
     def to_pickle(self, d, x):
@@ -1411,9 +1413,8 @@ class Config(object):
                 with open(x, 'wb') as w:
                     pickle.dump(d, w, protocol=pickle.HIGHEST_PROTOCOL)
                 # return x
-            except:
-                log.error('to_pickle() failed, could not write to file: {}'.format(
-                    type(x).__name__))
+            except Exception as exc:
+                log.error('to_pickle() failed, {}'.format(exc))
 
 
     def to_log(self, d, x, stdout=False):
@@ -1448,9 +1449,8 @@ class Config(object):
                 if stdout:
                     print('\n'.join(msg))
                 # return x
-            except:
-                log.error('to_log() failed, could not write to file: {}'.format(
-                    type(x).__name__))
+            except Exception as exc:
+                log.error('to_log() failed, {}'.format(exc))
 
 
     def _tmp(self, suffix='.txt'):
@@ -1460,7 +1460,8 @@ class Config(object):
         tmp = tempfile.NamedTemporaryFile(prefix='tmp', suffix=suffix,
             delete=False)
         return tmp.name
-
+    
+    
 
 def in_dict(d, k):
     """
