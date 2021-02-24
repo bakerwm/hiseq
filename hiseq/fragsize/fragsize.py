@@ -152,7 +152,7 @@ class BamFragSize(object):
             fragSizes = [] # empty
             log.info('{} : {} {}'.format('Processed', counter , self.labels))
         # overall
-        df = pd.concat(frames, axis=1).groupby(['length', 'strand']).sum().reset_index()
+        df = pd.concat(frames, axis=0).groupby(['length', 'strand']).sum().reset_index()
         df['id'] = self.labels
         return df
 
