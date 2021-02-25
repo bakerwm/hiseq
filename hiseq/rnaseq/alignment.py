@@ -538,7 +538,6 @@ class AlignConfig(object):
                         genome=self.spikein, group='genome')
                 else:
                     pass
-                    # self.spikein_index = None
 
                 ####################
                 # tag index        #
@@ -555,9 +554,13 @@ class AlignConfig(object):
                 if tag and isinstance(self.genome, str):
                     tag_index = AlignIndex(aligner=self.aligner).search(
                         genome=self.genome, group=tag)
+                else:
+                    tag_index = None
 
                 if AlignIndex(aligner=self.aligner, index=tag_index).is_index():
                     self.tag_index = tag_index
+                else:
+                    self.tag_index = None
 
                 ####################
                 # genome index     #
@@ -889,6 +892,8 @@ class AlignRnConfig(object):
 class AlignR1Config(object):
     """
     Config files for AlignR1
+    
+    force: bowtie2, for rRNA
 
     Example:
     1. 

@@ -747,14 +747,74 @@ class RNAseqR1(object):
                 file_symlink(trim.clean_fq, clean_fq1)
 
 
-    def get_bam(self, x):
+    def align_rRNA(self):
         """
-        Get the align bam file, from x dicectory
-        align_dir/A, B, C, ...
-        Add prefix/ 01, 02, ...
+        Alignment reads to rRNA
         """
-        bamlist = listfile(x, '*.bam', recursive=True)
-        return bamlist.pop() if len(bamlist) > 0 else None # last one
+        args_local = self.__dict__.copy()
+        fq1, fq2 = args_local.get('clean_fq_list', [None, None])
+
+        # update
+        args_sp = {
+            'fq1': fq1,
+            'fq2': fq2,
+            'outdir': self.rRNA_dir,
+            'genome_index': self.rRNA_index,
+            'threads': self.threads,
+            'extra_para': self.extra_para,
+            'keep_tmp': self.keep_tmp,
+            'overwrite': self.overwrite
+        }
+        args_local.update(args_sp)
+        align = Align(**args_local)
+
+        # output
+        tmp0 = listfile(self.rRNA_dir, '*.bam', recursive=True)
+        bam = tmp[0] if len(tmp0) > 0 else None
+        if file_exists(bam) and not self.overwrite:
+            log.info('align() skipped, file exists: {}'.format(bam))
+        else:
+            align.run()
+
+        # copy bam to bam_files
+        file_symlink(bam, self.rRNA_bam)
+
+
+    def align_spikein(self):
+        """
+        Alignment reads, spikein
+        """
+        args_local = self.__dict__.copy()
+        fq1, fq2 = args_local.get('clean_fq_list', [None, None])
+
+        # update
+        args_sp = {
+            'fq1': fq1,
+            'fq2': fq2,
+            'outdir': self.spikein_dir,
+            'genome_index': self.spikein_index,
+            'threads': self.threads,
+            'extra_para': self.extra_para,
+            'keep_tmp': self.keep_tmp,
+            'overwrite': self.overwrite
+        }
+        args_local.update(args_sp)
+        align = Align(**args_local)
+
+        # output
+        tmp0 = listfile(self.spikein_dir, '*.bam', recursive=True)
+        bam = tmp[0] if len(tmp0) > 0 else None
+        if file_exists(bam) and not self.overwrite:
+            log.info('align() skipped, file exists: {}'.format(bam))
+        else:
+            align.run()
+
+        # copy bam to bam_files
+        file_symlink(bam, self.spikein_bam)
+
+        self.spikein_scale = self.cal_norm_scale(self.spikein_bam)
+        with open(self.spikein_scale_txt, 'wt') as w:
+            w.write('{:.4f}\n'.format(self.spikein_scale))
 
 
     def align_genome(self):
@@ -796,74 +856,14 @@ class RNAseqR1(object):
             w.write('{:.4f}\n'.format(self.align_scale))
 
 
-    def align_spikein(self):
+    def get_bam(self, x):
         """
-        Alignment PE reads, spikein
+        Get the align bam file, from x dicectory
+        align_dir/A, B, C, ...
+        Add prefix/ 01, 02, ...
         """
-        args_local = self.__dict__.copy()
-        fq1, fq2 = args_local.get('clean_fq_list', [None, None])
-
-        # update
-        args_sp = {
-            'fq1': fq1,
-            'fq2': fq2,
-            'outdir': self.spikein_dir,
-            'genome_index': self.spikein_index,
-            'threads': self.threads,
-            'extra_para': self.extra_para,
-            'keep_tmp': self.keep_tmp,
-            'overwrite': self.overwrite
-        }
-        args_local.update(args_sp)
-        align = Align(**args_local)
-
-        # output
-        tmp0 = listfile(self.spikein_dir, '*.bam', recursive=True)
-        bam = tmp[0] if len(tmp0) > 0 else None
-        if file_exists(bam) and not self.overwrite:
-            log.info('align() skipped, file exists: {}'.format(bam))
-        else:
-            align.run()
-
-        # copy bam to bam_files
-        file_symlink(bam, self.spikein_bam)
-
-        self.spikein_scale = self.cal_norm_scale(self.spikein_bam)
-        with open(self.spikein_scale_txt, 'wt') as w:
-            w.write('{:.4f}\n'.format(self.spikein_scale))
-
-
-    def align_rRNA(self):
-        """
-        Alignment PE reads, rRNA
-        """
-        args_local = self.__dict__.copy()
-        fq1, fq2 = args_local.get('clean_fq_list', [None, None])
-
-        # update
-        args_sp = {
-            'fq1': fq1,
-            'fq2': fq2,
-            'outdir': self.rRNA_dir,
-            'genome_index': self.rRNA_index,
-            'threads': self.threads,
-            'extra_para': self.extra_para,
-            'keep_tmp': self.keep_tmp,
-            'overwrite': self.overwrite
-        }
-        args_local.update(args_sp)
-        align = Align(**args_local)
-
-        # output
-        tmp0 = listfile(self.rRNA_dir, '*.bam', recursive=True)
-        bam = tmp[0] if len(tmp0) > 0 else None
-        if file_exists(bam) and not self.overwrite:
-            log.info('align() skipped, file exists: {}'.format(bam))
-        else:
-            align.run()
-
-        # copy bam to bam_files
-        file_symlink(bam, self.rRNA_bam)
+        bamlist = listfile(x, '*.bam', recursive=True)
+        return bamlist.pop() if len(bamlist) > 0 else None # last one
 
 
     def bam_to_bg(self):
@@ -1051,7 +1051,6 @@ class RNAseqR1(object):
                 n_rRNA = n_rRNA/2
         else:
             n_rRNA = 0
-
 
         align['nodup'] = 0
         align['spikein'] = n_spikein
@@ -2145,7 +2144,7 @@ class RNAseqDesign(object):
 
 class RNAseqReader(object):
     """
-    Read config.yaml from the local directory
+    Read config.toml from the local directory
     """
     def __init__(self, x):
         self.x = x
