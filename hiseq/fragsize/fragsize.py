@@ -62,6 +62,16 @@ class BamFragSize(object):
         self.labels = labels if labels else bam_name
         self.freqTable = self.calFragSize(bam) # dataframe
 
+    
+    def is_empty(self, bam):
+        """Check input file is empty or not
+        pysam.Samfile().count
+        pysam.Samfile().mapped
+        """
+        pysam.index(bam)
+        sam = pysam.Samfile(bam)
+        return sam.count() == 0 and sam.mapped == 0
+    
 
     def isBam(self, bam):
         """Check input is BAM file
@@ -114,6 +124,10 @@ class BamFragSize(object):
             pass
         else:
             pass
+        # empty check
+        if self.is_empty(bam):
+            log.error('bam is empty: {}'.format(bam))
+            return pd.DataFrame(columns=['length','strand','count','id']) #!!
         # read sam/bam file
         sam = pysam.AlignmentFile(bam)
         counter  = 0
@@ -273,7 +287,17 @@ class BamPEFragSize(object):
 
         return all(flag)
 
-
+    
+    def is_empty(self, bam):
+        """Check input file is empty or not
+        pysam.Samfile().count
+        pysam.Samfile().mapped
+        """
+        pysam.index(bam)
+        sam = pysam.Samfile(bam)
+        return sam.count() == 0 and sam.mapped == 0
+    
+    
     def calFreq(self, x, return_dataframe=True):
         """Calculate the frequency of list
         return dataframe
@@ -297,11 +321,14 @@ class BamPEFragSize(object):
         """
         if bam is None:
             bam = self.bam
-
         if not self.isBamPE():
             # raise ValueError('PE bam expected, failed')
             log.warning('not a PE bam, calFragSize() skipped ...')
-            return pd.DataFrame(columns = ['length', 'count'])
+            return pd.DataFrame(columns = ['length','count','id'])
+        # empty check
+        if self.is_empty(bam):
+            log.error('bam is empty: {}'.format(bam))
+            return pd.DataFrame(columns=['length','count','id']) #!!
 
         sam = pysam.AlignmentFile(bam)
 
