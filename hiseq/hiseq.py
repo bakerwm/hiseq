@@ -24,7 +24,7 @@ from .trim.trimmer import TrimRn
 from .align.alignment import Alignment
 from .atac.atac import Atac
 from .rnaseq.rnaseq import RNAseq
-from .rnaseq.rnaseq_pipe import RNAseqPipe
+# from .rnaseq.rnaseq_pipe import RNAseqPipe
 from .rnaseq.deseq_pair import DeseqPair
 from .chipseq.chipseq import ChIPseq
 from .cnr.cnr import CnR

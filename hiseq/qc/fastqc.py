@@ -1,7 +1,4 @@
-
-
 # -*- coding: utf-8 -*-
-
 """Quality control for fastq files
 fastqc
 

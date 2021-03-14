@@ -469,6 +469,7 @@ class Trim(object):
         msg = '\t'.join(header) + '\n' + '\t'.join(s)
 
         with open(self.stat, 'wt') as w:
+            w.write('\t'.join(header) + '\n')
             w.write(msg + '\n')
 
         # save fq files, cutadapt log

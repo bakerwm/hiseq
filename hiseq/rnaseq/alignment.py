@@ -415,6 +415,7 @@ class AlignConfig(object):
             'aligner': None,
             'index_list': None,
             'genome': None,
+            'genome_index': None,
             'spikein': None,
             'spikein_index': None,
             'extra_index': None,
@@ -497,6 +498,7 @@ class AlignConfig(object):
 
         output: index_list
         """
+        print('!CCCC-1', self.genome_index)
         index_all = {
             'spikein': None,
             'tags': None, # rRNA, tRNA, chrM, ...
@@ -512,7 +514,7 @@ class AlignConfig(object):
         else:
             self.spikein_index = None # init
             self.tag_index = None # init
-            self.genome_index = None # init
+            # self.genome_index = None # init
             ####################
             # index_list       #
             ####################
@@ -538,7 +540,6 @@ class AlignConfig(object):
                         genome=self.spikein, group='genome')
                 else:
                     pass
-                    # self.spikein_index = None
 
                 ####################
                 # tag index        #
@@ -555,9 +556,13 @@ class AlignConfig(object):
                 if tag and isinstance(self.genome, str):
                     tag_index = AlignIndex(aligner=self.aligner).search(
                         genome=self.genome, group=tag)
+                else:
+                    tag_index = None
 
                 if AlignIndex(aligner=self.aligner, index=tag_index).is_index():
                     self.tag_index = tag_index
+                else:
+                    self.tag_index = None
 
                 ####################
                 # genome index     #
@@ -889,6 +894,8 @@ class AlignRnConfig(object):
 class AlignR1Config(object):
     """
     Config files for AlignR1
+    
+    force: bowtie2, for rRNA
 
     Example:
     1. 

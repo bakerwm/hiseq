@@ -1573,8 +1573,8 @@ class TrackHub():
             short_label=self.short_label,
             long_label=self.long_label,
             genome=self.genome,
-            email=self.email,
-            descriptionUrl=self.descriptionUrl)
+            email=self.email)
+            # descriptionUrl=self.descriptionUrl)
 
 
     def init_composite(self, subgroups_config):

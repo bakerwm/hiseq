@@ -60,11 +60,11 @@ def add_qc_args():
     parser.add_argument('--fastqc', default='fastqc',
         help='The path to the fastqc command, default: [fastqc]')
 
-    parser.add_argument('--overwrite', action='store_true',
+    parser.add_argument('-f', '--overwrite', action='store_true',
         help='if spcified, overwrite exists file')
-    parser.add_argument('--threads', default=1, type=int,
+    parser.add_argument('-p', '--threads', default=1, type=int,
         help='Number of threads for each job, default: [1]')
-    parser.add_argument('--parallel-jobs', default=1, type=int, 
+    parser.add_argument('-j', '--parallel-jobs', default=1, type=int, 
         dest='parallel_jobs',
         help='Number of jobs run in parallel, only for multiple fastq files, default: [1]')
     return parser
@@ -87,11 +87,11 @@ def add_trim_args():
         help='The directory to save results.')
 
     parser.add_argument('--library-type', dest='library_type', default=None,
-        type=str, choices=['TruSeq', 'Nextera', 'smRNA'],
+        type=str, choices=['TruSeq', 'Nextera', 'smallRNA'],
         help='Type of the library structure, \
         TruSeq, TruSeq standard library \
         Nextera, Tn5 standard library, \
-        smRNA, small RNA library')
+        smallRNA, small RNA library')
     parser.add_argument('-m', '--len_min', default=15, metavar='len_min',
         type=int, help='Minimum length of reads after trimming, defualt [15]')
 
@@ -354,6 +354,8 @@ def add_rnaseq_args():
     parser.add_argument('-x', '--extra-index', dest="extra_index",
         help='Provide alignment index(es) for alignment, support multiple\
         indexes. if specified, ignore -g, -k')
+    parser.add_argument('--align-to-rRNA', action='store_true',
+        help='Align to rRNA')
     parser.add_argument('--aligner', default='STAR',
         choices=['STAR', 'bowtie', 'bowtie2', 'bwa', 'hisat2', 'kallisto',
             'salmon'],
