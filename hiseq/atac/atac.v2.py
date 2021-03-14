@@ -613,7 +613,7 @@ class AtacSingle(object):
         # [chrM, genome]
         return(bamlist[-1]) # the last one
 
-
+    
     def bam_rmdup(self, rmdup=True):
         """
         Remove PCR dup from BAM file using sambamfa/Picard 
