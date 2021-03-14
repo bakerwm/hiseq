@@ -755,17 +755,20 @@ class RNAseqR1(object):
         fq1, fq2 = args_local.get('clean_fq_list', [None, None])
 
         # update
+        # !!!! force: bowtie2 !!!!
         args_sp = {
             'fq1': fq1,
             'fq2': fq2,
             'outdir': self.rRNA_dir,
+            'aligner': AlignIndex().get_aligner(index=self.rRNA_index),
             'genome_index': self.rRNA_index,
             'threads': self.threads,
             'extra_para': self.extra_para,
             'keep_tmp': self.keep_tmp,
             'overwrite': self.overwrite
         }
-        args_local.update(args_sp)
+        # args_local.update(args_sp)
+        args_local = args_sp
         align = Align(**args_local)
 
         # output
@@ -1102,14 +1105,15 @@ class RNAseqR1(object):
         """
         Run for genome
         """
+        self.prep_raw()
+        self.trim()
+
         if isinstance(self.spikein_index, str):
             self.align_spikein() # run alignment
 
         if isinstance(self.rRNA_index, str):
             self.align_rRNA()
 
-        self.prep_raw()
-        self.trim()
         self.align_genome()
         self.bam_to_bg()
         self.bg_to_bw()
@@ -1265,7 +1269,7 @@ class RNAseqConfig(object):
             self.parallel_jobs)
 
         # RNAseq groups
-        self.fq_groups = Toml().from_toml(self.design) if \
+        self.fq_groups = Config().from_toml(self.design) if \
             file_exists(self.design) else self.init_groups()
 
         self.init_files()
@@ -1334,16 +1338,16 @@ class RNAseqConfig(object):
         """
         # 1st level
         if self.build_design:
-            print('!AAAA-1')
+            print('!AAAA-1', 'build_design')
             self.hiseq_type = 'build_design'
         elif len(self.fq_groups) >= 1:
-            print('!AAAA-2')
+            print('!AAAA-2', 'rnaseq_rx')
             self.hiseq_type = 'rnaseq_rx'
         elif isinstance(self.fq1, list):
-            print('!AAAA-3')
+            print('!AAAA-3', 'rnaseq_rn')
             self.hiseq_type = 'rnaseq_rn'
         elif isinstance(self.fq1, str):
-            print('!AAAA-4')
+            print('!AAAA-4', 'rnaseq_r1')
             self.hiseq_type = 'rnaseq_r1'
         else:
             raise ValueError('unknown RNAseq type')
@@ -1862,10 +1866,12 @@ class RNAseqR1Config(object):
                 raise ValueError('rRNA_index failed, {}'.format(
                     self.rRNA_index))
         elif self.align_to_rRNA:
+            # !!!! force: bowtie2 for rRNA !!!!
             if isinstance(self.genome, str):
-                ri = AlignIndex(aligner=self.aligner)                    
+                # ri = AlignIndex(aligner=self.aligner)
+                ri = AlignIndex(aligner='bowtie2')
                 for rRNA in ['rRNA', 'MT_trRNA', 'trRNA']:
-                    ri_index = ri.search(genome=self.grnome, tag=rRNA)
+                    ri_index = ri.search(genome=self.genome, group=rRNA)
                     if ri_index:
                         log.info('fetch rRNA index: {}, {}'.format(
                             rRNA, ri_index))
@@ -1894,7 +1900,6 @@ class RNAseqR1Config(object):
         self.genome_index = getattr(self, 'genome_index', [])
 
         # check
-        print('!AAAA-1', self.genome_index)
         ai = AlignIndex(index=self.genome_index)
         if not ai.is_index():
             raise ValueError('genome_index failed, {}'.format(

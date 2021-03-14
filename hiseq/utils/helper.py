@@ -2359,6 +2359,9 @@ class FeatureCounts(object):
     map reads, scale
     FPKM/RPKM;
     
+    
+    example:
+    FeatureCounts(gtf=a, bam_list=b, outdir=c).run()
     gene file format: bed, gtf, saf
     
     bed_to_saf

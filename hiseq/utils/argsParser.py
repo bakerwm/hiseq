@@ -354,6 +354,8 @@ def add_rnaseq_args():
     parser.add_argument('-x', '--extra-index', dest="extra_index",
         help='Provide alignment index(es) for alignment, support multiple\
         indexes. if specified, ignore -g, -k')
+    parser.add_argument('--align-to-rRNA', action='store_true',
+        help='Align to rRNA')
     parser.add_argument('--aligner', default='STAR',
         choices=['STAR', 'bowtie', 'bowtie2', 'bwa', 'hisat2', 'kallisto',
             'salmon'],

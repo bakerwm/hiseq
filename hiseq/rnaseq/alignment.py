@@ -415,6 +415,7 @@ class AlignConfig(object):
             'aligner': None,
             'index_list': None,
             'genome': None,
+            'genome_index': None,
             'spikein': None,
             'spikein_index': None,
             'extra_index': None,
@@ -497,6 +498,7 @@ class AlignConfig(object):
 
         output: index_list
         """
+        print('!CCCC-1', self.genome_index)
         index_all = {
             'spikein': None,
             'tags': None, # rRNA, tRNA, chrM, ...
@@ -512,7 +514,7 @@ class AlignConfig(object):
         else:
             self.spikein_index = None # init
             self.tag_index = None # init
-            self.genome_index = None # init
+            # self.genome_index = None # init
             ####################
             # index_list       #
             ####################
