@@ -177,22 +177,31 @@ class BamFragSize(object):
 
         mean, medium, mode, std, min, max, Q1, Q2, Q3
         """
-        val = self.freqTable['length']
-        freq = self.freqTable['count']
-        inserts = np.repeat(val, freq)
-        # statistics
-        q_mean = np.mean(inserts)
-        q_median = np.median(inserts)
-        q_median_dev = np.median(np.absolute(inserts - q_median))
-        q_mode = val[np.argmax(freq)]
-        q_std = np.std(inserts)
-        q_min = np.min(inserts)
-        q_max = np.max(inserts)
-        q_qual = np.quantile(inserts, [0.25, 0.5, 0.75], axis=0)
-        # core distribution
-        s = np.array([q_mean, q_median, q_mode, q_std, q_min, q_max]).round(2)
-        s = np.append(s, q_qual)
-        return s
+        if self.freqTable.shape[0] == 0:
+            out = pd.DataFrame(
+                columns=['mean', 'median', 'mode', 'std', 'min', 'max', 'Q1',
+                         'Q2', 'Q3'])
+        else:
+            val = self.freqTable['length']
+            freq = self.freqTable['count']
+            inserts = np.repeat(val, freq)
+            # statistics
+            q_mean = np.mean(inserts)
+            q_median = np.median(inserts)
+            q_median_dev = np.median(np.absolute(inserts - q_median))
+            q_mode = val[np.argmax(freq)]
+            q_std = np.std(inserts)
+            q_min = np.min(inserts)
+            q_max = np.max(inserts)
+            q_qual = np.quantile(inserts, [0.25, 0.5, 0.75], axis=0)
+            # core distribution
+            s = np.array([q_mean, q_median, q_mode, q_std, q_min, q_max]).round(2)
+            s = np.append(s, q_qual)
+            # DataFrame
+            out = pd.DataFrame(s).T
+            out.columns = ['mean', 'median', 'mode', 'std', 'min', 'max', 'Q1', 
+                           'Q2', 'Q3']
+        return out
 
 
     def _tmp(self):
@@ -216,8 +225,7 @@ class BamFragSize(object):
             # save statistics
             stat_file = csv_file + '.stat'
             da = self.distribution()
-            pd.DataFrame(da).T.to_csv(stat_file, sep="\t", index=False, 
-                header=['mean', 'median', 'mode', 'std', 'min', 'max', 'Q1', 'Q2', 'Q3'])
+            da.to_csv(stat_file, sep='\t', index=False)
         except:
             log.warning('failed saving file: {}'.format(csv_file))
 
@@ -383,26 +391,32 @@ class BamPEFragSize(object):
 
         mean, medium, mode, std, min, max, Q1, Q2, Q3
         """
-        val = self.freqTable['length']
-        freq = self.freqTable['count']
-        inserts = np.repeat(val, freq)
-        # inserts = np.repeat(self.freqTable['length'], self.freqTable['count'])
-
-        # statistics
-        q_mean = np.mean(inserts)
-        q_median = np.median(inserts)
-        q_median_dev = np.median(np.absolute(inserts - q_median))
-        q_mode = val[np.argmax(freq)]
-        q_std = np.std(inserts)
-        q_min = np.min(inserts)
-        q_max = np.max(inserts)
-        q_qual = np.quantile(inserts, [0.25, 0.5, 0.75], axis=0)
-
-        # core distribution
-        s = np.array([q_mean, q_median, q_mode, q_std, q_min, q_max])
-        s = np.append(s, q_qual)
-
-        return s
+        if self.freqTable.shape[0] == 0:
+            out = pd.DataFrame(
+                columns=['mean', 'median', 'mode', 'std', 'min', 'max', 'Q1',
+                         'Q2', 'Q3'])
+        else:
+            val = self.freqTable['length']
+            freq = self.freqTable['count']
+            inserts = np.repeat(val, freq)
+            # inserts = np.repeat(self.freqTable['length'], self.freqTable['count'])
+            # statistics
+            q_mean = np.mean(inserts)
+            q_median = np.median(inserts)
+            q_median_dev = np.median(np.absolute(inserts - q_median))
+            q_mode = val[np.argmax(freq)]
+            q_std = np.std(inserts)
+            q_min = np.min(inserts)
+            q_max = np.max(inserts)
+            q_qual = np.quantile(inserts, [0.25, 0.5, 0.75], axis=0)
+            # core distribution
+            s = np.array([q_mean, q_median, q_mode, q_std, q_min, q_max])
+            s = np.append(s, q_qual)
+            # DataFrame
+            out = pd.DataFrame(s).T
+            out.columns = ['mean', 'median', 'mode', 'std', 'min', 'max', 'Q1', 
+                           'Q2', 'Q3']
+        return out
 
 
     def _tmp(self):
@@ -426,8 +440,7 @@ class BamPEFragSize(object):
             # save statistics
             stat_file = csv_file + '.stat'
             da = self.distribution()
-            pd.DataFrame(da).T.to_csv(stat_file, sep="\t", index=False, 
-                header=['mean', 'median', 'mode', 'std', 'min', 'max', 'Q1', 'Q2', 'Q3'])
+            da.to_csv(stat_file, sep='\t', index=False)
         except:
             log.warning('failed saving file: {}'.format(csv_file))
 
