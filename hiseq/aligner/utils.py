@@ -44,25 +44,81 @@ def check_index_args(**kwargs):
     to_MT_trRNA
     """
     # default arguments
-    args = {
-        'genome': None,
-        'genome_index': None,
-        'spikein': None,
-        'spikein_index': None,
-        'index_list': None,
-        'index_extra': None,
-        'to_rRNA': False,
-        'to_MT': False,
-        'to_chrM': False,
-        'to_MT_trRNA': False
-    }
-    args.update(kwargs)
+    genome = kwargs.get('genome', None)
+    genome_index = kwargs.get('genome_index', None)
+    spikein = kwargs.get('spikein', None)
+    spikein_index = kwargs.get('spikein_index', None)
+    index_list = kwargs.get('index_list', None)
+    index_extra = kwargs.get('index_extra', None)
+    to_rRNA = kwargs.get('to_rRNA', False)
+    to_MT = kwargs.get('to_MT', False)
+    to_chrM = kwargs.get('to_chrM', False)
+    to_MT_trRNA = kwargs.get('to_MT_trRNA', False)
+    aligner = kwargs.get('aligner', None)
     # level-1
-    if isinstance(args['index_list'], list):
+    if isinstance(index_list, list):
         pass
     else:
-        # spikein
-        if isinstance(args['spikein_index'], str)
+         # for index_list
+        index_list = [] # init
+        # level-2.1 : genome
+        if isinstance(genome, str):
+            genome_index = Genome(genome).get_index(aligner=aligner)
+        if isinstance(genome_index, str):
+            if AlignIndex(genome_index, aligner).is_valid():
+                index_list.append(genome_index)
+            else:
+                log.error('genome_index not valid: {}'.format(genome_index))
+        # level-2.2 : spikein
+        if isinstance(spikein, str):
+            spikein_index = Genome(spikein).get_index(aligner=aligner)
+        if isinstance(spikein_index, str):
+            if AlignIndex(spikein_index, aligner).is_valid():
+                index_list.append(spikein_index)
+            else:
+                log.error('spikein_index not valid: {}'.format(spikein_index))
+        # level-2.3 : extra
+        if isinstance(index_extra, list):
+            index_extra = [i for i in index_extra if 
+                AlignIndex(i, aligner).is_valid()]
+            if len(index_extra) > 0:
+                index_list.extend(index_extra)
+
+        # # for index_list
+        # args['index_list'] = [] # init
+        # # level-2.1 : genome
+        # if isinstance(args['genome'], str):
+        #     args['genome_index'] = Genome(args['genome']).get_index(
+        #         aligner=args['aligner'])
+        # if isinstance(args['genome_index'], str):
+        #     if AlignIndex(args['genome'], args['aligner']).is_valid():
+        #         args['index_list'].append(args['genome_index'])
+        #     else:
+        #         log.error('genome_index not valid: {}'.format(
+        #             args['genome_index']))
+        # # level-2.2 : spikein
+        # if isinstance(args['spikein'], str):
+        #     args['spikein_index'] = Genome(args['spikein']).get_index(
+        #         aligner=args['aligner'])
+        # if isinstance(args['spikein_index'], str):
+        #     if AlignIndex(args['spikein_index'], args['aligner']).is_valid():
+        #         args['index_list'].append(args['spikein_index'])
+        #     else:
+        #         log.error('spikein_index not valid: {}'.format(
+        #             args['spikein_index']))
+        # # level-2.3 : extra
+        # if isinstance(args['index_extra'], list):
+        #     args['index_extra'] = [i for i in args['index_extra'] if 
+        #         AlignIndex(i, args['aligner']).is_valid()]
+        #     if len(args['index_extra']) > 0:
+        #         args['index_list'].extend(args['index_extra'])
+        
+
+
+        
+
+
+
 
 
 
