@@ -211,7 +211,7 @@ class Bowtie2(object):
     def init_args(self):
         args_local = Bowtie2Config(**self.__dict__)
         self = update_obj(self, args_local.__dict__, force=True) # update
-        self.aligner = 'bowtie' # force changed
+        self.aligner = 'bowtie2' # force changed
         self.get_cmd()        
         Config().dump(self.__dict__, self.config_toml)
 
