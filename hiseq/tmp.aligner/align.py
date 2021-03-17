@@ -67,7 +67,7 @@ class Align(object):
         """
         See AlignRx()
         """
-        self.AlignRx(**self.__dict__).run()
+        AlignRx(**self.__dict__).run()
 
 
 class AlignRx(object):
@@ -79,15 +79,8 @@ class AlignRx(object):
     """
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
-        self.init_args()
-
-
-    def init_args(self):
-        args_local = AlignRxConfig(**self.__dict__) # udpate
-        self = update_obj(self, args_local, force=True) # update
-        Config().dump(self.__dict__, self.config_toml)
-
-
+        
+        
     def run_single_fx(self, i):
         """Run Alignment for single fx file
         parallel
@@ -96,7 +89,7 @@ class AlignRx(object):
         # update fq1, fq2, smp_name
         args_local.update({
             'fq1': self.fq1[i],
-            'fq2': self.fq2[i],
+            'fq2': self.fq2[i] if isinstance(self.fq2, list) else None,
             'smp_name': self.smp_name[i],
             })
         AlignRn(**args_local).run()
@@ -128,6 +121,9 @@ class AlignRn(object):
         """
         args_local = AlignRnConfig(**self.__dict__) # update
         self = update_obj(self, args_local.__dict__, force=True)
+        self.config_dir = os.path.join(self.outdir, self.smp_name, 'config')
+        self.config_toml = os.path.join(self.config_dir, 'config.toml')
+        check_path(self.config_dir)
         Config().dump(self.__dict__, self.config_toml)
 
 
@@ -184,11 +180,11 @@ class AlignR1(object):
         aligner = {
             'bowtie': Bowtie,
             'bowtie2': Bowtie2,
-            'star': STAR,
-            'bwa': BWA,
-            'hisat2': Hisat2,
-            'kallisto': Kallisto,
-            'salmon': Salmon
+            'star': Star,
+#             'bwa': BWA,
+#             'hisat2': Hisat2,
+#             'kallisto': Kallisto,
+#             'salmon': Salmon
         }
         port = aligner.get(self.aligner.lower(), None)
         if port is None:
@@ -211,6 +207,11 @@ class AlignConfig(object):
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
+        self.supported_aligner = [
+            'bowtie', 'bowtie2', 'hisat2', 'bwa', 'star',
+            ]
+        if self.aligner not in self.supported_aligner:
+            raise ValueError('aligner={}, unknown'.format(self.aligner))
 
 
     def init_args(self):
@@ -230,7 +231,8 @@ class AlignConfig(object):
             'overwrite': False,
             'keep_tmp': False,
             'genome_size': 0,
-            'genome_size_file': None
+            'genome_size_file': None,
+            'verbose': False,
         }
         self = update_obj(self, args_init, force=False)
         self.align_type = 'alignment_rx' # force ?@!
@@ -264,7 +266,7 @@ class AlignConfig(object):
             self.smp_name = [self.smp_name]
         if isinstance(self.smp_name, list):
             if len(self.smp_name) == len(self.fq1):
-                if all([isinstace(i, str) for i in self.smp_name]):
+                if all([isinstance(i, str) for i in self.smp_name]):
                     snames = self.smp_name
         self.smp_name = snames
     
@@ -274,25 +276,15 @@ class AlignConfig(object):
         self.index_list = check_index_args(**self.__dict__)
         if len(self.index_list) == 0:
             raise ValueError('no index found')
-        inames = [AlignIndex(i).index_name for i in self.index_list]
+        inames = [AlignIndex(i).index_name() for i in self.index_list]
         if isinstance(self.index_name, list):
             if len(self.index_name) == len(self.index_list):
                 if all([isinstance(i, str) for i in self.index_name]):
                     inames = self.index_name
         self.index_name = inames #update
         # auto index_name, 01, 02, ...
-        self.index_name = ['{:02d}_{}' for i,n in zip(
+        self.index_name = ['{:02d}_{}'.format(i, n) for i,n in zip(
             range(len(self.index_name)), self.index_name)]
-
-
-class AlignRxConfig(object):
-    """Alignment for fx=n, index=n
-    see: AlignConfig()
-    This class, designed for downstream of Align(), AlignConfig()
-    """
-    def __init__(self, **kwargs):
-        p = AlignConfig(**kwargs)
-        self = update_obj(self, p.__dict__, force=True)
 
 
 class AlignRnConfig(object):
@@ -347,7 +339,7 @@ class AlignRnConfig(object):
         if not isinstance(self.smp_name, str):
             self.smp_name = file_prefix(self.fq1)
 
-
+            
     def init_index(self):
         """Force: 
         index_list: list
@@ -393,7 +385,7 @@ class AlignR1Config(object):
             'index_name': None,
         }
         self = update_obj(self, args_init, force=False)
-        self.alignment_type = 'alignment_r1'
+        self.align_type = 'alignment_r1'
         self.init_fx()
         self.init_index()
 
@@ -424,15 +416,14 @@ class AlignR1Config(object):
         index_list: str
         index_name: str
         """
-        if not isinstance(self.index_list, str) or \
+        if not isinstance(self.index, str) or \
             not isinstance(self.index_name, str):
-            raise ValueError('index_list, index_name, not valid')
-
+            raise ValueError('index_list, index_name, not valid: {}, {}'.format(
+                self.index_list, self.index_name))
 
 
 """The port for alignment
 support: multi fx files, multi indexes
-
 
 Align()
 AlignRx() : fq=n, index=n, multiple fastq to multiple index
