@@ -9,15 +9,9 @@ arguments
 """
 
 import pyfastx
+from hiseq.utils.seq import Fastx
 from hiseq.utils.helper import *
-
-
-
-
-
-
-
-
+from aligner_index import *
 
 
 
@@ -44,6 +38,7 @@ def check_index_args(**kwargs):
     to_MT_trRNA
     """
     # default arguments
+    aligner = kwargs.get('aligner', None)
     genome = kwargs.get('genome', None)
     genome_index = kwargs.get('genome_index', None)
     spikein = kwargs.get('spikein', None)
@@ -54,95 +49,85 @@ def check_index_args(**kwargs):
     to_MT = kwargs.get('to_MT', False)
     to_chrM = kwargs.get('to_chrM', False)
     to_MT_trRNA = kwargs.get('to_MT_trRNA', False)
-    aligner = kwargs.get('aligner', None)
+    verbose = kwargs.get('verbose', False)
+    # for message
+    msg = '\n'.join([
+        '-'*80,
+        'The arguments for index:',
+        '{:>14s} : {}'.format('aligner', aligner),
+        '{:>14s} : {}'.format('genome', genome),
+        '{:>14s} : {}'.format('genome_index', genome_index),
+        '{:>14s} : {}'.format('spikein', spikein),
+        '{:>14s} : {}'.format('spikein_index', spikein_index),
+        '{:>14s} : {}'.format('index_list', index_list),
+        '{:>14s} : {}'.format('index_extra', index_list),
+        '{:>14s} : {}'.format('to_rRNA', to_rRNA),
+        '{:>14s} : {}'.format('to_chrM', to_chrM),
+        '{:>14s} : {}'.format('to_MT_trRNA', to_MT_trRNA),
+        ])
+    # index group:
+    if to_rRNA:
+        group = 'rRNA'
+    elif to_MT or to_chrM:
+        group = 'chrM'
+    elif to_MT_trRNA:
+        group = 'MT_trRNA'
+    else:
+        group = None
+    group_index_g = None
+    group_index_sp = None
     # level-1
     if isinstance(index_list, list):
         pass
     else:
-         # for index_list
+        # for index_list
         index_list = [] # init
         # level-2.1 : genome
         if isinstance(genome, str):
-            genome_index = Genome(genome).get_index(aligner=aligner)
+            genome_index = fetch_index(genome, aligner=aligner)
+            # for group_index
+            if group:
+                group_index_g = fetch_index(
+                    genome, group=group, aligner=aligner)
         if isinstance(genome_index, str):
             if AlignIndex(genome_index, aligner).is_valid():
                 index_list.append(genome_index)
             else:
                 log.error('genome_index not valid: {}'.format(genome_index))
+            if group_index_g:
+                index_list.append(group_index_g)
         # level-2.2 : spikein
         if isinstance(spikein, str):
-            spikein_index = Genome(spikein).get_index(aligner=aligner)
+            spikein_index = fetch_index(spikein, aligner=aligner)
+            if group:
+                group_index_sp = fetch_index(
+                    spike, group=group, aligner=aligner)
         if isinstance(spikein_index, str):
             if AlignIndex(spikein_index, aligner).is_valid():
                 index_list.append(spikein_index)
             else:
                 log.error('spikein_index not valid: {}'.format(spikein_index))
+            if group_index_sp:
+                index_list.append(group_index_sp)
         # level-2.3 : extra
         if isinstance(index_extra, list):
-            index_extra = [i for i in index_extra if 
-                AlignIndex(i, aligner).is_valid()]
             if len(index_extra) > 0:
                 index_list.extend(index_extra)
-
-        # # for index_list
-        # args['index_list'] = [] # init
-        # # level-2.1 : genome
-        # if isinstance(args['genome'], str):
-        #     args['genome_index'] = Genome(args['genome']).get_index(
-        #         aligner=args['aligner'])
-        # if isinstance(args['genome_index'], str):
-        #     if AlignIndex(args['genome'], args['aligner']).is_valid():
-        #         args['index_list'].append(args['genome_index'])
-        #     else:
-        #         log.error('genome_index not valid: {}'.format(
-        #             args['genome_index']))
-        # # level-2.2 : spikein
-        # if isinstance(args['spikein'], str):
-        #     args['spikein_index'] = Genome(args['spikein']).get_index(
-        #         aligner=args['aligner'])
-        # if isinstance(args['spikein_index'], str):
-        #     if AlignIndex(args['spikein_index'], args['aligner']).is_valid():
-        #         args['index_list'].append(args['spikein_index'])
-        #     else:
-        #         log.error('spikein_index not valid: {}'.format(
-        #             args['spikein_index']))
-        # # level-2.3 : extra
-        # if isinstance(args['index_extra'], list):
-        #     args['index_extra'] = [i for i in args['index_extra'] if 
-        #         AlignIndex(i, args['aligner']).is_valid()]
-        #     if len(args['index_extra']) > 0:
-        #         args['index_list'].extend(args['index_extra'])
-        
-
-
-        
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    # check all
+    index_list = [i for i in index_list if 
+        AlignIndex(i, aligner).is_valid()]
+    index_list_msg = '\n'.join(index_list) if len(index_list) > 0 else '-'
+    # msg
+    msg += '\n'.join([
+        '\n',
+        '-'*20,
+        'The index output:',
+        index_list_msg,
+        '-'*80,
+        ])
+    if verbose:
+        print(msg)
+    return index_list
 
 
 def check_fx_args(fq1, fq2=None, **kwargs):
@@ -196,8 +181,8 @@ def check_fx(fx, **kwargs):
             except ValueError as err:
                 log.info('Failed to read file, with error: {}'.format(err))
                 out = False
-            finally:
-                log.info('check_fx() ...')            
+#             finally:
+#                 log.info('check_fx() ...')            
         else:
             if kwargs['show_error']:
                 log.error('fx failed, {}'.format(fx))
@@ -217,7 +202,7 @@ def check_fx_paired(fq1, fq2, **kwargs):
     scan the first read from the two files
     """
     if isinstance(fq1, str) and isinstance(fq2, str):
-        if check_fx(fq1, fq2):
+        if check_fx(fq1, **kwargs) and check_fx(fq2, **kwargs):
             # check fq name:
             fx1 = pyfastx.Fastx(fq1)
             fx2 = pyfastx.Fastx(fq2)
@@ -241,7 +226,8 @@ def check_file(x, **kwargs):
         if file_exists(x):
             x_size = os.stat(x).st_size
             # empty gzipped file, size=20
-            out = x_size > 20 if check_empty else True
+            q_size = 20 if x.endswith('.gz') else 0
+            out = x_size > q_size if check_empty else True
         else:
             if show_error:
                 log.error('file not exists: {}'.format(x))
@@ -252,9 +238,6 @@ def check_file(x, **kwargs):
         log.error('x expect str or list, got {}'.format(type(x).__name__))
         out = False
     return out
-
-
-
 
 
 class AlignerConfig(object):

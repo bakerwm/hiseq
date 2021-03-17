@@ -371,7 +371,7 @@ class AlignR1(object):
         align = port(**args_local)
         align.run()
 
-
+class
 class AlignRp(object):
     """
     Report for Alignment
@@ -2240,7 +2240,7 @@ class AlignIndex(object):
         args_default = {
             'genome': None,
             'group': None,
-            'genome_path': os.path.join(str(pathlib.Path.home()), 'data', 'genome'),
+            'genome_path': 
         }
         self.update(args_default, force=False) # assign default values
 

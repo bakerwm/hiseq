@@ -264,9 +264,7 @@ class AlignIndex(object):
         if index is None:
 #             log.error('index not valid, expect str, got NoneType')
             out = None
-        print('!A1', index)
         if self.is_valid(index):
-            print('!A2', index)
             if self.is_star_index(index):
                 gsize = os.path.join(index, 'chrNameLength.txt')
             elif self.is_bowtie_index(index) or \
@@ -277,7 +275,6 @@ class AlignIndex(object):
                 log.error('index_size() not support the index: {}'.format(
                     index))
                 gsize = None
-        print('!A3', index)
         # output
         s = 0
         if file_exists(gsize):
@@ -286,5 +283,88 @@ class AlignIndex(object):
                     s += eval(line.strip().split('\t')[1])
         return s if s > 0 else None
         
+
+
+def fetch_index(genome, group=None, aligner='bowtie', genome_path=None):
+    """fetch index
+    Genome, tags, aligner
+    
+    Parameters
+    ----------
+    genome : str
+        The UCSC name of the genome, [dm6, mm10, hg38, GRCh38]
+
+    group : str
+        The group of the index, [genome, rRNA, rRNA, chrM, MT, MT_trRNA, ...]
+        if group=`None`, return the name of the genome
+
+    aligner : str
+        The aligner, [bowtie, bowtie2, star, bwa, ...] 
+
+    genome_path : str
+        The root of the genome data
+
+    Structure of genome_path:
+    default: {HOME}/data/genome/{genome_version}/{aligner}/
+
+    ## bowtie/bowtie2/hisat2/...
+    path-to-genome/
+        |- Bowtie_index /
+            |- genome
+            |- rRNA
+            |- MT_trRNA
+            |- transposon
+            |- piRNA_cluster
+
+    ## STAR
+    path-to-genome/
+        |- Bowtie_index /
+            |- genome/
+            |- rRNA/
+            |- MT_trRNA/
+            |- transposon/
+            |- piRNA_cluster/
+    """
+    supported_genomes = ['dm3', 'dm6', 'mm9', 'mm10', 'hg19', 'hg38', 'GRCh38']
+    supported_aligner = ['bowtie', 'bowtie2', 'bwa', 'star', 'hisat2']
+    # check arguments
+    tag_err = False
+    if not genome in supported_genomes:
+        log.error('genome={}, unknown, supported: {}'.format(
+            genome, supported_genome))
+        tag_err = True
+    if not aligner in supported_aligner:
+        log.error('aligner={}, unknown, supported: {}'.format(
+            aligner, supported_aligner))
+        tag_err = True
+    if genome_path is None:
+        genome_path =  os.path.join(str(pathlib.Path.home()), 'data', 'genome')
+    if not os.path.exists(genome_path):
+        log.error('genome_path={} not exists'.format(genome_path))
+        tag_err = True
+    if group is None:
+        group = genome
+    if not isinstance(group, str):
+        log.error('group={} expect str, got {}'.format(
+            type(group).__name__, group))
+        tag_err = True
+    if tag_err:
+        log.error('invalid arguments: genome={}, group={}, aligner={}\
+            genome_path={}'.format(genome, group, aligner, genome_path))
+        return None
+    # index
+    index = os.path.join(
+        genome_path, genome, '{}_index'.format(aligner), group)
+    # output
+    if AlignIndex(index, aligner).is_valid():
+        out = index
+    else:
+        log.error('index not found: genome={}, group={}, aligner={}'.format(
+            genome, group, aligner))
+        out = None
+    return out
+
+
+
 
 
