@@ -417,7 +417,10 @@ def check_index_args(**kwargs):
         '{:>14s} : {}'.format('to_rRNA', to_rRNA),
         '{:>14s} : {}'.format('to_chrM', to_chrM),
         '{:>14s} : {}'.format('to_MT_trRNA', to_MT_trRNA),
+        '-'*80,
         ])
+    if verbose:
+        print(msg)
     # index group:
     if to_rRNA:
         group = 'rRNA'
@@ -443,25 +446,25 @@ def check_index_args(**kwargs):
                 group_index_g = fetch_index(
                     genome, group=group, aligner=aligner)
         if isinstance(genome_index, str):
+            if group_index_g:
+                index_list.append(group_index_g)
             if AlignIndex(genome_index, aligner).is_valid():
                 index_list.append(genome_index)
             else:
                 log.error('genome_index not valid: {}'.format(genome_index))
-            if group_index_g:
-                index_list.append(group_index_g)
         # level-2.2 : spikein
         if isinstance(spikein, str):
             spikein_index = fetch_index(spikein, aligner=aligner)
             if group:
                 group_index_sp = fetch_index(
-                    spike, group=group, aligner=aligner)
+                    spikein, group=group, aligner=aligner)
         if isinstance(spikein_index, str):
+            if group_index_sp:
+                index_list.append(group_index_sp)
             if AlignIndex(spikein_index, aligner).is_valid():
                 index_list.append(spikein_index)
             else:
                 log.error('spikein_index not valid: {}'.format(spikein_index))
-            if group_index_sp:
-                index_list.append(group_index_sp)
         # level-2.3 : extra
         if isinstance(extra_index, list):
             if len(extra_index) > 0:
@@ -471,14 +474,14 @@ def check_index_args(**kwargs):
         AlignIndex(i, aligner).is_valid()]
     index_list_msg = '\n'.join(index_list) if len(index_list) > 0 else '-'
     # msg
-    msg += '\n'.join([
-        '\n',
-        '-'*20,
+    msg_out = '\n'.join([
+        '-'*80,
         'The index output:',
         index_list_msg,
         '-'*80,
         ])
-    if verbose:
-        print(msg)
+#     if verbose:
+#         print(msg)
+    print(msg_out)
     return index_list
 
