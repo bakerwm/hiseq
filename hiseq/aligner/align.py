@@ -41,7 +41,7 @@ from Levenshtein import distance
 from hiseq.utils.seq import Fastx
 from hiseq.utils.helper import * # all help functions
 from bowtie import Bowtie, parse_bowtie
-from bowtie2 import bowtie2, parse_bowtie2
+from bowtie2 import Bowtie2, parse_bowtie2
 from star import Star, parse_star
 from utils import *
 from aligner_index import *
