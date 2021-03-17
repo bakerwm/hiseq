@@ -55,7 +55,7 @@ class AlignIndex(object):
 #             log.error('index not valid, expect str, got NoneType')
             out = False
         f = [
-            'SAindex', 'Genome', 'SA', 'genomeParameters',
+            'SAindex', 'Genome', 'SA', 'genomeParameters.txt',
             'chrLength.txt', 'chrNameLength.txt', 'chrName.txt',
             ]
         if isinstance(index, str):
@@ -174,7 +174,7 @@ class AlignIndex(object):
         """The input index is valid"""
         # match the aligner
         if isinstance(self.aligner, str):
-            out = self.guess_aligner(index) == self.aligner
+            out = self.guess_aligner(index) == self.aligner.lower()
         else:
             out = self.guess_aligner(index) is not None
         return out
@@ -281,7 +281,8 @@ class AlignIndex(object):
             with open(gsize) as r:
                 for line in r:
                     s += eval(line.strip().split('\t')[1])
-        return s if s > 0 else None
+        # return s if s > 0 else None
+        return s
         
 
 
