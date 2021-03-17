@@ -134,7 +134,7 @@ class StarConfig(object):
             'smp_name': None,
             'threads': 1,
             'overwrite': False,
-            'n_map': 10,
+            'n_map': 20,
             'unique_only': False,
             'keep_tmp': False,
             'keep_unmap': True,
@@ -158,6 +158,8 @@ class StarConfig(object):
             self.smp_name = fq_name(self.fq1, pe_fix=True)
         # update files
         self.init_files()
+        if self.n_map < 2:
+            self.n_map = 20 # default, see unique_only
 
 
     def init_fx(self):
@@ -264,7 +266,7 @@ class Star(object):
         3. Remove
         """
         self.seed_max = 5 if self.small_genome else 50
-        self.n_map = 1 if self.unique_only else 20
+        self.n_map = 1 if self.unique_only else self.n_map
         args_extra = self.extra_para if self.extra_para else ''
         args_reader = 'zcat' if self.fq1.endswith('.gz') else '-'
         args_fq2 = self.fq2 if self.is_paired else ''
