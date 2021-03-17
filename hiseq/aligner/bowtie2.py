@@ -335,11 +335,11 @@ def get_args():
     """
     example = '\n'.join([
         'Examples:',
-        '$ python bowtie.py -1 f1.fq -x genome -o output',
+        '$ python bowtie2.py -1 f1.fq -x genome -o output',
         '# add extra para',
-        '$ python bowtie.py -1 f1.fq -2 f2.fq -x genome -o output -X "-X 2000"',
+        '$ python bowtie2.py -1 f1.fq -2 f2.fq -x genome -o output -X "-X 2000"',
         '# unique reads, update index_name',
-        '$ python bowtie.py -1 f1.fq -x genome -o output -u -in 01.genome',
+        '$ python bowtie2.py -1 f1.fq -x genome -o output -u -in 01.genome',
     ])    
     parser = argparse.ArgumentParser(
         prog='run_bowtie',
