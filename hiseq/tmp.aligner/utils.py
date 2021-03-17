@@ -8,11 +8,85 @@ arguments
 
 """
 
+import argparse
 import pyfastx
 from hiseq.utils.seq import Fastx
 from hiseq.utils.helper import *
-# from aligner_index import *
 
+
+class AlignReader(object):
+    """Read the ALignment directory
+    report the details
+    config
+    files
+    map
+    """
+    def __init__(self, x, **kwargs):
+        self.x = x
+        self.init_args()
+        self.read()
+    
+    
+    def init_args(self):
+        """Make sure, x is a dir"""
+        self.isdir = False
+        if isinstance(self.x, str):
+            self.isdir = os.path.isdir(self.x)
+    
+    
+    def list_config(self):
+        """List the config.toml file
+        in the path:
+        x/config/config.toml
+        
+        old version:
+        x/config.pickle
+        """
+        out = None
+        if self.isdir:
+            c = [os.path.join(self.x, 'config.toml'),
+                 os.path.join(self.x, 'config.pickle'),
+                 os.path.join(self.x, 'config', 'config.toml'),
+                 os.path.join(self.x, 'config', 'config.pickle')]
+            for f in c:
+                if os.path.isfile(f):
+                    out = f
+                    break
+        # message
+        if out is None:
+            log.error('x is not align directory: {}'.format(self.x))
+        return out
+    
+    
+    def read(self):
+        config = self.list_config()
+        p = Config().load(config) if config else {}
+        # alignment type
+        self.is_align = 'align_type' in p
+        self.is_hiseq = self.is_align
+        self.align_type = p.get('align_type', None)
+        self.is_align_r1 = self.align_type == 'alignment_r1'
+        self.is_align_rn = self.align_type == 'alignment_rn'
+        # for alignment_r1, parse files, stat
+        self = update_obj(self, p, force=True)
+        # bam, unmap1, unmap
+        self.bam = getattr(self, 'bam', None)
+        self.unmap1 = getattr(self, 'unmap1', None)
+        self.unmap2 = getattr(self, 'unmap2', None)
+        self.align_toml = getattr(self, 'align_toml', None)
+        # map, unmap, ...
+        q = Config().load(self.align_toml) if self.align_toml else {}
+        self.total = q.get('total', 0)
+        self.map = q.get('map', 0)
+        self.unique = q.get('unique', 0)
+        self.multi = q.get('multi', 0)
+        self.unmap = q.get('unmap', 0)
+        
+    
+    def get_output(self):
+        """Return the bam, unmap1, unmap2 files"""
+        return (self.bam, self.unmap1, self.unmap2)
+    
 
 def check_fx_args(fq1, fq2=None, **kwargs):
     """Check the fastx in arguments
@@ -162,3 +236,62 @@ def check_file(x, **kwargs):
         out = False
     return out
 
+
+
+def get_args():
+    """Parsing arguments for Align
+    The main port, aligner
+    """
+    example = '\n'.join([
+        'Examples:',
+        '$ python align.py -1 f1.fq -x genome -o output',
+        '# add extra para',
+        '$ python align.py -1 f1.fq -2 f2.fq -x genome -o output -X "-X 2000"',
+        '# unique reads, update index_name',
+        '$ python align.py -1 f1.fq -x genome -o output -u -in 01.genome',
+    ])    
+    parser = argparse.ArgumentParser(
+        prog='run_bowtie',
+        description='run bowtie program',
+        epilog=example,
+        formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument('-1', '--fq1', nargs='+', required=True,
+                        help='Fasta/q file, read1 of PE, or SE read')
+    parser.add_argument('-2', '--fq2', nargs='+', required=False, default=None,
+                        help='Fasta/q file, read2 of PE, or SE read, optional')
+    parser.add_argument('-o', '--outdir', default=None,
+                        help='Directory saving results, default: [cwd]')
+    parser.add_argument('-g', '--genome', default=None, 
+                        help='The name of the genome, [dm6, hg38, mm10]')
+    parser.add_argument('-x', '--genome-index', default=None,
+                        help='The path to the alignment index')
+    parser.add_argument('-n', '--smp-name', nargs='+', default=None, 
+                        dest='smp_name',
+                        help='The name of the sample')
+    parser.add_argument('-p', '--threads', default=1, type=int,
+                        help='Number of threads, default: [1]')
+    parser.add_argument('-j', '--parallel-jobs', default=1, type=int,
+                        help='Number of jobs to run in parallel, default: [1]')
+    parser.add_argument('-w', '--overwrite', action='store_true',
+                        help='Overwrite the exist files')
+    parser.add_argument('-u', '--unique-only', action='store_true',
+                        dest='unique_only', 
+                        help='Report unique mapped reads only')
+    parser.add_argument('--n-map', type=int, default=1,
+                        help='Number of hits per read')
+    parser.add_argument('-l', '--largs-insert', action='store_true',
+                        dest='large_insert',
+                        help='For large insert, use: -X 1000 --chunkmbs 128')
+    parser.add_argument('--clean', dest='keep_tmp', action='store_false',
+                        help='Clean temp files')
+    parser.add_argument('-X', '--extra-para', dest='extra_para', default=None,
+                        help='Add extra parameters, eg: "-X 2000"')
+    parser.add_argument('--to-rRNA', action='store_true', dest='to_rRNA', 
+                        help='Align reads to rRNA first')
+    parser.add_argument('--to-chrM', action='store_true', dest='to_chrM',
+                        help='Align reads to mitochromosome first')
+    parser.add_argument('--to-MT-trRNA', action='store_true', dest='to_MT_trRNA',
+                        help='Align reads to chrM, tRNA and rRNAs first')
+    parser.add_argument('--verbose', action='store_true', 
+                        help='Show message in details')
+    return parser
