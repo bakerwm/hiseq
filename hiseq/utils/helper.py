@@ -266,15 +266,29 @@ def file_prefix(fn, with_path=False):
     remove extensions
     .gz, .fq.gz
     """
-    assert isinstance(fn, str)
-    p1 = os.path.splitext(fn)[0]
-    px = os.path.splitext(fn)[1]
-    if px.endswith('gz') or px.endswith('.bz2'):
-        px = os.path.splitext(p1)[1] + px
-        p1 = os.path.splitext(p1)[0]
-    if not with_path:
-        p1 = os.path.basename(p1)
-    return [p1, px]
+#     assert isinstance(fn, str)
+#     p1 = os.path.splitext(fn)[0]
+#     px = os.path.splitext(fn)[1]
+#     if px.endswith('gz') or px.endswith('.bz2'):
+#         px = os.path.splitext(p1)[1] + px
+#         p1 = os.path.splitext(p1)[0]
+#     if not with_path:
+#         p1 = os.path.basename(p1)
+#     return [p1, px]
+    if isinstance(fn, str):
+        if fn.endswith('.gz') or fn.endswith('.bz2'):
+            out = os.path.splitext(fn)[0]
+        out = os.path.splitext(out)[0]
+        if not with_path:
+            out = os.path.basename(out)
+    elif isinstance(fn, list):
+        out = [file_prefix(i, with_path) for i in fn]
+    elif fn is None:
+        out = None
+    else:
+        log.error('unknown fn, str,list,None expected, got {}'.format(
+            type(fn).__name__))
+    return out
 
 
 def check_file(x, show_log=False, emptycheck=False):
