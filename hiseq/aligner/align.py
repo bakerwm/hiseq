@@ -273,7 +273,7 @@ class AlignConfig(object):
         # alignment index, name
         self.index_list = check_index_args(**self.__dict__)
         if len(self.index_list) == 0:
-            raise ValueError('not index found')
+            raise ValueError('no index found')
         inames = [AlignIndex(i).index_name for i in self.index_list]
         if isinstance(self.index_name, list):
             if len(self.index_name) == len(self.index_list):

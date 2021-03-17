@@ -9,6 +9,7 @@ import os
 from hiseq.utils.helper import *
 from utils import *
 
+
 class AlignIndex(object):
     """Validate the index for aligner
     This is a general function/class for aligner index
@@ -368,4 +369,116 @@ def fetch_index(genome, group=None, aligner='bowtie', genome_path=None):
 
 
 
+def check_index_args(**kwargs):
+    """Check the index for aligner
+    exists
+    valid
+    aligner
+    name
+    ...
+
+    Parameters
+    ----------
+    genome
+    genome_index
+    spikein
+    spikein_index
+    index_list (ignore all)
+    extra_index (append)
+    to_rRNA
+    to_MT
+    to_chrM
+    to_MT_trRNA
+    """
+    # default arguments
+    aligner = kwargs.get('aligner', None)
+    genome = kwargs.get('genome', None)
+    genome_index = kwargs.get('genome_index', None)
+    spikein = kwargs.get('spikein', None)
+    spikein_index = kwargs.get('spikein_index', None)
+    index_list = kwargs.get('index_list', None)
+    extra_index = kwargs.get('extra_index', None)
+    to_rRNA = kwargs.get('to_rRNA', False)
+    to_MT = kwargs.get('to_MT', False)
+    to_chrM = kwargs.get('to_chrM', False)
+    to_MT_trRNA = kwargs.get('to_MT_trRNA', False)
+    verbose = kwargs.get('verbose', False)
+    # for message
+    msg = '\n'.join([
+        '-'*80,
+        'The arguments for index:',
+        '{:>14s} : {}'.format('aligner', aligner),
+        '{:>14s} : {}'.format('genome', genome),
+        '{:>14s} : {}'.format('genome_index', genome_index),
+        '{:>14s} : {}'.format('spikein', spikein),
+        '{:>14s} : {}'.format('spikein_index', spikein_index),
+        '{:>14s} : {}'.format('index_list', index_list),
+        '{:>14s} : {}'.format('extra_index', index_list),
+        '{:>14s} : {}'.format('to_rRNA', to_rRNA),
+        '{:>14s} : {}'.format('to_chrM', to_chrM),
+        '{:>14s} : {}'.format('to_MT_trRNA', to_MT_trRNA),
+        ])
+    # index group:
+    if to_rRNA:
+        group = 'rRNA'
+    elif to_MT or to_chrM:
+        group = 'chrM'
+    elif to_MT_trRNA:
+        group = 'MT_trRNA'
+    else:
+        group = None
+    group_index_g = None
+    group_index_sp = None
+    # level-1
+    if isinstance(index_list, list):
+        pass
+    else:
+        # for index_list
+        index_list = [] # init
+        # level-2.1 : genome
+        if isinstance(genome, str):
+            genome_index = fetch_index(genome, aligner=aligner)
+            # for group_index
+            if group:
+                group_index_g = fetch_index(
+                    genome, group=group, aligner=aligner)
+        if isinstance(genome_index, str):
+            if AlignIndex(genome_index, aligner).is_valid():
+                index_list.append(genome_index)
+            else:
+                log.error('genome_index not valid: {}'.format(genome_index))
+            if group_index_g:
+                index_list.append(group_index_g)
+        # level-2.2 : spikein
+        if isinstance(spikein, str):
+            spikein_index = fetch_index(spikein, aligner=aligner)
+            if group:
+                group_index_sp = fetch_index(
+                    spike, group=group, aligner=aligner)
+        if isinstance(spikein_index, str):
+            if AlignIndex(spikein_index, aligner).is_valid():
+                index_list.append(spikein_index)
+            else:
+                log.error('spikein_index not valid: {}'.format(spikein_index))
+            if group_index_sp:
+                index_list.append(group_index_sp)
+        # level-2.3 : extra
+        if isinstance(extra_index, list):
+            if len(extra_index) > 0:
+                index_list.extend(extra_index)
+    # check all
+    index_list = [i for i in index_list if 
+        AlignIndex(i, aligner).is_valid()]
+    index_list_msg = '\n'.join(index_list) if len(index_list) > 0 else '-'
+    # msg
+    msg += '\n'.join([
+        '\n',
+        '-'*20,
+        'The index output:',
+        index_list_msg,
+        '-'*80,
+        ])
+    if verbose:
+        print(msg)
+    return index_list
 
