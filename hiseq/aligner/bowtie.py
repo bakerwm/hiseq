@@ -344,7 +344,7 @@ def main():
     args = vars(get_args().parse_args())
     # update: keep_tmp, keep_unmap
     args['keep_unmap'] = args['keep_tmp']
-    Bowtie(**args)
+    Bowtie(**args).run()
 
 
 if __name__ == '__main__':
