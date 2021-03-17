@@ -9,7 +9,7 @@ Basic usage:
 bowtie -S -x index in.fq > out.sam 2> out.log
 
 2. PE
-bowtie2 -S -x index -1 r1.fq -2 r2.fq > out.sam 2> out.log
+bowtie -S -x index -1 r1.fq -2 r2.fq > out.sam 2> out.log
 """
 
 import os
@@ -17,8 +17,8 @@ import sys
 import argparse
 from Levenshtein import distance
 from hiseq.utils.helper import *
-from utils import * # overwrite: check_file
 from aligner_index import *
+from utils import * # overwrite: check_file
 
 
 def parse_bowtie(x):

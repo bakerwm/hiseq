@@ -219,15 +219,39 @@ def check_fx_paired(fq1, fq2, **kwargs):
 def check_file(x, **kwargs):
     """Check the x file
     1. file exists
+    
+    Parameters
+    ----------
+    x : str
+        Path to a file
+    
+    Keyword Parameters
+    ------------------
+    show_error : bool
+        Show the error messages
+        
+    show_log : bool
+        Show the log messages 
+        
+    check_empty : bool
+        Check if the file is empty or not,  gzipped empty file, size=20
+        
+    emptycheck : bool
+        see check_empty
     """
     show_error = kwargs.get('show_error', False)
+    show_log = kwargs.get('show_log', False)
     check_empty = kwargs.get('check_empty', False)
+    emptycheck = kwargs.get('emptycheck', False) # for old version
     if isinstance(x, str):
         if file_exists(x):
             x_size = os.stat(x).st_size
             # empty gzipped file, size=20
             q_size = 20 if x.endswith('.gz') else 0
-            out = x_size > q_size if check_empty else True
+            out = x_size > q_size if check_empty or emptycheck else True
+            if show_log:
+                flag = 'ok' if out else 'failed'
+                log.info('{:<6s} : {}'.format(flag, x))
         else:
             if show_error:
                 log.error('file not exists: {}'.format(x))
