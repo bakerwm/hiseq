@@ -69,7 +69,7 @@ def parse_bowtie2(x):
         with open(x) as r:
             for line in r:
                 n = line.strip().split()[0]
-                if not re.match('^[0-9]+$'):
+                if not re.match('^[0-9]+$', n):
                     continue
                 n = eval(n)
                 # parsing
@@ -77,7 +77,7 @@ def parse_bowtie2(x):
                     total = n
                     is_paired = True
                 elif 'aligned concordantly 0 times' in line:
-                    unmap = n
+                    unmapped = n
                 elif 'aligned concordantly exactly 1 time' in line:
                     unique = n
                 elif 'aligned concordantly >1 times' in line:
@@ -103,7 +103,6 @@ def parse_bowtie2(x):
         'multi': multi,
         'unmap': unmapped,
         }
-        
 
 
 class Bowtie2Config(object):
@@ -135,6 +134,7 @@ class Bowtie2Config(object):
             'keep_tmp': False,
             'keep_unmap': True,
             'large_insert': False,
+            'default_bowtie2': False,
         }
         self = update_obj(self, args_init, force=False)
         self.init_fx()
@@ -152,7 +152,7 @@ class Bowtie2Config(object):
         # update files
         self.init_files()
 
-    
+
     def init_fx(self):
         """Make sure, fx
         1. str
@@ -168,8 +168,8 @@ class Bowtie2Config(object):
         # format
         self.fx_format = Fastx(self.fq1).format # fasta/q
         self.is_paired = file_exists(self.fq2) # fq2
-        
-        
+
+
     def init_files(self):
         self.project_dir = os.path.join(self.outdir, self.smp_name, 
             self.index_name)
@@ -183,9 +183,7 @@ class Bowtie2Config(object):
             'sam': prefix + '.sam',
             'unmap': prefix + '.unmap.' + self.fx_format,
             'unmap1': prefix + '.unmap.1.' + self.fx_format, # 
-            'unmap2': prefix + '.unmap.2.' + self.fx_format, # 
-            'unmap1_tmp': prefix + '.unmap_1.' + self.fx_format, # 
-            'unmap2_tmp': prefix + '.unmap_2.' + self.fx_format, #
+            'unmap2': prefix + '.unmap.2.' + self.fx_format, #
             'align_log': prefix + '.align.log',
             'align_stat': prefix + '.align.stat',
             'align_toml': prefix + '.align.toml',
@@ -273,8 +271,8 @@ class Bowtie2(object):
             if self.unique_only:
                 cmd_unique = ' '.join([
                     '&& samtools view -Sub',
-                    '<(samtools view -H {};',
-                    'samtools view -F 2048 {}',
+                    '<(samtools view -H {};'.format(self.sam),
+                    'samtools view -F 2048 {}'.format(self.sam),
                     "| grep 'YT:Z:CP')",
                     ])
             else:
@@ -317,14 +315,14 @@ class Bowtie2(object):
         # rename unmap files, unmap_1.fastq -> unmap.1.fastq
         if not self.is_paired:
             self.unmap1, self.unmap2 = (self.unmap, None)
-        # # log
-        # df = parse_bowtie2(self.align_log)
-        # df.update({
-        #     'name': self.smp_name,
-        #     'index': self.index_name,
-        #     'unique_only': self.unique_only,
-        #     })
-        # Config().dump(df, self.align_toml)
+        # log
+        df = parse_bowtie2(self.align_log)
+        df.update({
+            'name': self.smp_name,
+            'index': self.index_name,
+            'unique_only': self.unique_only,
+            })
+        Config().dump(df, self.align_toml)
         del_list = [self.sam]
         if not self.keep_unmap:
             del_list.extend([self.unmap1, self.unmap2, self.unmap])
