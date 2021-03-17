@@ -31,7 +31,7 @@ def check_index_args(**kwargs):
     spikein
     spikein_index
     index_list (ignore all)
-    index_extra (append)
+    extra_index (append)
     to_rRNA
     to_MT
     to_chrM
@@ -44,7 +44,7 @@ def check_index_args(**kwargs):
     spikein = kwargs.get('spikein', None)
     spikein_index = kwargs.get('spikein_index', None)
     index_list = kwargs.get('index_list', None)
-    index_extra = kwargs.get('index_extra', None)
+    extra_index = kwargs.get('extra_index', None)
     to_rRNA = kwargs.get('to_rRNA', False)
     to_MT = kwargs.get('to_MT', False)
     to_chrM = kwargs.get('to_chrM', False)
@@ -60,7 +60,7 @@ def check_index_args(**kwargs):
         '{:>14s} : {}'.format('spikein', spikein),
         '{:>14s} : {}'.format('spikein_index', spikein_index),
         '{:>14s} : {}'.format('index_list', index_list),
-        '{:>14s} : {}'.format('index_extra', index_list),
+        '{:>14s} : {}'.format('extra_index', index_list),
         '{:>14s} : {}'.format('to_rRNA', to_rRNA),
         '{:>14s} : {}'.format('to_chrM', to_chrM),
         '{:>14s} : {}'.format('to_MT_trRNA', to_MT_trRNA),
@@ -110,9 +110,9 @@ def check_index_args(**kwargs):
             if group_index_sp:
                 index_list.append(group_index_sp)
         # level-2.3 : extra
-        if isinstance(index_extra, list):
-            if len(index_extra) > 0:
-                index_list.extend(index_extra)
+        if isinstance(extra_index, list):
+            if len(extra_index) > 0:
+                index_list.extend(extra_index)
     # check all
     index_list = [i for i in index_list if 
         AlignIndex(i, aligner).is_valid()]
@@ -145,21 +145,36 @@ def check_fx_args(fq1, fq2=None, **kwargs):
     4. check_empty
     """
     if isinstance(fq1, str):
-        out = check_fx(fq1, **kwargs)
+        k1 = check_fx(fq1, **kwargs)
         if isinstance(fq2, str):
             k2 = check_fx(fq2, **kwargs)
             p1 = check_fx_paired(fq1, fq2, **kwargs)
-            out = all([out, k2, p1])
+            out = all([k1, k2, p1])
+        elif fq2 is None:
+            out = k1
+        else:
+            log.error('fq2 not valid, expect str or NoneType, got {}'.format(
+                type(fq2).__name__))
+            out = False
     elif isinstance(fq1, list):
-        out = all([check_fx(i, **kwargs) for i in fq1])
+        k1 = all([check_fx(i, **kwargs) for i in fq1])
         if isinstance(fq2, list):
             k2 = all([check_fx(i, **kwargs) for i in fq2])
-            out = out and k2
             if len(fq1) == len(fq2):
-                p2 = all([check_fx_paired(a, b) for a,b in zip(fq1, fq2)])
-                out = out and p2
+                k3 = all([check_fx_paired(a, b) for a,b in zip(fq1, fq2)])
+                out = all([k1, k2, k3])
+            else:
+                log.error('fq1, fq2 not in same length')
+                out = False
+        elif fq2 is None:
+            out = k1
+        else:
+            log.error('fq2 not valid, expect list or NoneType, got {}'.format(
+                type(fq2).__name__))
+            out = False
     else:
-        log.error('fq1 expect str or list, got {}'.format(type(fq1).__name__))
+        log.error('fq1 expect str or list, got {}'.format(
+            type(fq1).__name__))
         out = False
     return out
 
