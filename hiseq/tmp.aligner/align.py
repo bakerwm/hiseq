@@ -40,9 +40,9 @@ from multiprocessing import Pool
 from Levenshtein import distance
 from hiseq.utils.seq import Fastx
 from hiseq.utils.helper import * # all help functions
-from bowtie import Bowtie, parse_bowtie
-from bowtie2 import Bowtie2, parse_bowtie2
-from star import Star, parse_star
+from bowtie import Bowtie
+from bowtie2 import Bowtie2
+from star import Star
 from utils import *
 from aligner_index import *
 
@@ -421,7 +421,16 @@ class AlignR1Config(object):
             raise ValueError('index_list, index_name, not valid: {}, {}'.format(
                 self.index_list, self.index_name))
 
+def main():
+    args = vars(get_args().parse_args())
+    # update: keep_tmp, keep_unmap
+    args['keep_unmap'] = args['keep_tmp']
+    Align(**args).run()
 
+
+if __name__ == '__main__':
+    main()
+            
 """The port for alignment
 support: multi fx files, multi indexes
 

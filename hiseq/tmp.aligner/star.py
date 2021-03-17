@@ -348,7 +348,7 @@ class Star(object):
 
 
 def get_args():
-    """Parsing arguments for plotHeatmaps, deeptools
+    """Parsing arguments for STAR
     """
     example = '\n'.join([
         'Examples:',

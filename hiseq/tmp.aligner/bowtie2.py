@@ -331,7 +331,7 @@ class Bowtie2(object):
 
 
 def get_args():
-    """Parsing arguments for plotHeatmaps, deeptools
+    """Parsing arguments for bowtie2
     """
     example = '\n'.join([
         'Examples:',

@@ -251,10 +251,12 @@ def get_args():
         '$ python align.py -1 f1.fq -x genome -o output -u -in 01.genome',
     ])    
     parser = argparse.ArgumentParser(
-        prog='run_bowtie',
-        description='run bowtie program',
+        prog='align',
+        description='run algner {bowtie|bowtie2|STAR}',
         epilog=example,
         formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument('-a', '--aligner', default='bowtie2', type=str,
+                        help='The aligner for alignment, default: [bowtie2]')
     parser.add_argument('-1', '--fq1', nargs='+', required=True,
                         help='Fasta/q file, read1 of PE, or SE read')
     parser.add_argument('-2', '--fq2', nargs='+', required=False, default=None,
@@ -268,6 +270,10 @@ def get_args():
     parser.add_argument('-n', '--smp-name', nargs='+', default=None, 
                         dest='smp_name',
                         help='The name of the sample')
+    parser.add_argument('--spikein', default=None, type=str,
+                        help='The genome name of spikein, default: None')
+    parser.add_argument('--spikein-index', default=None, dest='spikein_index',
+                        help='The alignment index of spikein, default: [None]')
     parser.add_argument('-p', '--threads', default=1, type=int,
                         help='Number of threads, default: [1]')
     parser.add_argument('-j', '--parallel-jobs', default=1, type=int,
