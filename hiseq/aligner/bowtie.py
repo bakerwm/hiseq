@@ -10,145 +10,85 @@ bowtie -S -x index in.fq > out.sam 2> out.log
 
 2. PE
 bowtie2 -S -x index -1 r1.fq -2 r2.fq > out.sam 2> out.log
-
-
-Updates:
-
-1. style the code with PEP8: https://www.python.org/dev/peps/pep-0008/
-
-in brief:
-
-1 indentation: 4 spaces  
-    1.1 Aligned with opening delimiter
-2 Maximum Line Length: 79 characters 
-    2.1 Multi lines, operator at end
-3 Blank Lines
-    3.1 Two blank lines surround top-level function/class  
-    3.2 Single blank line, in class  
-    3.3 
-4 White spaces  
-    4.1 no spaces after/before brackets/braces  
-    4.2 single space on both sides of binary operator   
-    4.3 no spaces around '=' for keyword argument  
-
-5 Naming styles
-
-5.1 lower_case_with_underscores, 
-
-6 Package and Module Names 
-
-6.1 Modules should have short, all-lowercase names
-
-7 Class names should normally use the CapWords convention. 
-
-8 Function and Variable Names,  lowercase, with words separated by underscores as necessary to improve readability.
-
-9 Use `is`, `is not`
-
-10 Use ''.startswith(), ''.endswith()
-
 """
-
-
 import os
 import sys
 from Levenshtein import distance
-from utils import *
-from aligner_index import *
 from hiseq.utils.helper import *
+from utils import * # overwrite: check_file
+from aligner_index import *
 
 
-
-
-def bowtie_parser(x):
+def parse_bowtie(x):
     """Wrapper bowtie directory
     Bowtie:
     # reads processed: 10000
-    # reads with at least one reported alignment: 3332 (33.32%)
+    # reads with at least one alignment: 3332 (33.32%)
     # reads that failed to align: 457 (4.57%)
     # reads with alignments suppressed due to -m: 6211 (62.11%)
 
     or:
 
     # reads processed: 10000
-    # reads with at least one reported alignment: 9543 (95.43%)
+    # reads with at least one alignment: 9543 (95.43%)
     # reads that failed to align: 457 (4.57%)
 
-    unique, multiple, unmap, map, total
+    total map unique multi unmap
+    
+    Warnings-1
+    Warning: Exhausted best-first chunk memory for read ..., skipping read
 
-    skip: Warning, ...
+    solution: --chunkmbs 200 --maxins 1000
+
+    if -k 1, could not tell, unique and multi
     """
-    dd = {}
     total = 0
     mapped = 0
     unmapped = 0
     multi = 0
     unique = 0
+    out = 0
+    is_paired = False
+    warn_chunkmbs = False
     if check_file(x, check_empty=True):
+        # processing
         with open(x) as r:
             for line in r:
+                if 'Exhausted best-first chunk memory' in line:
+                    warn_chunkmbs = line
                 if not line.startswith('#'):
                     continue
+                # warnings
+                if 'paired-end alignments' in line:
+                    is_paired = True
                 num = line.strip().split(':')[1]
-                value = num.strip().split(' ')[0]
-                value = eval(value)
+                value = eval(num.strip().split(' ')[0])
                 if 'reads processed' in line:
                     total = value
-                elif 'at least one reported alignment' in line:
+                elif 'reads with at least one' in line:
                     mapped = value
-                elif 'failed to align' in line:
+                elif 'reads that failed to' in line:
                     unmapped = value
                 elif 'alignments suppressed due to -m' in line:
                     multi = value
+                elif line.startswith('Reported'):
+                    out = eval(line.split()[1])
                 else:
                     pass
-        # unique_only
-        if unique_only:
-            mapped = unqiue
-        else:
-            mapped = unique + multi
-            
-        dd['unique'] = dd['map']
-        dd['multiple'] = dd.get('multiple', 0) # default 0
-
-        if self.unique_only:
-            dd['map'] = dd['unique']
-        else:
-            dd['map'] = dd['unique'] + dd['multiple']
-        dd['unmap'] = dd['total'] - dd['unique'] - dd['multiple']
-
-        # save fqname, indexname,
-        dd['fqname'] = self.smp_name
-        dd['index_name'] = self.index_name
-
-        # # sort by keys
-        self.log_dict = dd
-
-    # save dict to plaintext file
-    with open(self.align_stat, 'wt') as w:
-        ## version-1
-        # for k, v in sorted(dd.items()):
-        #     w.write('\t'.join([self.config.fqname, self.config.index_name, k, str(v)]) + '\n')
-
-        # ## version-2
-        # w.write('#') # header line
-        # w.write('\t'.join(list(map(str, dd.keys()))) + '\n')
-        # w.write('\t'.join(list(map(str, dd.values()))) + '\n')
-
-        ## version-3
-        groups = ['total', 'map', 'unique', 'multiple', 'unmap', 
-            'fqname', 'index_name']
-        h = '\t'.join(groups)
-        v = '\t'.join([str(dd.get(i, 0)) for i in groups])
-        w.write('#' + h + '\n')
-        w.write(v + '\n')
-
-    if to_toml:
-        Toml(dd).to_toml(self.align_toml)
-
-    return dd['total'], dd['map'], dd['unique'], dd['multiple'], dd['unmap']
-
-
+    else:
+        log.error('file not exists, {}'.format(x))
+    # msg
+    if warn_chunkmbs:
+        log.warning('{}\nset --chunkmbs 128, to fix the errors'.format(
+            warn_chunkmbs))
+    return {
+        'total': total,
+        'map': mapped,
+        'unique': mapped - multi,
+        'multi': multi,
+        'unmap': unmapped,
+        }
+        
 
 
 class BowtieConfig(object):
@@ -178,9 +118,14 @@ class BowtieConfig(object):
             'n_map': 1,
             'unique_only': False,
             'keep_tmp': False,
+            'keep_unmap': True,
+            'large_insert': False,
         }
         self = update_obj(self, args_init, force=False)
         self.init_fx()
+        if not isinstance(self.outdir, str):
+            self.outdir = str(pathlib.Path.cwd())
+        self.outdir = file_abspath(self.outdir)
         # index name
         if not AlignIndex(self.index, self.aligner).is_valid():
             raise ValueError('index not valid, {}'.format(self.index))
@@ -205,6 +150,9 @@ class BowtieConfig(object):
             raise ValueError('--fq2, not exists, or empty')
         if not check_fx_args(self.fq1, self.fq2):
             raise ValueError('--fq1, --fq2 faild, not properly paired')
+        # format
+        self.fx_format = Fastx(self.fq1).format # fasta/q
+        self.is_paired = file_exists(self.fq2) # fq2
         
         
     def init_files(self):
@@ -218,13 +166,15 @@ class BowtieConfig(object):
             'cmd_shell': os.path.join(self.project_dir, 'cmd.sh'),
             'bam': prefix + '.bam',
             'sam': prefix + '.sam',
-            'unmap': prefix + '.unmap.fastq',
-            'unmap1': prefix + '.unmap.1.fastq',
-            'unmap2': prefix + '.unmap.2.fastq',
+            'unmap': prefix + '.unmap.' + self.fx_format,
+            'unmap1': prefix + '.unmap.1.' + self.fx_format, # 
+            'unmap2': prefix + '.unmap.2.' + self.fx_format, # 
+            'unmap1_tmp': prefix + '.unmap_1.' + self.fx_format, # 
+            'unmap2_tmp': prefix + '.unmap_2.' + self.fx_format, #
             'align_log': prefix + '.align.log',
             'align_stat': prefix + '.align.stat',
             'align_toml': prefix + '.align.toml',
-            'align_flagstat': prefix + '.flagstat'
+            'align_flagstat': prefix + '.flagstat',
         }
         self = update_obj(self, default_files, force=True)
         check_path(self.project_dir)
@@ -243,94 +193,102 @@ class Bowtie(object):
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
-        self.prep_cmd()
 
 
     def init_args(self):
-        """
-        check
-        """
-        args_local = AlignerConfig(**self.__dict__)
+        args_local = BowtieConfig(**self.__dict__)
         self = update_obj(self, args_local.__dict__, force=True) # update
-        self.aligner = 'bowtie' # force changed.
-        Toml(self.__dict__).to_toml(self.config_toml)        
+        self.aligner = 'bowtie' # force changed
+        self.get_cmd()        
+        Config().dump(self.__dict__, self.config_toml)
 
 
     def get_cmd(self):
         """The command line
-        unique
-        n_map
-        extra_para
+        unique: -m 1
+        n_map: -k x
+        extra_para: 'extra'
+        # example:
+        bowtie --best -S --no-unal -x index fq1 | \
+            samtools view -F 0x4 -Sub - | \
+            samtools sort -o out.bam - && \
+            samtools index out.bam && \
+            samtools flagstat out.bam > out.stat
+
+        # catch errors
+        Warning: Exhausted best-first chunk memory   
+
+        1. set "-X 1000" or more, for large insert, or use bowtie2 
+        2. set '--chunkmbs 200' or more, default: 64
         """
-        # unique/multiple
-        if self.extra_para is None:
-            self.extra_para = ''
         if self.n_map < 1:
             self.n_map = 1
-        if self.unique_only:
-            arg_unique = '-m 1'
+        args_extra = self.extra_para if self.extra_para else ''
+        args_large_ins = '--chunkmbs 200 -X 1000' if self.large_insert else ''
+        args_unique = '-m 1' if self.unique_only else '-v 2 -k {}'.format(
+            self.n_map)
+        args_fmt = '-f' if self.fx_format == 'fasta' else '-q'
+        if self.is_paired:
+            args_io = ' '.join([
+                '--un {}'.format(self.unmap),
+                '-1 {} -2 {}'.format(self.fq1, self.fq2),
+                ])
         else:
-            arg_unique = '-v 2 -k {}'.format(self.n_map)
-        # file type
-        arg_fx = '-f' if self.fq_format == 'fasta' else '-q'
-        # input file
-        arg_input = '-1 {} -2 {}'.format(self.fq1, self.fq2) if \
-            check_fx(self.fq1, self.fq2) else self.fq1
+            args_io = '--un {} {}'.format(self.unmap, self.fq1)
         # command-line
-        cmd = ' '.join([
+        self.cmd = ' '.join([
             '{}'.format(shutil.which('bowtie')),
+            '-p {}'.format(self.threads),
             '--mm --best --sam --no-unal',
-            arg_unique, 
-            arg_fx,
-            self.extra_para,
-            '--un {}'.format(self.unmap),
-            '{}'.format(self.index),
-            arg_input,
+            args_unique, 
+            args_fmt,
+            args_extra,
+            args_large_ins,
+            '-x {}'.format(self.index),
+            args_io,
             '2> {}'.format(self.align_log),
-            '&& samtools view -@ {}'.format(self.threads),
-            '-Sub -F 0x4 -',
-            '| samtools sort -@ {}'.format(self.threads),
-            '-o {} -'.format(self.bam),
+            '| samtools view -Sub -F 0x4 -@ {} -'.format(self.threads),
+            '| samtools sort -@ {} -o {} -'.format(self.threads, self.bam),
             '&& samtools index {}'.format(self.bam),
             '&& samtools flagstat {} > {}'.format(
-                self.bam, 
-                self.align_flagstat),
+                self.bam, self.align_flagstat),
         ])
-        # save cmd
-        with open(self.cmd_shell, 'wt') as w:
-            w.write(self.cmd + '\n')
-        return cmd
 
     
     def run(self):
         if file_exists(self.bam) and not self.overwrite:
             log.info('bowtie() skipped, file exists: {}'.format(self.bam))
         else:
-            cmd = self.get_cmd()
+            # save cmd
+            with open(self.cmd_shell, 'wt') as w:
+                w.write(self.cmd + '\n')
             try:
-                run_shell_cmd(cmd)
+                run_shell_cmd(self.cmd)
             except:
-                log.error('align() failed, check {}'.format(self.align_log))
-        # rename unmap files
-        unmap1 = self.subdir + '/' + self.smp_name + '.unmap_1.fastq'
-        unmap2 = self.subdir + '/' + self.smp_name + '.unmap_2.fastq'
+                log.error('Bowtie() failed, check {}'.format(self.align_log))
+            # output file
+            if not check_file(self.bam, check_empty=True):
+                log.error('Bowtie() failed, check {}'.format(self.align_log))
+        # rename unmap files, unmap_1.fastq -> unmap.1.fastq
         if self.is_paired:
-            file_copy(unmap1, self.unmap1)
-            file_copy(unmap2, self.unmap2)
-            file_remove([unmap1, unmap2], ask=False)
+            file_symlink(self.unmap1_tmp, self.unmap1)
+            file_symlink(self.unmap2_tmp, self.unmap2)
         else:
-            self.unmap1 = self.unmap
-            self.unmap2 = None
-        # parse log file
-        if file_exists(self.align_log):
-            self.parse_align(to_toml=True)
-        # temp files
-        del_list = [self.sam, self.unmap1, self.unmap2]
-        if not self.keep_tmp:
+            self.unmap1, self.unmap2 = (self.unmap, None)
+        # log
+        df = parse_bowtie(self.align_log)
+        df.update({
+            'name': self.smp_name,
+            'index': self.index_name,
+            'unique_only': self.unique_only,
+            })
+        Config().dump(df, self.align_toml)
+        del_list = [
+            self.unmap1, self.unmap2, 
+            self.unmap1_tmp, self.unmap2_tmp, 
+            self.unmap
+            ]
+        if not self.keep_unmap:
             file_remove(del_list, ask=False)
         return (self.bam, self.unmap1, self.unmap2)
-
-
-
-
 
