@@ -31,7 +31,7 @@ import pathlib
 import binascii
 import datetime
 import pandas as pd
-import Levenshtein
+from Levenshtein import distance
 from itertools import combinations
 # from .args import args_init, ArgumentsInit
 ### local test ###
@@ -50,7 +50,7 @@ def index_checker(seq_list, mm=0):
     for (a, b) in item_pairs:
         a = a[:len(b)]
         b = b[:len(a)] # the same length
-        m = Levenshtein.distance(a, b)
+        m = distance(a, b)
         if m > mm:
             print(m, a, b)
             tag += 1
