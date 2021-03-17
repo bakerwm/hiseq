@@ -11,8 +11,10 @@ bowtie -S -x index in.fq > out.sam 2> out.log
 2. PE
 bowtie2 -S -x index -1 r1.fq -2 r2.fq > out.sam 2> out.log
 """
+
 import os
 import sys
+import argparse
 from Levenshtein import distance
 from hiseq.utils.helper import *
 from utils import * # overwrite: check_file
@@ -292,3 +294,58 @@ class Bowtie(object):
             file_remove(del_list, ask=False)
         return (self.bam, self.unmap1, self.unmap2)
 
+
+def get_args():
+    """Parsing arguments for plotHeatmaps, deeptools
+    """
+    example = '\n'.join([
+        'Examples:',
+        '$ python bowtie.py -1 f1.fq -x genome -o output',
+        '# add extra para',
+        '$ python bowtie.py -1 f1.fq -2 f2.fq -x genome -o output -X "-X 2000"',
+        '# unique reads, update index_name',
+        '$ python bowtie.py -1 f1.fq -x genome -o output -u -in 01.genome',
+    ])    
+    parser = argparse.ArgumentParser(
+        prog='run_bowtie',
+        description='run bowtie program',
+        epilog=example,
+        formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument('-1', '--fq1', required=True,
+                        help='Fasta/q file, read1 of PE, or SE read')
+    parser.add_argument('-2', '--fq2', required=False, default=None,
+                        help='Fasta/q file, read2 of PE, or SE read, optional')
+    parser.add_argument('-x', '--index', required=True,
+                        help='The alignment index for bowtie')
+    parser.add_argument('-o', '--outdir', default=None,
+                        help='Directory saving results, default: [cwd]')
+    parser.add_argument('-in', '--index-name', default=None, dest='index_name',
+                        help='The name of the index')
+    parser.add_argument('-n', '--smp-name', default=None, dest='smp_name',
+                        help='The name of the sample')
+    parser.add_argument('-p', '--threads', default=1, 
+                        help='Number of threads, default: [1]')
+    parser.add_argument('-w', '--overwrite', action='store_true',
+                        help='Overwrite the exist files')
+    parser.add_argument('-u', '--unique-only', action='store_true',
+                        dest='unique_only', 
+                        help='Report unique mapped reads only')
+    parser.add_argument('-l', '--largs-insert', action='store_true',
+                        dest='large_insert',
+                        help='For large insert, use: -X 1000 --chunkmbs 128')
+    parser.add_argument('--clean', dest='keep_tmp', action='store_false',
+                        help='Clean temp files')
+    parser.add_argument('-X', '--extra-para', dest='extra_para', default=None,
+                        help='Add extra parameters, eg: "-X 2000"')
+    return parser
+
+
+def main():
+    args = vars(get_args().parse_args())
+    # update: keep_tmp, keep_unmap
+    args['keep_unmap'] = args['keep_tmp']
+    Bowtie(**args)
+
+
+if __name__ == '__main__':
+    main()
