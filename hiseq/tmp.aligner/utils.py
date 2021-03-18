@@ -7,11 +7,19 @@ file existence
 arguments 
 
 """
-
+import logging
 import argparse
 import pyfastx
 from hiseq.utils.seq import Fastx
 from hiseq.utils.helper import *
+
+
+logging.basicConfig(
+    format='[%(asctime)s %(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    stream=sys.stdout)
+log = logging.getLogger(__name__)
+log.setLevel('INFO')
 
 
 class AlignReader(object):
