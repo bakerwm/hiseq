@@ -37,15 +37,10 @@ def gzip_cmd( ):     -> gzip_file(src, dest, **kwargs)
 def list_uniquer( ):
 def update_obj( ):
 def run_shell_cmd(cmd):
-
-
-##############
-## to-do    ##
-def sam_flag_check(query, subject):
-def design_combinations(seq, n=2, return_index=True):
-def bed2gtf(infile, outfile):
-def featureCounts_reader(x, bam_names=False):
-
+def design_combinations( ): -> string.combination()
+def sam_flag_check( ):      -> bam.is_sam_flag()
+def bed2gtf( ):             -> bed.bed2gtf()
+def featureCounts_reader( ):-> read_featurecounts()
 
 
 ################
@@ -86,42 +81,6 @@ logging.basicConfig(
     stream=sys.stdout)
 log = logging.getLogger(__name__)
 log.setLevel('INFO')
-
-
-def run_shell_cmd(cmd):
-    """This command is from 'ENCODE-DCC/atac-seq-pipeline'
-    https://github.com/ENCODE-DCC/atac-seq-pipeline/blob/master/src/encode_common.py
-
-    save log to file
-    """
-    p = subprocess.Popen(['/bin/bash','-o','pipefail'], # to catch error in pipe
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        universal_newlines=True,
-        preexec_fn=os.setsid) # to make a new process with a new PGID
-    pid = p.pid
-    pgid = os.getpgid(pid)
-    log.info('run_shell_cmd: PID={}, PGID={}, CMD={}'.format(pid, pgid, cmd))
-    stdout, stderr = p.communicate(cmd)
-    rc = p.returncode
-    err_str = 'PID={}, PGID={}, RC={}\nSTDERR={}\nSTDOUT={}'.format(
-        pid,
-        pgid,
-        rc,
-        stderr.strip(),
-        stdout.strip())
-    if rc:
-        # kill all child processes
-        try:
-            os.killpg(pgid, signal.SIGKILL)
-        except:
-            log.error(err_str)
-    return (rc, stdout.strip('\n'), stderr.strip('\n'))
-
-
-
-
 
 
 
@@ -781,7 +740,7 @@ def file_nrows(x):
     return out
 
 
-def fx_name(x, fix_pe=False):
+def fx_name(x, fix_pe=False, fix_rep=False, fix_unmap=False):
     """The name of fastx
     fix the pe_suffix, '_1, _2', '_R1, _R2'
     
@@ -792,11 +751,21 @@ def fx_name(x, fix_pe=False):
         
     fix_pe : bool
         Remove the suffix of Paired-end files, '_1', '_R1'
+        
+    fix_rep : bool
+        Remove suffix for replicate, '_rep1, _rep2'
+        
+    fix_unmap : bool
+        Remove suffix for unmap, '.unmap'
     """
     if isinstance(x, str):
         out = file_prefix(x)
+        if fix_unmap:
+            out = re.sub('.unmap$', '', out, flags=re.IGNORECASE)
         if fix_pe:
             out = re.sub('[._](r)?[12]$', '', out, flags=re.IGNORECASE)
+        if fix_rep:
+            out = re.sub('[._]rep[0-9]+$', '', out, flags=re.IGNORECASE)
     elif isinstance(x, list):
         out = [fx_name(i, fix_pe) for i in x]
     else:

@@ -27,9 +27,9 @@ import pybedtools
 import logging
 from hiseq.utils.helper import *
 
+
 class Bam(object):
-    """
-    Manipulate BAM files
+    """Manipulate BAM files
     - sort
     - index
     - merge
@@ -49,37 +49,33 @@ class Bam(object):
 
 
     def index(self):
-        """
-        Create index for bam
+        """Create index for bam
         """
         bai = self.bam + '.bai'
         if not os.path.exists(bai):
             pysam.index(self.bam)
-
-        return os.path.exists(bai)
+        # return os.path.exists(bai)
 
 
     def sort(self, outfile=None, by_name=False, overwrite=False):
-        """
-        Sort bam file by position (default)
+        """Sort bam file by position (default)
         save to *.sorted.bam (or specify the name)
         """
         if outfile is None:
             outfile = os.path.splitext(self.bam)[0] + '.sorted.bam'
-
         if os.path.exists(outfile) and overwrite is False:
-            logging.info('file exists: {}'.format(outfile))
+            log.info('file exists: {}'.format(outfile))
         else:
-            tmp = pysam.sort('-@', str(self.threads), '-o', outfile, self.bam)
-
+            if by_name:
+                tmp = pysam.sort('-@', str(self.threads), '-n', '-o', outfile, self.bam)
+            else:
+                tmp = pysam.sort('-@', str(self.threads), '-o', outfile, self.bam)
         return outfile
 
 
     def merge(self):
+        """Merge multiple BAM files using samtools
         """
-        Merge multiple BAM files using samtools
-        """
-
         # pysam.merge('')
         pass
 
@@ -96,22 +92,18 @@ class Bam(object):
         """
         if outfile is None:
             outfile = os.path.splitext(self.bam)[0] + '.bed'
-
         if not os.path.exists(outfile):
             pybedtools.BedTool(self.bam).bam_to_bed().saveas(outfile)
-
         return outfile
 
 
     def rmdup(self, outfile=None, overwrite=False):
-        """
-        Remove duplicates using picard/sambamba
+        """Remove duplicates using picard/sambamba
         sambamba markdup -r --overflow-list-size 800000 raw.bam rmdup.bam
         picard MarkDuplicates  REMOVE_SEQUENCING_DUPLICATES=True I=in.bam O=outfile.bam
         """
         if outfile is None:
             outfile = os.path.splitext(self.bam)[0] + '.rmdup.bam'
-
         sambamba = shutil.which('sambamba')
         log = outfile + '.sambamba.log'
         cmd = '{} markdup -r -t {} --overflow-list-size 800000 \
@@ -121,43 +113,35 @@ class Bam(object):
             self.bam,
             outfile,
             log)
-
         if os.path.exists(outfile) and overwrite is False:
             logging.info('file exists: {}'.format(outfile))
         else:
             run_shell_cmd(cmd)
-
         return outfile
 
 
     def proper_pair(self, outfile=None, overwrite=False):
-        """
-        Extract proper pair
+        """Extract proper pair
         samtools view -f 2
         """
         if outfile is None:
             outfile = os.path.splitext(self.bam)[0] + '.proper_pair.bam'
-
         if os.path.exists(outfile) and overwrite is False:
             logging.info('file exists: {}'.format(outfile))
         else:
             pysam.view('-f', '2', '-h', '-b', '-@', str(self.threads),
                 '-o', outfile, self.bam, catch_stdout=False)
-
         return outfile
 
 
     def subset(self, size=20000, subdir=None):
-        """
-        Extract N reads from bam list
+        """Extract N reads from bam list
         """
         if subdir is None:
             subdir = self._tmp(delete=False)
         check_path(subdir)
-
         # src, dest
-        dest = os.path.join(subdir, os.path.basename(self.bam))
-        
+        dest = os.path.join(subdir, os.path.basename(self.bam))        
         # run
         self.index()        
         srcfile = pysam.AlignmentFile(self.bam, 'rb')
@@ -169,13 +153,11 @@ class Bam(object):
             if i > size:
                 break
             destfile.write(read)
-
         return dest
 
 
     def _tmp(self, delete=True):
-        """
-        Create a tmp filename
+        """Create a tmp filename
         """
         tmp = tempfile.NamedTemporaryFile(prefix='tmp', delete=delete)
         return tmp.name
@@ -184,12 +166,9 @@ class Bam(object):
     ##########################################
     ## code from cgat: BEGIN
     ##########################################
-    def isPaired(self, topn=1000):
-        """
-        Check if infile contains paired end reads
-
+    def is_paired(self, topn=1000):
+        """Check if infile contains paired end reads
         go through the topn alignments in file,
-
         return: True, any of the alignments are paired
         """
         samfile = pysam.AlignmentFile(self.bam)
@@ -200,18 +179,13 @@ class Bam(object):
             n += 1
             if n == topn:
                 break
-
         samfile.close()
-
         return n != topn
 
 
-    def getNumReads(self):
-        """
-        Count number of reads in bam file.
-
+    def get_num_reads(self):
+        """Count number of reads in bam file.
         This methods works through pysam.idxstats.
-
         Arguments
         ---------
         bamfile : string
@@ -222,14 +196,11 @@ class Bam(object):
         nreads : int
             Number of reads
         """
-
         lines = pysam.idxstats(self.bam).splitlines()
-
         try:
             nreads = sum(
                 map(int, [x.split("\t")[2]
                           for x in lines if not x.startswith("#")]))
-
         except IndexError as msg:
             raise IndexError(
                 "can't get number of reads from bamfile, msg=%s, data=%s" %
@@ -239,8 +210,7 @@ class Bam(object):
 
     def estimateInsertSizeDistribution(self, topn=10000, n=10,
         method="picard", similarity_threshold=1.0, max_chunks=1000):
-        """
-        from pysam
+        """from pysam
         Estimate insert size from a subset of alignments in a bam file.
 
         Several methods are implemented.
@@ -277,15 +247,11 @@ class Bam(object):
         max_chunks : int
            Maximum number of chunks of size `alignments` to be used
            in the convergence method.
-
         """
-
         assert self.isPaired(self.bam), \
             'can only estimate insert size from' \
             'paired bam files'
-
         samfile = pysam.AlignmentFile(self.bam)
-
         def get_core_distribution(inserts, n):
             # compute median absolute deviation
             raw_median = np.median(inserts)
@@ -297,10 +263,8 @@ class Bam(object):
 
             # define core distribution
             return inserts[np.logical_and(inserts >= threshold_min,
-                                             inserts <= threshold_max)]
-
+                                          inserts <= threshold_max)]
         if method == "picard":
-
             # only get first read in pair to avoid double counting
             inserts = np.array(
                 [read.template_length for read in samfile.head(n=topn)
@@ -311,16 +275,12 @@ class Bam(object):
                  and not read.is_duplicate
                  and read.template_length > 0])
             core = get_core_distribution(inserts, n)
-
             return np.mean(core), np.std(core), len(inserts)
-
         elif method == "convergence":
-
             means, stds, counts = [], [], []
             last_mean = 0
             iteration = 0
             while iteration < max_chunks:
-
                 inserts = np.array(
                     [read.template_length for read in samfile.head(
                         n=topn,
@@ -340,15 +300,13 @@ class Bam(object):
                 if abs(mm - last_mean) < similarity_threshold:
                     break
                 last_mean = mm
-
             return np.median(means), np.median(stds), sum(counts)
         else:
             raise ValueError("unknown method '%s'" % method)
 
 
     def estimateTagSize(self, topn=10, multiple="error"):
-        """
-        Estimate tag/read size from first alignments in file.
+        """Estimate tag/read size from first alignments in file.
 
         Arguments
         ---------
@@ -373,18 +331,15 @@ class Bam(object):
         ValueError
            If there are multiple tag sizes present and `multiple` is set to
            `error`.
-
         """
         samfile = pysam.AlignmentFile(self.bam)
         sizes = [read.rlen for read in samfile.head(topn)]
         mi, ma = min(sizes), max(sizes)
-
         if mi == 0 and ma == 0:
             sizes = [read.inferred_length for read in samfile.head(alignments)]
             # remove 0 sizes (unaligned reads?)
             sizes = [x for x in sizes if x > 0]
             mi, ma = min(sizes), max(sizes)
-
         if mi != ma:
             if multiple == "error":
                 raise ValueError('multiple tag sizes in %s: %s' % (bamfile, sizes))
@@ -394,13 +349,11 @@ class Bam(object):
                 mi = list(sorted(set(sizes)))
             elif multiple == "all":
                 return sizes
-
         return mi
 
 
     def getNumberOfAlignments(self):
-        """
-        Return number of alignments in bamfile.
+        """Return number of alignments in bamfile.
         """        
         if not os.path.exists(self.bam + '.bai'):
             pysam.index(self.bam)
@@ -409,3 +362,59 @@ class Bam(object):
     ##########################################
     ## code from cgat: END
     ##########################################
+
+
+def is_sam_flag(x, return_codes=False):
+    """For sam flags
+    The flags for sam format are in binary code:
+    see: https://samtools.github.io/hts-specs/SAMv1.pdf 
+    
+    1    0x1   template having multiple segments in sequencing
+    2    0x2   each segment properly aligned according to the aligner
+    4    0x4   segment unmapped
+    8    0x8   next segment in the template unmapped
+    16   0x10  SEQ being reverse complemented
+    32   0x20  SEQ of the next segment in the template being reverse complemented
+    64   0x40  the first segment in the template
+    128  0x80  the last segment in the template
+    256  0x100 secondary alignment
+    512  0x200 not passing filters, such as platform/vendor quality controls
+    1024 0x400 PCR or optical duplicate
+    2048 0x800 supplementary alignment
+    
+    see: Bitwise operator
+    """
+    f = {
+        '1': 'template having multiple segments in sequencing',
+        '2': 'each segment properly aligned according to the aligner',
+        '4': 'segment unmapped',
+        '8': 'next segment in the template unmapped',
+        '16': 'SEQ being reverse complemented',
+        '32': 'SEQ of the next segment in the template being reverse complemented',
+        '64': 'the first segment in the template',
+        '128': 'the last segment in the template',
+        '256': 'secondary alignment',
+        '512': 'not passing filters, such as platform/vendor quality controls',
+        '1024': 'PCR or optical duplicate',
+        '2048': 'supplementary alignment',
+    }
+    # for details, valid code
+    h = []
+    if isinstance(x, int):
+        if x in range(1, 2049):
+            for k,v in f.items():
+                k = int(k)
+                if k == k & x:
+                    x -= k
+                    h.append((k, v))
+        else:
+            log.error('x not valid, expect [1, 2048], got: {}'.format(x))
+    else:
+        log.error('x not valid, expect int, got {}'.format(type(x).__name__))
+    if return_codes and h:
+        out = h
+    else:
+        out = len(h) > 0            
+    return out
+
+
