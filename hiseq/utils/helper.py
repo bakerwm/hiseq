@@ -276,8 +276,9 @@ def file_prefix(fn, with_path=False):
 #         p1 = os.path.basename(p1)
 #     return [p1, px]
     if isinstance(fn, str):
+        out = fn
         if fn.endswith('.gz') or fn.endswith('.bz2'):
-            out = os.path.splitext(fn)[0]
+            out = os.path.splitext(out)[0]
         out = os.path.splitext(out)[0]
         if not with_path:
             out = os.path.basename(out)
