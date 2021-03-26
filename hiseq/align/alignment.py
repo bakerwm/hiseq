@@ -1502,7 +1502,7 @@ class Bowtie(object):
         c_fx = '-f' if self.fq_format == 'fasta' else '-q'
 
         # common
-        c = '{} {} '.format(aligner_exe, self.index_list)
+        c = '{} -x {} '.format(aligner_exe, self.index_list)
         c += '{} {} {} -p {} '.format(c_unique, c_fx, self.extra_para, self.threads)
         c += '--mm --best --sam --no-unal --un {} '.format(self.unmap_prefix)
 
