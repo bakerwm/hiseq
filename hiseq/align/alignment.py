@@ -1502,7 +1502,7 @@ class Bowtie(object):
         c_fx = '-f' if self.fq_format == 'fasta' else '-q'
 
         # common
-        c = '{} {} '.format(aligner_exe, self.index_list)
+        c = '{} -x {} '.format(aligner_exe, self.index_list)
         c += '{} {} {} -p {} '.format(c_unique, c_fx, self.extra_para, self.threads)
         c += '--mm --best --sam --no-unal --un {} '.format(self.unmap_prefix)
 
@@ -1542,16 +1542,16 @@ class Bowtie(object):
         """
         Wrapper bowtie log
 
-        Bowtie:
-        # reads processed: 10000
-        # reads with at least one reported alignment: 3332 (33.32%)
-        # reads that failed to align: 457 (4.57%)
-        # reads with alignments suppressed due to -m: 6211 (62.11%)
+        Bowtie:        
+        for bowtie v1.3.0
+        # reads processed: 161551
+        # reads with at least one alignment: 44969 (27.84%)
+        # reads that failed to align: 116582 (72.16%)
+        Reported 44969 alignments
 
         or:
-
         # reads processed: 10000
-        # reads with at least one reported alignment: 9543 (95.43%)
+        # reads with at least one alignment: 9543 (95.43%)
         # reads that failed to align: 457 (4.57%)
 
         unique, multiple, unmap, map, total
@@ -1570,7 +1570,7 @@ class Bowtie(object):
                 value = eval(value)
                 if 'reads processed' in line:
                     dd['total'] = value
-                elif 'at least one reported alignment' in line:
+                elif 'at least one alignment' in line:
                     dd['map'] = value
                 elif 'failed to align' in line:
                     dd['unmap'] = value
