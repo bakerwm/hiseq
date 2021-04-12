@@ -231,7 +231,7 @@ class Trim(object):
         self.outdir = file_abspath(self.outdir)
 
         # smp_name
-        self.smp_name = fq_name(self.fq1, pe_fix=True)
+        self.smp_name = fq_name(self.fq1, pe_fix=False)
 
 
     def init_files(self):
@@ -602,7 +602,7 @@ class Cutadapt(object):
         self.outdir = file_abspath(self.outdir)
 
         # smp_name
-        self.smp_name = fq_name(self.fq1, pe_fix=True)
+        self.smp_name = fq_name(self.fq1, pe_fix=False)
 
 
     def init_adapter(self):
