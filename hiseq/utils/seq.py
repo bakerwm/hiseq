@@ -663,7 +663,7 @@ class Fastx(object):
         n_max = 1000000
         n = 0
         with xopen(self.input) as r:
-            for _, seq, _ in self.readfq(r):
+            for _, seq, _, _ in self.readfq(r):
                 n += 1
                 if n > n_max:
                     break
@@ -721,7 +721,7 @@ class Fastx(object):
         fragSizes = []
         frames = []
         with xopen(self.input) as r:
-            for name, seq, qual in self.readfq(r):
+            for name, seq, qual, comment in self.readfq(r):
                 counter += 1
                 fragSizes.append(len(seq))
                 # last record
