@@ -49,9 +49,9 @@ from contextlib import ExitStack
 import Levenshtein as lev # distance
 from hiseq.utils.helper import update_obj, check_file, check_path, file_abspath, combinations, log, Config, listfile, fq_name
 from hiseq.utils.seq import Fastx
-from demx_index import DemxIndex 
-from demx_barcode import DemxBarcode
-from read_index import IndexTable
+from .demx_index import DemxIndex 
+from .demx_barcode import DemxBarcode
+from .read_index import IndexTable
 
 
 
@@ -71,8 +71,8 @@ class Demx(object):
             'index_table': None, #name,index
             'mismatch': 0,
             'in_read2': True,
-            'bc_n_left': 0,
-            'bc_n_right': 1,
+            'barcode_n_left': 0,
+            'barcode_n_right': 1,
             'overwrite': False,
             'demo': False,
             'gzipped': True,
@@ -143,7 +143,9 @@ class Demx(object):
             w.write('\n'.join(s)+'\n')
         
         if self.mission == 4:
-            req_args = ['fq1', 'fq2', 'outdir', 'mismatch', 'demo', 'gzipped', 'overwrite']
+            req_args = [
+                'fq1', 'fq2', 'outdir', 'mismatch', 'demo', 'gzipped', 
+                'overwrite']
             args = {i:getattr(self, i, None) for i in req_args if hasattr(self, i)}
             args.update({
                 'index_type': 'i7',
@@ -163,10 +165,9 @@ class Demx(object):
             w.write('\n'.join(s)+'\n')
         
         if self.mission == 1:
-            idx_table = self.split_bc()
             req_args = [
                 'fq1', 'fq2', 'outdir', 'in_read2', 'mismatch', 
-                'bc_n_left', 'bc_n_right', 'demo', 'gzipped', 'overwrite']
+                'barcode_n_left', 'barcode_n_right', 'demo', 'gzipped', 'overwrite']
             args = {i:getattr(self, i, None) for i in req_args if hasattr(self, i)}
             args.update({'index_table': bc_idx_table})
             DemxBarcode(**args).run()
@@ -236,7 +237,7 @@ class Demx(object):
             # for bc
             bc_args_list = []
             req_args = [
-                'in_read2', 'mismatch', 'bc_n_left', 'bc_n_right', 'demo', 
+                'in_read2', 'mismatch', 'barcode_n_left', 'barcode_n_right', 'demo', 
                 'gzipped', 'overwrite']
             bc_args = {i:getattr(self, i, None) for i in req_args if hasattr(self, i)}
             for bc_table in bc_tables:

@@ -56,8 +56,8 @@ class DemxBarcode(object):
                      fq2 | /data/1m.r2.fq.gz
                  PE_mode | yes     
              bc_in_read2 | yes     
-               bc_n_left | 0       
-              bc_n_right | 1       
+               barcode_n_left | 0       
+              barcode_n_right | 1       
                 bc_width | 6       
              index_table | /data/index.csv
                   outdir | /data/aaa
@@ -93,8 +93,8 @@ class DemxBarcode(object):
             'fq2': None,
             'in_read2': True,
             'outdir': None,
-            'bc_n_left': 0,
-            'bc_n_right': 1,
+            'barcode_n_left': 0,
+            'barcode_n_right': 1,
             'index_table': None, #name,index
             'mismatch': 0,
             'overwrite': False,
@@ -173,8 +173,8 @@ class DemxBarcode(object):
             '{:>20} | {:<8}'.format('fq2', self.fq2 if self.fq2 else 'None'),
             '{:>20} | {:<8}'.format('PE_mode', 'yes' if self.is_pe else 'no'),
             '{:>20} | {:<8}'.format('bc_in_read2', 'yes' if self.in_read2 else 'no'),
-            '{:>20} | {:<8}'.format('bc_n_left', self.bc_n_left),
-            '{:>20} | {:<8}'.format('bc_n_right', self.bc_n_right),
+            '{:>20} | {:<8}'.format('barcode_n_left', self.barcode_n_left),
+            '{:>20} | {:<8}'.format('barcode_n_right', self.barcode_n_right),
             '{:>20} | {:<8}'.format('bc_width', self.bc_width),
             '{:>20} | {:<8}'.format('index_table', self.index_table),
             '{:>20} | {:<8}'.format('outdir', self.outdir),
@@ -294,8 +294,8 @@ class DemxBarcode(object):
             log.info('Skipped {}, read_count.json exists'.format(outdir))
             return f_files
         # open multiple files
-        bl = self.bc_n_left
-        br = self.bc_n_right
+        bl = self.barcode_n_left
+        br = self.barcode_n_right
         bw = self.bc_width
         fn = {}
         with ExitStack() as stack:
@@ -336,8 +336,8 @@ class DemxBarcode(object):
             log.info('Skipped {}, read_count.json exists'.format(outdir))
             return (f1_files, f2_files)
         # open multiple files
-        bl = self.bc_n_left
-        br = self.bc_n_right
+        bl = self.barcode_n_left
+        br = self.barcode_n_right
         bw = self.bc_width
         fn = {}
         with ExitStack() as stack:
