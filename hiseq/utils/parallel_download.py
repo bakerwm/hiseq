@@ -52,6 +52,7 @@ class Downloader:
         self.end_time = None  # end time to calculate overall download time
 #         self.target_filename = os.path.basename(self.url)  # name of a file to be downloaded
         if isinstance(target_file, str):
+            target_file = os.path.abspath(target_file)
             outdir = os.path.dirname(target_file)
             if not os.path.isdir(outdir):
                 os.makedirs(outdir)

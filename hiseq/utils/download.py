@@ -257,7 +257,7 @@ class OSSDownload(object):
             target_file = os.path.join(self.outdir, fname)
             s = self.get_file_size(url)
             sa = self.readable_size(s)
-            lines.append('{:>7}\t{:<30}'.format(sa, fname))
+            lines.append('{:>7}\t{:<30}'.format(sa, target_file))
         msg = '\n'.join(lines)
         print(msg)
     
@@ -266,7 +266,7 @@ class OSSDownload(object):
         for url in self.url_list:
             fname = self.get_file_name(url)
             target_file = os.path.join(self.outdir, fname)
-            obj = Downloader(url, self.threads, fname)
+            obj = Downloader(url, self.threads, target_file)
             obj.start_download()
             print(obj.get_metadata())
             print(obj.get_remote_crc32c())
