@@ -45,6 +45,32 @@ def add_demx_args():
     return parser
     
 
+def add_demx2_args():
+    """
+    Demultiplexing, multi barcode files
+    """
+    parser = argparse.ArgumentParser(description='hiseq demx2')
+    parser.add_argument('-s', '--xlsx-table', dest='x', required=True,
+        help='sample table in xlsx format, eg: YY00.xlsx')
+    parser.add_argument('-d', '--datadir', dest='datadir', required=True,
+        help='Directory saving the fastq files')
+    parser.add_argument('-o', '--outdir', dest='outdir',
+        help='directory to save the reulsts')
+    parser.add_argument('--demo', action='store_true',
+        help='run demo (1M reads) for demostration, default: off')
+    parser.add_argument('-m', '--mismatch', type=int, default=0,
+        help='mismatches allowed to search index, default: [0]')
+    parser.add_argument('-x', '--barcode-in-read2', dest='barcode_in_read2',
+        action='store_true', help='barcode in read2')
+    parser.add_argument('-l', '--barcode-n-left', type=int, dest='barcode_n_left',
+        default=0, help='bases locate on the left of barcode')
+    parser.add_argument('-r', '--barcode-n-right', type=int, dest='barcode_n_right',
+        default=0, help='bases locate on the right of barcode')
+    parser.add_argument('-w', '--overwrite', action='store_true',
+        help='Overwrite exists files, default: off')
+    return parser
+    
+
 def add_qc_args():
     """
     utils:

@@ -18,7 +18,7 @@ import sys
 import argparse
 from multiprocessing import Pool
 from .utils.argsParser import *
-from .demx.demx import Demx
+from .demx.demx import Demx, Demx2
 from .qc.fastqc import Fastqc
 from .trim.trimmer import TrimRn
 from .align.alignment import Alignment
@@ -60,7 +60,8 @@ class Hiseq(object):
         chipseq      ChIPseq pipeline
         cnr          CUN&RUN pipeline
 
-        demx         Demultiplexing reads (P7, barcode)
+        demx         Demultiplexing reads (P7, barcode) from single Lane
+        demx2        Demultiplexing multi barcode files
         qc           quality control, fastqc
         trim         trim adapters, low-quality bases, ...
         align        Align fastq/a files to reference genome
@@ -103,6 +104,16 @@ class Hiseq(object):
         args = vars(args)
         Demx(**args).run()
 
+        
+    def demx2(self):
+        """
+        Demultiplexing reads: for multiple barcode files
+        """
+        parser = add_demx2_args()
+        args = parser.parse_args(sys.argv[2:])
+        args = vars(args)
+        Demx2(**args).run()
+        
 
     def qc(self):
         """
