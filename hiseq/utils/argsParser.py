@@ -13,6 +13,38 @@ Parse arguments from command line
 import argparse
 import pathlib
 
+
+
+
+def add_sheet_args():
+    """
+    Prepare sample sheet for Demx
+    output:
+    1. sample_name,i7,i5,barcode
+    2. i7_name,i7,reads
+    3. sample_name,NULL,NULL,barcode (bc only)
+    """
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description='Prepare sample sheet for demx/demx2',
+        epilog='''Description:
+YY00.xlsx : required columns, ['Sample_name*', 'P7_index_id*', 'Barcode_id*', 'Reads, M']
+
+Output:        
+1. sample_name,i7,i5,barcode
+2. i7_name,i7,reads
+3. sample_name,NULL,NULL,barcode
+
+Example:
+hiseq sheet -s YY00.xlsx -o data'''
+    )
+    parser.add_argument('-s', '--xlsx-table', dest='x', required=True,
+        help='sample table in xlsx format, eg: YY00.xlsx')
+    parser.add_argument('-o', '--outdir', dest='outdir',
+        help='directory to save the reulsts')
+    return parser
+
+
 def add_demx_args():
     """
     Demultiplexing 

@@ -18,6 +18,7 @@ import sys
 import argparse
 from multiprocessing import Pool
 from .utils.argsParser import *
+from .utils.sample_sheet import SampleSheet
 from .demx.demx import Demx, Demx2
 from .qc.fastqc import Fastqc
 from .trim.trimmer import TrimRn
@@ -60,6 +61,7 @@ class Hiseq(object):
         chipseq      ChIPseq pipeline
         cnr          CUN&RUN pipeline
 
+        sheet        Preparing sample_sheet.csv for demx/demx2
         demx         Demultiplexing reads (P7, barcode) from single Lane
         demx2        Demultiplexing multi barcode files
         qc           quality control, fastqc
@@ -94,6 +96,20 @@ class Hiseq(object):
         # use dispatch pattern to invoke method with same name
         getattr(self, args.command)()
 
+    
+    def sheet(self):
+        """
+        Prepare the sample sheet for demx
+        1. sample_name,i7,i5,barcode (Demx, whole-lane)
+        2. i7_name,i7,reads (Demx2, part)
+        """
+        parser = add_sheet_args()
+        args = parser.parse_args(sys.argv[2:])
+        args = vars(args)
+        p = SampleSheet(**args)
+        p.to_MGI_table()
+        p.to_barcode_table()
+        
 
     def demx(self):
         """
