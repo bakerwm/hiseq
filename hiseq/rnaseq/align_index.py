@@ -16,15 +16,14 @@ from hiseq.utils.helper import * # all help functions
 
 ## for index
 class AlignIndex(object):
-	"""
-	arguments:
-	index
-	aligner
-	group
-	genome_path
-	...
-
-	"""
+    """
+    arguments:
+    index
+    aligner
+    group
+    genome_path
+    ...
+    """
     def __init__(self, **kwargs):
         """
         Two keywords: index, aligner
@@ -115,14 +114,14 @@ class AlignIndex(object):
             index = self.index
 
         if aligner is None:
-        	aligner = self.aligner
+            aligner = self.aligner
         
         # return the aligner, from index
         if aligner is None:
             log.warning('AlignIndex(aligner=), required')
             return False
 
-		return aligner.lower() == self.get_aligner(index=index)
+        return aligner.lower() == self.get_aligner(index=index)
 
 
     def search(self):
@@ -177,7 +176,7 @@ class AlignIndex(object):
                       'miRNA', 'miRNA_hairpin']
         if not self.group in group_list:
             log.error('AlignIndex().search(group={}) unknown, expect {}'.format(
-            	self.group, group_list))
+                self.group, group_list))
             return None
 
         # require: aligner
@@ -185,12 +184,12 @@ class AlignIndex(object):
                              'kallisto', 'salmon']
         if not self.aligner in aligner_supported:
             log.error('AlignIndex(aligner=) required, candidate: {}'.format(
-            	aligner_supported))
+                aligner_supported))
             return None
 
         ## create index path
         p0 = os.path.join(self.genome_path, self.genome, self.aligner + 
-        	'_index') # [case sensitive] STAR bowtie
+            '_index') # [case sensitive] STAR bowtie
         p1 = os.path.join(p0, self.group)
 
         return p1 if self.is_valid(p1, self.aligner) else None
