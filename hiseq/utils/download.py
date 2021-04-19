@@ -18,11 +18,16 @@ Download files from website:
 import os
 import sys
 import re
+import math
 import logging
 import argparse
 import shutil
 import subprocess
+import pathlib
+import urllib
+from .parallel_download import Downloader
 # from hiseq.utils.helper import run_shell_cmd
+
 
 logging.basicConfig(
     format='[%(asctime)s %(levelname)s] %(message)s',
@@ -81,6 +86,200 @@ def get_lnd_args(argv):
     return vars(args)
 
 
+def get_oss_args(argv):
+    parser = argparse.ArgumentParser(description='download by OSS url')
+    parser.add_argument('-i', '--url', required=True,
+        help='url or a file saved urls, one per line')
+    parser.add_argument('-o', '--outdir', dest='outdir', required=True,
+        help='path to save the files')
+    parser.add_argument('-t', '--threads', type=int, default=4,
+        help='Number of threads, to download file. default: [4]')
+    parser.add_argument('-n', '--dry-run', dest='dry_run', action='store_true',
+        help='List files, do not download')
+    args = parser.parse_args(argv) # sys.argv[2:]
+    return vars(args)
+    
+
+class OSSDownload(object):
+    """
+    Download aliyun OSS object, by URL with signature
+    
+    Example:    
+    args = {
+        'url': 'http://*',
+        'outdir': 'download',
+        'threads': 4,
+    }
+    
+    OSSDownload(**args).run()
+    """
+    def __init__(self, **kwargs):
+        """
+        URL:
+        http://{bucket}.oss-cn-shenzhen.aliyuncs.com/{object}?Expires={}&OSSAccessKeyId={}&Signature={}
+        """
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+        self.init_args()
+        self.url_list = self.load_urls()
+
+
+    def init_args(self):
+        outdir = os.path.join(str(pathlib.Path.cwd()), 'from_illumina')
+        self.outdir = getattr(self, 'outdir', outdir)
+        self.threads = getattr(self, 'threads', 4)
+        self.url = getattr(self, 'url', None)
+        self.dry_run = getattr(self, 'dry_run', False)
+        if self.threads not in range(1, 20):
+            print('--threads {} not valid, set [4]'.format(self.threads))
+            self.threads = 4
+        if not isinstance(self.url, str):
+            raise ValueError('--url not valid, {}'.format(self.url))
+        if not os.path.isdir(self.outdir):
+            os.makedirs(self.outdir)
+
+
+    def load_urls(self):
+        """
+        urls in file (one per line) or url
+        """
+        url_list = []
+        if os.path.isfile(self.url):
+            try:
+                with open(self.url) as r:
+                    for line in r:
+                        line = line.lstrip().rstrip()
+                        if line.startswith('#'):
+                            continue
+                        if len(line) > 10: # at least
+                            url_list.append(line)
+            except IOError as e:
+                print(e)
+        elif isinstance(self.url, str):
+            url_list.append(self.url)
+        else:
+            raise ValueError('--url not valid, {}'.format(self.url))
+        if len(url_list) == 0:
+            raise ValueError('--url, no urls detected')
+        return url_list    
+        
+                        
+    def get_file_name(self, url):
+        """Get the file name from URL
+        for OSS downloader
+        example:
+        http://{bucket}.oss-cn-shenzhen.aliyuncs.com/{object}?Expires={}&OSSAccessKeyId={}&Signature={}
+        """
+        s = re.sub('http:.*./', '', url)
+        s = re.sub('kefu\%2F', '', s)
+        s = re.sub('\?Expires.*', '', s)
+        s = re.sub('[^A-Za-z0-9\.\-\_]', '_', s)
+        return s
+
+
+    def make_a_request(self, url, referer=None):
+        """
+        create a http request
+        :param url:
+        :param referer:
+        :return: urllib2.Request
+        """
+        o = urllib.parse.urlparse(url)
+        headers = {
+            'Accept': '*/*',
+            'Accept-Language': 'zh-CN,zh;q=0.8,en;q=0.6,zh-TW;q=0.4',
+            'Connection': 'keep-alive',
+            'DNT': '1',
+            'Host': o.netloc,
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/40.0.2214.45 Safari/537.36'
+        }
+        if referer:
+            headers['Referer'] = referer
+        return urllib.request.Request(url, headers=headers)
+    
+    
+    def get_url_length(self, url, referer=None):
+        request = self.make_a_request(url, referer)
+        # request.get_method = lambda: 'HEAD'
+        try:
+            response = urllib.request.urlopen(request)
+            content_length = response.getheader('Content-Length')
+            if content_length:
+                return int(content_length)
+        except urllib.error.URLError as e:
+            print(e)
+        return -1
+
+
+    def get_file_size(self, url, retry_times=1, referer=None):
+        for i in range(0, retry_times):
+            try:
+                return self.get_url_length(url, referer)
+            except:
+                print("can't get size of {}, try {}".format(url, i))
+        raise Exception("can't get size of {}, try {}".format(url, retry_times))
+
+        
+    def readable_size(self, s):
+        """
+        s is the size in bytes
+        Convert to human readable size: K/M/G/T
+        """
+        if isinstance(s, int):
+            if s < 1024: # B
+                out = s
+            elif s < math.pow(1024, 2): # KB
+                out = '{:.1f}K'.format(s/1024)
+            elif s < math.pow(1024, 3): # MB
+                out = '{:.1f}M'.format(s/math.pow(1024, 2))
+            elif s < math.pow(1024, 4): # GB
+                out = '{:.1f}G'.format(s/math.pow(1024, 3))
+            elif s < match.pow(1024, 5): # TB
+                out = '{:.1f}T'.format(s/math.pow(1024, 4))
+            elif s < match.pow(1024, 6): # PB
+                out = '{:.1f}P'.format(s/math.pow(1024, 5))
+            else:
+                out = s
+        else:
+            print('illegal s={}, expect int'.format(s))
+            out = s
+        return out
+            
+        
+    def list_files(self):
+        """
+        Only get the file size, do not download files
+        """
+        lines = []
+        lines.append('{:>7}\t{:<30}'.format('Size', 'Filename'))
+        for url in self.url_list:
+            fname = self.get_file_name(url)
+            target_file = os.path.join(self.outdir, fname)
+            s = self.get_file_size(url)
+            sa = self.readable_size(s)
+            lines.append('{:>7}\t{:<30}'.format(sa, fname))
+        msg = '\n'.join(lines)
+        print(msg)
+    
+    
+    def download(self):
+        for url in self.url_list:
+            fname = self.get_file_name(url)
+            target_file = os.path.join(self.outdir, fname)
+            obj = Downloader(url, self.threads, fname)
+            obj.start_download()
+            print(obj.get_metadata())
+            print(obj.get_remote_crc32c())
+            print(obj.get_downloaded_crc32c())
+            
+    
+    def run(self):
+        if self.dry_run:
+            self.list_files()
+        else:
+            self.download()
+    
+    
 class Linuxnd(object):
     """
     command: lnd (linux)
@@ -210,7 +409,7 @@ def main(argv):
         description = 'A collection of tools for HiSeq data',
         epilog = '',
         usage = """ download <command> <args>
-
+        oss        Download aliyun OSS, by URL with signature
         lnd        Download HiSeq data from Novogene cloud
         sra        Download SRA data
         geo        Download GEO supp data
@@ -221,6 +420,9 @@ def main(argv):
     if args.command == 'lnd':
         args = get_lnd_args(argv[2:])
         Linuxnd(**args).download()
+    elif args.command == 'oss':
+        args = get_oss_args(argv[2:])
+        OSSDownload(**args).run()
     elif args.command == 'sra':
         pass
     elif args.command == 'geo':
