@@ -197,6 +197,8 @@ class DemxBarcode(object):
                     log.error('illegal format, expect:name,index')
                     raise ValueError('illegal index_table: {}'.format(line))
                 name,p7 = s
+                if not re.match('[^ACGTN$]+$', p7):
+                    continue
                 if p7 in d:
                     raise ValueError('index not unique, {}'.format(
                         self.index_table))
