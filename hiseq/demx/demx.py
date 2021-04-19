@@ -53,7 +53,7 @@ from hiseq.utils.seq import Fastx
 from .demx_index import DemxIndex 
 from .demx_barcode import DemxBarcode
 from .read_index import IndexTable
-
+from hiseq.utils.sample_sheet import SampleSheet
 
 
 class Demx(object):
