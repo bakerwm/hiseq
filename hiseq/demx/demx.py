@@ -382,6 +382,13 @@ class Demx2(object):
             'x': None,
             'datadir': 'from_illumina',
             'outdir': 'results',
+            'mismatch': 0,
+            'in_read2': True,
+            'barcode_n_left': 0,
+            'barcode_n_right': 1,
+            'overwrite': False,
+            'demo': False,
+            'gzipped': True,
         }
         self = update_obj(self, args_init, force=False)
         if not os.path.isfile(self.x):
@@ -399,7 +406,7 @@ class Demx2(object):
         # read table
         self.load_table()
         # fix files
-        self.demx_bc_shell = os.path.join(self.outdir, 'demx_bc.sh')
+        # self.demx_bc_shell = os.path.join(self.outdir, 'demx_bc.sh')
         self.read_count_toml = os.path.join(self.outdir, 'read_count.toml')
         self.demx_report = os.path.join(self.outdir, 'report.txt')
 
@@ -481,10 +488,13 @@ class Demx2(object):
             'fq2': k_fq[1],
             'outdir': k_outdir,
             'index_table': k,
-            'in_read2': True,
-            'barcode_n_left': 0,
-            'barcode_n_right': 1,
-        }
+            'in_read2': self.in_read2,
+            'barcode_n_left': self.barcode_n_left,
+            'barcode_n_right': self.barcode_n_right,
+            'overwrite': self.overwrite,
+            'demo': self.demo,
+            'gzipped': self.gzipped,
+        }       
         if os.path.isfile(s_file):
             log.info('barcode done: {}'.format(k_id))
         else:
@@ -581,5 +591,9 @@ class Demx2(object):
 
 
     def run(self):
+        log.info('Demulplexing starting')
         self.demx_barcode()
         self.wrap_dir()
+        log.info('Demulplexing finish')
+        
+        

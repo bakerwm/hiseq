@@ -133,6 +133,7 @@ class DemxBarcode(object):
         support the mismatches
         """
         idx_list = list(self.idx.keys())
+        print('!AAAA-2', idx_list)
         d = []
         for i, j in combinations(idx_list, 2):
             d.append(not self.is_valid_index(i, j, self.mismatch))
@@ -196,13 +197,13 @@ class DemxBarcode(object):
                 if not len(s) == 2:
                     log.error('illegal format, expect:name,index')
                     raise ValueError('illegal index_table: {}'.format(line))
-                name,p7 = s
-                if not re.match('[^ACGTN$]+$', p7):
+                name,bc = s
+                if not re.match('^[ACGTN$]+$', bc.strip()):
                     continue
-                if p7 in d:
+                if bc in d:
                     raise ValueError('index not unique, {}'.format(
                         self.index_table))
-                d[p7] = name
+                d[bc] = name
         return d
 
     
