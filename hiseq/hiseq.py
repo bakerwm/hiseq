@@ -35,7 +35,7 @@ from .utils.seq import Fastx
 from .atac.atac_utils import Bam2bw, Bam2cor, PeakIDR, BedOverlap
 from .utils.helper import *
 from .fragsize.fragsize import BamPEFragSize2
-from .get_trackhub.get_trackhub import TrackHub 
+from .get_trackhub.get_trackhub import TrackHub
 # from .peak.call_peak import Macs2
 from hiseq.peak.call_peak import Macs2
 from hiseq.sample.sample import FxSample
@@ -77,7 +77,7 @@ class Hiseq(object):
         run_trackhub Generate the trackhub urls
         fragsize     Fragment size of PE alignments
         bam2cor      Correlation between bam files
-        bam2bw       Convert bam to bigWig 
+        bam2bw       Convert bam to bigWig
         peak2idr     Calculate IDR for multiple Peaks
         bed2overlap  Calculate the overlap between bed intervals
         sample       Sample fastq file
@@ -96,7 +96,7 @@ class Hiseq(object):
         # use dispatch pattern to invoke method with same name
         getattr(self, args.command)()
 
-    
+
     def sheet(self):
         """
         Prepare the sample sheet for demx
@@ -106,10 +106,8 @@ class Hiseq(object):
         parser = add_sheet_args()
         args = parser.parse_args(sys.argv[2:])
         args = vars(args)
-        p = SampleSheet(**args)
-        p.to_MGI_table()
-        p.to_barcode_table()
-        
+        SampleSheet(**args).run()
+
 
     def demx(self):
         """
@@ -120,7 +118,7 @@ class Hiseq(object):
         args = vars(args)
         Demx(**args).run()
 
-        
+
     def demx2(self):
         """
         Demultiplexing reads: for multiple barcode files
@@ -129,7 +127,7 @@ class Hiseq(object):
         args = parser.parse_args(sys.argv[2:])
         args = vars(args)
         Demx2(**args).run()
-        
+
 
     def qc(self):
         """
@@ -139,7 +137,6 @@ class Hiseq(object):
         parser = add_qc_args()
         args = parser.parse_args(sys.argv[2:])
         args = vars(args) # convert to dict
-
         Fastqc(**args).run()
 
 
@@ -258,10 +255,10 @@ class Hiseq(object):
                         output=subdir,
                         prefix=name,
                         control=control,
-                        atac=args.get('is_atac', False), 
+                        atac=args.get('is_atac', False),
                         gsize=args.get('genome_size', 0),
                         overwrite=args.get('overwrite', False)).callpeak()
-        
+
 
     def motif(self):
         """
@@ -377,7 +374,7 @@ class Hiseq(object):
         # help
         if len(sys.argv) < 3:
             parser.parse_args(['-h'])
-        
+
         # main
         args = vars(args) # convert to dict
         # # check config or --fq1,--fq2,--genome,--outdir
@@ -390,7 +387,7 @@ class Hiseq(object):
         # chk1 = config is None
         # chk2 = design is None
         # chk3 = [i is None for i in [fq1, fq2, genome, outdir]]
-        # 
+        #
         # # if config is None and not all(chk2):
         # if all([chk1, chk2, chk3]):
         #     sys.exit('required: --config, or --design, or --fq1, --fq2, --genome, --outdir')
@@ -501,8 +498,8 @@ class Hiseq(object):
 
     def run_trackhub(self):
         """
-        Make trackhub 
-        """ 
+        Make trackhub
+        """
         parser = add_trackhub_args()
         args = parser.parse_args(sys.argv[2:])
         args = vars(args)
