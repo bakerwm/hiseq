@@ -165,6 +165,7 @@ class SampleSheet(object):
         if not os.path.isdir(self.outdir):
             os.makedirs(self.outdir)
         self.xlsx_prefix = os.path.splitext(os.path.basename(self.x))[0]
+        self.mgi_csv = os.path.join(self.outdir, self.xlsx_prefix + '.MGI.csv')
 
 
     def load_xlsx(self):
@@ -212,8 +213,8 @@ class SampleSheet(object):
         df2 = self.df.groupby('i7').sum()
         df2 = df2.assign(i7_seq = HiSeqIndex(df2.index.to_list()).index)
         df2 = df2.loc[:, ['i7_seq', 'reads']]
-        mgi_csv = os.path.join(self.outdir, self.xlsx_prefix + '.MGI.csv')
-        df2.to_csv(mgi_csv)
+        # mgi_csv = os.path.join(self.outdir, self.xlsx_prefix + '.MGI.csv')
+        df2.to_csv(self.mgi_csv)
         return df2
 
 
@@ -246,22 +247,40 @@ class SampleSheet(object):
                 bc_tables.append(i7_csv)
         return bc_tables
 
+    
+    def run(self):
+        s = self.df.groupby('i7').size()
+        s = s[s>1]
+        # message
+        df_mgi = self.to_MGI_table()
+        bc_tables = self.to_barcode_table()
+        n_smp = self.df.shape[0]
+        n_i7 = df_mgi.shape[0]
+        n_i7_bc = len(s)
+        n_total = self.df['reads'].sum()
+        msg = '\n'.join([
+            '-'*80,
+            '{:<20}: {:}'.format('Input table', self.x),
+            '{:<20}: {:}'.format('to MGI table', self.mgi_csv),
+            '{:<20}: {:}'.format('No. of samples', n_smp),
+            '{:<20}: {:}'.format('No. of i7', n_i7),
+            '{:<20}: {:}'.format('No. of i7 with bc', n_i7_bc),
+            '{:<20}: {:,}M'.format('No. of reads', int(n_total)),
+            '-'*80,
+        ])
+        print(msg)       
 
 
 def main():
-    if len(sys.argv) == 3:
-        print('mode=1, convert to MGI table')
-        x_table, outdir = sys.argv[1:3]
-        p = SampleSheet(x=x_table, outdir=outdir)
-        p.to_MGI_table()
-        p.to_barcode_table()
-    else:
+    if len(sys.argv) < 3:
         msg = '\n'.join([
             'Usage: ',
-            'sample_sheet.py <x.xlsx> <outdir>',           
+            'sample_sheet.py <table.xlsx> <outdir>',           
         ])
         print(msg)
         sys.exit(1)
+    x_table, outdir = sys.argv[1:3]
+    SampleSheet(x=x_table, outdir=outdir).run
 
 
 if __name__ == '__main__':
