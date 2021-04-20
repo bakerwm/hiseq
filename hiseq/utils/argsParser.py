@@ -83,7 +83,10 @@ def add_demx2_args():
     """
     parser = argparse.ArgumentParser(description='hiseq demx2')
     parser.add_argument('-s', '--xlsx-table', dest='x', required=True,
-        help='sample table in xlsx format, eg: YY00.xlsx')
+        help="Sample table in (xlsx|csv) format; xlsx: require the columns\
+        ['Sample_name*', 'P7_index_id*', 'Barcode_id*', 'Reads, M']; \
+        csv: require the columns: ['name', 'i7', 'i5', 'bc', 'reads'] \
+        the csv file could be `hiseq sheet -s a.xlsx -o data` output: *.demx.csv")
     parser.add_argument('-d', '--datadir', dest='datadir', required=True,
         help='Directory saving the fastq files')
     parser.add_argument('-o', '--outdir', dest='outdir',
