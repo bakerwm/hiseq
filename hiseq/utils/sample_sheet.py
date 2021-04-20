@@ -75,17 +75,17 @@ class HiSeqIndex(object):
     ## input invalid
     """
     def __init__(self, x):
-        x = x
         self.df = self.load_hiseq_index() # name:seq
-        self.df2 = {v:k for k,v in self.df.items()}
+        self.df2 = {v:k for k,v in self.df.items()} # seq:name
         if isinstance(x, str):
             self.name = self.get_name(x)
             self.index = self.get_index(x)
-            self.is_valid = x in self.df or x in self.df2
+            self.is_valid = self.is_name(x) or self.is_index(x)
+            # x in self.df or x in self.df2
         elif isinstance(x, list):
             self.name = [self.get_name(i) for i in x]
             self.index = [self.get_index(i) for i in x]
-            self.is_valid = [i in self.df or x in self.df2 for i in x]
+            self.is_valid = [self.is_name(i) or self.is_index(i) for i in x]
         else:
             raise ValueError('illegal x={}, expect str,list got {}'.format(
                 x, type(x).__name__))
@@ -110,20 +110,20 @@ class HiSeqIndex(object):
 
 
     def is_name(self, x):
-        return x in self.df
+        return x in self.df or x.upper() == 'NULL'
 
 
     def is_index(self, x):
-        return x in self.df2
+        return x in self.df2 or x.upper() == 'NULL'
 
 
     def get_name(self, x):
         if self.is_name(x):
             out = x
         elif self.is_index(x):
-            out = self.df2.get(x, None)
+            out = self.df2.get(x, 'NULL')
         else:
-            out = None
+            out = 'NULL'
         return out
 
 
@@ -131,9 +131,9 @@ class HiSeqIndex(object):
         if self.is_index(x):
             out = x
         elif self.is_name(x):
-            out = self.df.get(x, None)
+            out = self.df.get(x, 'NULL')
         else:
-            out = None
+            out = 'NULL'
         return out
 
 
@@ -149,7 +149,12 @@ class SampleSheet(object):
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
-        self.df = self.load_xlsx()
+        if self.x.endswith('.xlsx'):
+            self.df = self.load_xlsx(self.x)
+        elif self.x.endswith('.csv'):
+            self.df = self.load_csv(self.x)
+        else:
+            raise ValueError('illegal x={}'.format(self.x))
 
 
     def init_args(self):
@@ -166,23 +171,56 @@ class SampleSheet(object):
             os.makedirs(self.outdir)
         self.xlsx_prefix = os.path.splitext(os.path.basename(self.x))[0]
         self.mgi_csv = os.path.join(self.outdir, self.xlsx_prefix + '.MGI.csv')
+        self.demx_csv = os.path.join(self.outdir, self.xlsx_prefix + '.demx.csv')
 
 
-    def load_xlsx(self):
+    def load_csv(self, x):
+        """
+        Sample sheet in csv format:
+        name, i7_id, i5_id, bc_id, reads
+        
+        output: (index_name)
+        """
+        c = ['name', 'i7', 'i5', 'bc', 'reads']
+        try:
+            df = pd.read_csv(x, header=None, comment='#')
+            df.fillna('NULL', inplace=True) # convert NaN to 'NULL'
+            n_rows, n_cols = df.shape
+            if n_cols == 4: #missing reads
+                df.columns = c[:4]
+                df = df.assign(reads=0)
+            elif n_cols == 5:
+                df.columns = c
+            else:
+                raise ValueError('expect 4|5 columns in csv, got {}'.format(n_cols))
+            # convert to index_name
+            df = df.assign(
+                i7 = HiSeqIndex(df['i7'].to_list()).name,
+                i5 = HiSeqIndex(df['i5'].to_list()).name,
+                bc = HiSeqIndex(df['bc'].to_list()).name,
+            )
+        except ValueError as e:
+            print(e)
+            df = pd.DataFrame(columns=c)
+        return df # ['name', 'i7', 'i5', 'bc', 'reads']
+
+
+    def load_xlsx(self, x):
         """
         Read the table, save as DataFrame
         sanitize the filename: by "_"
         """
         c = ['Sample_name*', 'P7_index_id*', 'Barcode_id*', 'Reads, M']
         try:
-            df = pd.read_excel(self.x, sheet_name='sample_sheet')
+            df = pd.read_excel(x, sheet_name='sample_sheet')
             df = df.dropna(thresh=2)
             df = df[c]
             df.columns = ['name', 'i7', 'bc', 'reads']
             df['name'] = self.sanitize(df['name'].to_list()) # sanitize
+            df['i5'] = 'NULL'
         except:
-            df = pd.DataFrame(columns=['name', 'i7', 'bc', 'reads'])
-        return df
+            df = pd.DataFrame(columns=['name', 'i7', 'i5', 'bc', 'reads'])
+        return df # ['name', 'i7', 'i5', 'bc', 'reads']
 
 
     def sanitize(self, x):
@@ -203,6 +241,24 @@ class SampleSheet(object):
         return out
 
 
+    def to_demx_table(self):
+        """
+        Convert to demx table
+        format:
+        sample_name,i7,i5,barcode
+        """
+        df = self.df # name, i7, bc, reads
+        # convert to index_seq
+        df = df.assign(
+            i7 = HiSeqIndex(df['i7'].to_list()).index,
+            i5 = HiSeqIndex(df['i5'].to_list()).index,
+            bc = HiSeqIndex(df['bc'].to_list()).index,
+        )
+        df = df.loc[:, ['name', 'i7', 'i5', 'bc', 'reads']]
+        df.to_csv(self.demx_csv, index=False, header=False)
+        return df
+
+
     def to_MGI_table(self):
         """
         Convert to MGI table
@@ -210,10 +266,17 @@ class SampleSheet(object):
         2. concatenate files with same P7 index
         3. Sum the reads
         """
-        df2 = self.df.groupby('i7').sum()
-        df2 = df2.assign(i7_seq = HiSeqIndex(df2.index.to_list()).index)
-        df2 = df2.loc[:, ['i7_seq', 'reads']]
-        # mgi_csv = os.path.join(self.outdir, self.xlsx_prefix + '.MGI.csv')
+        df2 = self.df.groupby('i7').sum() # required: i7, reads
+        gb = df2['reads']*0.3
+        df2 = df2.assign(
+            i7_seq = HiSeqIndex(df2.index.to_list()).index,
+            GB = gb.round(1),
+        )
+        # add barcode width
+        df2 = df2.assign(
+            i7_width = df2['i7_seq'].apply(len),            
+        )
+        df2 = df2.loc[:, ['i7_seq', 'i7_width', 'GB']]
         df2.to_csv(self.mgi_csv)
         return df2
 
@@ -247,11 +310,12 @@ class SampleSheet(object):
                 bc_tables.append(i7_csv)
         return bc_tables
 
-    
+
     def run(self):
         s = self.df.groupby('i7').size()
         s = s[s>1]
         # message
+        df_demx = self.to_demx_table()
         df_mgi = self.to_MGI_table()
         bc_tables = self.to_barcode_table()
         n_smp = self.df.shape[0]
@@ -262,25 +326,26 @@ class SampleSheet(object):
             '-'*80,
             '{:<20}: {:}'.format('Input table', self.x),
             '{:<20}: {:}'.format('to MGI table', self.mgi_csv),
+            '{:<20}: {:}'.format('to Demx table', self.demx_csv),
             '{:<20}: {:}'.format('No. of samples', n_smp),
             '{:<20}: {:}'.format('No. of i7', n_i7),
             '{:<20}: {:}'.format('No. of i7 with bc', n_i7_bc),
             '{:<20}: {:,}M'.format('No. of reads', int(n_total)),
             '-'*80,
         ])
-        print(msg)       
+        print(msg)
 
 
 def main():
     if len(sys.argv) < 3:
         msg = '\n'.join([
             'Usage: ',
-            'sample_sheet.py <table.xlsx> <outdir>',           
+            'sample_sheet.py <table.xlsx> <outdir>',
         ])
         print(msg)
         sys.exit(1)
     x_table, outdir = sys.argv[1:3]
-    SampleSheet(x=x_table, outdir=outdir).run
+    SampleSheet(x=x_table, outdir=outdir).run()
 
 
 if __name__ == '__main__':

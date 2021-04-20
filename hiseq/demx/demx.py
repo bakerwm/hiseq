@@ -57,6 +57,35 @@ from hiseq.utils.sample_sheet import SampleSheet
 
 
 class Demx(object):
+    """
+    This script is designed for i7+barcode demx
+
+    Arguments
+    ---------
+    index_table, str
+        The table of sample list, could be: .csv, or .xlsx
+        required columns:
+        1. xlsx file, required columns
+        ['Sample_name*', 'P7_index_id*', 'Barcode_id*', 'Reads, M']
+        2. csv file
+        ['sample_name', 'i7_id', 'i5_id', 'bc_id', 'reads']
+
+    datadir, str
+        The path to the fastq files
+
+    outdir, str
+        The path to the dir, final output
+
+    Description
+    -----------
+    The fastq files in datadir are named by the i7_index_name; in case, some
+    of the i7_index file contains multiple sub_files, distinguished by
+    in-line barcode
+    This function is designed to do:
+    1. rename i7_only files, (retrieve sample_name from table, by i7_index_name)
+    2. demultiplex the i7 files, contains barcode
+    3. organize the report
+    """
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
@@ -351,8 +380,12 @@ class Demx2(object):
     Arguments
     ---------
     x, str
-        The table of sample list, required columns:
+        The table of sample list, could be: .csv, or .xlsx
+        required columns:
+        1. xlsx file, required columns
         ['Sample_name*', 'P7_index_id*', 'Barcode_id*', 'Reads, M']
+        2. csv file
+        ['sample_name', 'i7_id', 'i5_id', 'bc_id', 'reads']
 
     datadir, str
         The path to the fastq files
