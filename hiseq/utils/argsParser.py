@@ -30,7 +30,7 @@ def add_sheet_args():
         epilog='''Description:
 YY00.xlsx : required columns, ['Sample_name*', 'P7_index_id*', 'Barcode_id*', 'Reads, M']
 
-Output:        
+Output:
 1. sample_name,i7,i5,barcode
 2. i7_name,i7,reads
 3. sample_name,NULL,NULL,barcode
@@ -47,13 +47,13 @@ hiseq sheet -s YY00.xlsx -o data'''
 
 def add_demx_args():
     """
-    Demultiplexing 
+    Demultiplexing
     """
     parser = argparse.ArgumentParser(description='hiseq demx')
     parser.add_argument('-1', '--fq1', required=True,
         help='read1 in fastq format, gzipped')
-    parser.add_argument('-2', '--fq2', 
-        help='read2 in fastq format, gzipped, (optional)') 
+    parser.add_argument('-2', '--fq2',
+        help='read2 in fastq format, gzipped, (optional)')
     parser.add_argument('-o', '--outdir', required=True,
         help='directory to save the reulsts')
     parser.add_argument('-s', '--index-table', dest='index_table', required=True,
@@ -62,7 +62,7 @@ def add_demx_args():
         help='run demo (1M reads) for demostration, default: off')
     parser.add_argument('-m', '--mismatch', type=int, default=0,
         help='mismatches allowed to search index, default: [0]')
-    parser.add_argument('-x', '--barcode-in-read2', action='store_true', 
+    parser.add_argument('-x', '--barcode-in-read2', action='store_true',
         help='barcode in read2')
     parser.add_argument('-l', '--barcode-n-left', type=int, dest='barcode_n_left',
         default=0, help='bases locate on the left of barcode')
@@ -75,7 +75,7 @@ def add_demx_args():
     parser.add_argument('-w', '--overwrite', action='store_true',
         help='Overwrite exists files, default: off')
     return parser
-    
+
 
 def add_demx2_args():
     """
@@ -101,7 +101,7 @@ def add_demx2_args():
     parser.add_argument('-w', '--overwrite', action='store_true',
         help='Overwrite exists files, default: off')
     return parser
-    
+
 
 def add_qc_args():
     """
@@ -121,7 +121,7 @@ def add_qc_args():
         help='if spcified, overwrite exists file')
     parser.add_argument('-p', '--threads', default=1, type=int,
         help='Number of threads for each job, default: [1]')
-    parser.add_argument('-j', '--parallel-jobs', default=1, type=int, 
+    parser.add_argument('-j', '--parallel-jobs', default=1, type=int,
         dest='parallel_jobs',
         help='Number of jobs run in parallel, only for multiple fastq files, default: [1]')
     return parser
@@ -152,7 +152,7 @@ def add_trim_args():
     parser.add_argument('-m', '--len_min', default=15, metavar='len_min',
         type=int, help='Minimum length of reads after trimming, defualt [15]')
 
-    parser.add_argument('--cut-to-length', default=0, dest='cut_to_length', 
+    parser.add_argument('--cut-to-length', default=0, dest='cut_to_length',
         type=int,
         help='cut reads to from right, default: [0], full length')
     parser.add_argument('--recursive', action='store_true',
@@ -160,8 +160,8 @@ def add_trim_args():
 
     parser.add_argument('-p', '--threads', default=1, type=int,
         help='Number of threads to launch, default [1]')
-    parser.add_argument('-j', '--parallel-jobs', dest='parallel_jobs', 
-        default=1, 
+    parser.add_argument('-j', '--parallel-jobs', dest='parallel_jobs',
+        default=1,
         type=int, help='Number of jobs to run in parallel, default [1]')
     parser.add_argument('--overwrite', action='store_true',
         help='if spcified, overwrite exists file')
@@ -175,29 +175,29 @@ def add_trim_args():
         help='Maximum allowed error rate, default [0.1]')
 
     ## specific
-    parser.add_argument('--rm-untrim', action='store_true', 
+    parser.add_argument('--rm-untrim', action='store_true',
         dest='rm_untrim',
         help='discard reads without adapter')
-    parser.add_argument('--save-untrim', action='store_true', 
+    parser.add_argument('--save-untrim', action='store_true',
         dest='save_untrim',
         help='Save untrim reads to file')
-    parser.add_argument('--save-too-short', action='store_true', 
+    parser.add_argument('--save-too-short', action='store_true',
         dest='save_too_short',
         help='Save too short reads to file')
-    parser.add_argument('--save-too-long', action='store_true', 
+    parser.add_argument('--save-too-long', action='store_true',
         dest='save_too_long',
         help='Save too short reads to file')
-    parser.add_argument('--cut-before-trim', default='0', 
+    parser.add_argument('--cut-before-trim', default='0',
         dest='cut_before_trim',
         help='cut n-bases before trimming adapter; positive value, \
         cut from left; minus value, cut from right, eg: 3 or -4 or 3,-4, \
-        default [0]') 
-    parser.add_argument('--cut-after-trim', default='0', 
+        default [0]')
+    parser.add_argument('--cut-after-trim', default='0',
         dest='cut_after_trim',
         help='cut n-bases after trimming adapter; positive value, \
         cut from left; minus value, cut from right, eg: 3 or -4 or 3,-4, \
-        default [0]')    
-    
+        default [0]')
+
     parser.add_argument('-a', '--adapter3', default=None,
         help='3-Adapter sequence, default [].')
     parser.add_argument('-g', '--adapter5', default='',
@@ -285,7 +285,7 @@ def add_align_args():
         help='if spcified, overwrite exists file')
     parser.add_argument('-p', '--threads', default=1, type=int,
         help='Number of threads for each job, default: [1]')
-    parser.add_argument('-j', '--parallel-jobs', default=1, type=int, 
+    parser.add_argument('-j', '--parallel-jobs', default=1, type=int,
         dest='parallel_jobs',
         help='Number of jobs run in parallel, only for multiple fastq files, default: [1]')
     return parser
@@ -361,18 +361,18 @@ def add_rnaseq_args():
     """
     parser = argparse.ArgumentParser(
         description='RNA-seq pipeline')
-    parser.add_argument('-b', '--build-design', dest='build_design', 
+    parser.add_argument('-b', '--build-design', dest='build_design',
         action='store_true',
         help='Create design for fastq files')
     parser.add_argument('-d', '--design', default=None,
         help='design for RNAseq, json format, ignore fq1, fq2')
     parser.add_argument('--wt', nargs='+', default=None, dest='wildtype',
         help='read1 fq files for control sample')
-    parser.add_argument('--wt-fq2', nargs='+', dest='wildtype_fq2', 
+    parser.add_argument('--wt-fq2', nargs='+', dest='wildtype_fq2',
         default=None, help='read2 fq files for control sample')
     parser.add_argument('--mut', nargs='+', default=None, dest='mutant',
         help='read2 fq files for treatment sample')
-    parser.add_argument('--mut-fq2', nargs='+', dest='mutant_fq2', 
+    parser.add_argument('--mut-fq2', nargs='+', dest='mutant_fq2',
         default=None, help='read2 fq files for treatment sample')
     parser.add_argument('-1', '--fq1', nargs='+', default=None,
         help='read1 files, (or read1 of PE reads)')
@@ -395,7 +395,7 @@ def add_rnaseq_args():
     # optional arguments - 0
     parser.add_argument('--trimmed', action='store_true',
         help='specify if input files are trimmed')
-    parser.add_argument('--cut-to-length', dest='cut_to_length', default=0, 
+    parser.add_argument('--cut-to-length', dest='cut_to_length', default=0,
         type=int,
         help='cut the read to specific length, from right, default: [0], \
         not cut')
@@ -419,7 +419,7 @@ def add_rnaseq_args():
         help='Aligner option: [STAR, bowtie, bowtie2, bwa], default: [STAR]')
     parser.add_argument('-p', '--threads', default=1, type=int,
         help='Number of threads for each job, default [1]')
-    parser.add_argument('-j', '--parallel-jobs', default=1, type=int, 
+    parser.add_argument('-j', '--parallel-jobs', default=1, type=int,
         dest='parallel_jobs',
         help='Number of jobs run in parallel, default: [1]')
 
@@ -446,8 +446,8 @@ def add_rnaseq_args2():
         help='Reference genome : dm3, dm6, hg19, hg39, mm9, mm10, default: hg19')
     parser.add_argument('--threads', default=1, type=int,
         help='Number of threads for each job, default [1]')
-    parser.add_argument('-m', '--mode', default='gtp', 
-        choices=['g', 't', 'p', 'gt', 'gp', 'tp', 'gtp'], 
+    parser.add_argument('-m', '--mode', default='gtp',
+        choices=['g', 't', 'p', 'gt', 'gp', 'tp', 'gtp'],
         help='Run for g:gene, t:te, p:piRNA_cluster, default: [gtp]')
     return parser
 
@@ -458,7 +458,7 @@ def add_atac_args():
     """
     parser = argparse.ArgumentParser(
         description='ATACseq pipeline')
-    parser.add_argument('-b', '--build-design', dest='build_design', 
+    parser.add_argument('-b', '--build-design', dest='build_design',
         action='store_true',
         help='Create design for fastq files')
     parser.add_argument('-d', '--design', default=None,
@@ -491,7 +491,7 @@ def add_atac_args():
     # optional arguments - 1
     parser.add_argument('-p', '--threads', default=1, type=int,
         help='Number of threads to launch, default [1]')
-    parser.add_argument('-j', '--parallel-jobs', default=1, type=int, 
+    parser.add_argument('-j', '--parallel-jobs', default=1, type=int,
         dest='parallel_jobs',
         help='Number of jobs run in parallel, default: [1]')
     parser.add_argument('--overwrite', action='store_true',
@@ -513,7 +513,7 @@ def add_chipseq_args():
     """
     parser = argparse.ArgumentParser(
         description='ChIPseq pipeline')
-    parser.add_argument('-b', '--build-design', dest='build_design', 
+    parser.add_argument('-b', '--build-design', dest='build_design',
         action='store_true',
         help='Create design for fastq files')
     parser.add_argument('-d', '--design', default=None,
@@ -540,7 +540,7 @@ def add_chipseq_args():
     # optional arguments - 1
     parser.add_argument('-p', '--threads', default=1, type=int,
         help='Number of threads to launch, default [1]')
-    parser.add_argument('-j', '--parallel-jobs', default=1, type=int, 
+    parser.add_argument('-j', '--parallel-jobs', default=1, type=int,
         dest='parallel_jobs',
         help='Number of jobs run in parallel, default: [1]')
     parser.add_argument('--overwrite', action='store_true',
@@ -566,7 +566,7 @@ def add_cnr_args():
     """
     parser = argparse.ArgumentParser(
         description='CUT&RUN pipeline')
-    parser.add_argument('-b', '--build-design', dest='build_design', 
+    parser.add_argument('-b', '--build-design', dest='build_design',
         action='store_true',
         help='Create design for fastq files')
     parser.add_argument('-d', '--design', default=None,
@@ -577,7 +577,7 @@ def add_cnr_args():
         help='fastq for Input of ChIPseq, read1 of PE')
     parser.add_argument('--ip-fq2', nargs='+', dest='ip_fq2', default=None,
         help='fastq for IP of ChIPseq, read2 of PE, optional')
-    parser.add_argument('--input-fq2', nargs='+', dest='input_fq2', 
+    parser.add_argument('--input-fq2', nargs='+', dest='input_fq2',
         default=None,
         help='fastq for Input of ChIPseq, read2 of PE, optional')
 
@@ -595,7 +595,7 @@ def add_cnr_args():
     parser.add_argument('--spikein-index', dest='spikein_index', default=None,
         help='Index for Spikein')
 
-    parser.add_argument('--cut-to-length', dest='cut_to_length', default=0, 
+    parser.add_argument('--cut-to-length', dest='cut_to_length', default=0,
         type=int,
         help='cut the read to specific length, from right, default: [0], \
         not cut')
@@ -607,7 +607,7 @@ def add_cnr_args():
     # optional arguments - 1
     parser.add_argument('-p', '--threads', default=1, type=int,
         help='Number of threads to launch, default [1]')
-    parser.add_argument('-j', '--parallel-jobs', default=1, type=int, 
+    parser.add_argument('-j', '--parallel-jobs', default=1, type=int,
         dest='parallel_jobs',
         help='Number of jobs run in parallel, default: [1]')
     parser.add_argument('--overwrite', action='store_true',
@@ -692,15 +692,15 @@ def add_go_args():
     Run GO analysis
     """
     parser = argparse.ArgumentParser(description='hiseq go -i gene.xls -g dm6 -o output')
-    parser.add_argument('-a', '--all', 
+    parser.add_argument('-a', '--all',
         help='for all siginificantly changed genes, require "sig" in header, ignore: -i')
-    parser.add_argument('-i', '--input', 
+    parser.add_argument('-i', '--input',
         help='directory of deseq_dir (a.vs.b), or path to file, contain genes')
-    parser.add_argument('-o', '--outdir', 
-        help='directory to save the GO results, only works if -i is gene_list') 
+    parser.add_argument('-o', '--outdir',
+        help='directory to save the GO results, only works if -i is gene_list')
     parser.add_argument('-g', '--genome',
         help='genome name, scientific_name prefer, eg: Drosophila melanogaster, also support: dm3/hg19/mm10')
-    parser.add_argument('-f', '--foldChange', 
+    parser.add_argument('-f', '--foldChange',
         help='path to file, contains log2FoldChange, Gene')
     parser.add_argument('-t', '--feature', default='gene',
         help='feature of the analysis, only works if -i is deseq_dir')
@@ -728,7 +728,7 @@ def add_fragsize_args():
     parser.add_argument('-p', '--threads', default=4, type=int,
         help='number of processes, default: [4]')
     return parser
-    
+
 
 def add_bam2bw_args():
     """
@@ -778,7 +778,7 @@ def add_bam2cor_args():
     parser.add_argument('-o', '--outdir', default=None,
         help='output directory to save results')
     parser.add_argument('-m', '--cor-method', default='pearson',
-        choices=['pearson', 'spearman'], 
+        choices=['pearson', 'spearman'],
         help='method to calculate correlation, default: [pearson]')
     parser.add_argument('-np', '--no-plot', dest='no_plot', action='store_false',
         help='do not make plots')
@@ -805,7 +805,7 @@ def add_peak2idr_args():
     parser.add_argument('-o', '--outdir', default=None,
         help='output directory to save results')
     parser.add_argument('-m', '--cor-method', default='pearson',
-        choices=['pearson', 'spearman'], 
+        choices=['pearson', 'spearman'],
         help='method to calculate correlation, default: [pearson]')
     parser.add_argument('-w', '--overwrite', action='store_true',
         help='Whether overwrite exists files')
@@ -836,8 +836,8 @@ def add_bed2overlap_args():
 def add_sample_args():
     """
     required:
-        'input': 
-        'outdir': 
+        'input':
+        'outdir':
         'sample_size':
     """
     parser = argparse.ArgumentParser(description='hiseq sample')
@@ -852,6 +852,6 @@ def add_sample_args():
     parser.add_argument('-w', '--overwrite', action='store_true',
         help='Overwrite the exists files')
     parser.add_argument('-j', '--parallel-jobs', dest='parallel_jobs',
-        default=1, type=int, 
+        default=1, type=int,
         help='Number of threads run in parallel, default [1]')
     return parser
