@@ -10,7 +10,7 @@ Description:
 3. SE or PE reads
 
 mission-1:
-1. P7 barcode: 
+1. P7 barcode:
 2. inline-barcode:
 
 
@@ -28,7 +28,7 @@ https://github.com/OpenGene/defq
 https://github.com/grenaud/deML
 
 
-## test 
+## test
 step1: split by p7-index: index1_index2.r1.fq
 step2: split by inline barcode:
 
@@ -50,7 +50,7 @@ from contextlib import ExitStack
 import Levenshtein as lev # distance
 from hiseq.utils.helper import update_obj, check_file, check_path, file_abspath, combinations, log, Config, listfile, fq_name, file_symlink
 from hiseq.utils.seq import Fastx
-from .demx_index import DemxIndex 
+from .demx_index import DemxIndex
 from .demx_barcode import DemxBarcode
 from .read_index import IndexTable
 from hiseq.utils.sample_sheet import SampleSheet
@@ -62,8 +62,8 @@ class Demx(object):
         self.init_args()
         self.mission = self.get_mission()
         check_path(self.outdir)
-    
-    
+
+
     def init_args(self):
         args_init = {
             'fq1': None,
@@ -78,7 +78,7 @@ class Demx(object):
             'demo': False,
             'gzipped': True,
         }
-        self = update_obj(self, args_init, force=False)        
+        self = update_obj(self, args_init, force=False)
         # fastq file
         if not check_file(self.fq1, emptycheck=True):
             log.error('fq1, file not exists')
@@ -99,8 +99,8 @@ class Demx(object):
         self.outdir = file_abspath(self.outdir)
         # index
         self.check_index()
-        
-        
+
+
     def check_index(self):
         p = IndexTable(index_table=self.index_table, mismatch=self.mismatch)
         self.samples = p.samples # name:(p7,p5,bc)
@@ -132,7 +132,7 @@ class Demx(object):
             m = 0
         return m
 
-    
+
     def demx_p7(self):
         """
         Demultiplex p7 only
@@ -142,10 +142,10 @@ class Demx(object):
         p7_idx_table = os.path.join(self.outdir, 'index_table.csv')
         with open(p7_idx_table, 'wt') as w:
             w.write('\n'.join(s)+'\n')
-        
+
         if self.mission == 4:
             req_args = [
-                'fq1', 'fq2', 'outdir', 'mismatch', 'demo', 'gzipped', 
+                'fq1', 'fq2', 'outdir', 'mismatch', 'demo', 'gzipped',
                 'overwrite']
             args = {i:getattr(self, i, None) for i in req_args if hasattr(self, i)}
             args.update({
@@ -164,10 +164,10 @@ class Demx(object):
         bc_idx_table = os.path.join(self.outdir, 'index_table.csv')
         with open(bc_idx_table, 'wt') as w:
             w.write('\n'.join(s)+'\n')
-        
+
         if self.mission == 1:
             req_args = [
-                'fq1', 'fq2', 'outdir', 'in_read2', 'mismatch', 
+                'fq1', 'fq2', 'outdir', 'in_read2', 'mismatch',
                 'barcode_n_left', 'barcode_n_right', 'demo', 'gzipped', 'overwrite']
             args = {i:getattr(self, i, None) for i in req_args if hasattr(self, i)}
             args.update({'index_table': bc_idx_table})
@@ -176,7 +176,7 @@ class Demx(object):
 
     def split_p7_bc(self):
         """For p7+bc mode
-        split table into 
+        split table into
         1. p7 only
         2. bc only
         """
@@ -234,11 +234,11 @@ class Demx(object):
                 'index_table': p7_table,
             })
             DemxIndex(**args).run()
-            
+
             # for bc
             bc_args_list = []
             req_args = [
-                'in_read2', 'mismatch', 'barcode_n_left', 'barcode_n_right', 'demo', 
+                'in_read2', 'mismatch', 'barcode_n_left', 'barcode_n_right', 'demo',
                 'gzipped', 'overwrite']
             bc_args = {i:getattr(self, i, None) for i in req_args if hasattr(self, i)}
             for bc_table in bc_tables:
@@ -259,10 +259,10 @@ class Demx(object):
                 })
                 bc_args_list.append(bc_args2)
                 DemxBarcode(**bc_args2).run()
-            
+
             # organize files and stat
             self.wrap_p7_bc()
-            
+
 
     def wrap_p7_bc(self):
         """
@@ -284,7 +284,6 @@ class Demx(object):
         p7_stat = Config().load(p7_stat_toml)
         df_stat = {k:v for k,v in p7_stat.items() if k in self.samples}
         undemx += p7_stat.get('undemx', 0)
-    
         # level-2: bc files
         for bc_table in bc_tables:
             bc_dir = os.path.dirname(bc_table)
@@ -297,15 +296,14 @@ class Demx(object):
             # for read count
             bc_stat_toml = os.path.join(bc_dir, 'read_count.toml')
             bc_stat = Config().load(bc_stat_toml)
-            df_stat.update({k:v for k,v in bc_stat.items() if k in self.samples})            
+            df_stat.update({k:v for k,v in bc_stat.items() if k in self.samples})
             undemx += bc_stat.get('undemx', 0)
         # update undemx
         df_stat['undemx'] = undemx
-        
         # save to file
+        df_stat = dict(sorted(df_stat.items(), key=lambda x:x[0])) # sort by key
         stat_toml = os.path.join(self.outdir, 'read_count.toml')
         Config().dump(df_stat, stat_toml)
-        
         # report
         stat_report = os.path.join(self.outdir, 'report.txt')
         total = sum(df_stat.values())
@@ -330,7 +328,7 @@ class Demx(object):
         with open(stat_report, 'wt') as w:
             w.write(msg+'\n')
         print(msg)
-        
+
 
     def run(self):
         log.info('Demulplexing starting')
@@ -343,7 +341,7 @@ class Demx(object):
         else:
             pass
         log.info('Demulplexing finish')
-        
+
 
 
 class Demx2(object):
@@ -494,7 +492,7 @@ class Demx2(object):
             'overwrite': self.overwrite,
             'demo': self.demo,
             'gzipped': self.gzipped,
-        }       
+        }
         if os.path.isfile(s_file):
             log.info('barcode done: {}'.format(k_id))
         else:
@@ -558,11 +556,15 @@ class Demx2(object):
 
 
     def wrap_dir(self):
+        # Expect reads
+        exp_df = self.sheet.df.loc[:, ['name', 'reads']].set_index('name')
+        exp_size = exp_df.to_dict('dict')['reads'] # sample_name:reads
         # to toml
         self.rename_i7_files() #
         self.rename_bc_files() #
         q_size = self.i7_size
-        q_size.update(self.bc_size)
+        q_size.update(self.bc_size) # sample_name:reads
+        q_size = dict(sorted(q_size.items(), key=lambda x:x[0])) # sort by key
         Config().dump(q_size, self.read_count_toml)
         # to txt
         total = sum(q_size.values())
@@ -572,16 +574,17 @@ class Demx2(object):
         i = 0
         for k,v in q_size.items():
             i += 1
-            s = '{:>3} {:<40s} {:>10,} {:6.2f}% {:8.1f}'.format(
-                i, k, v, v/total*100, v/1e6)
+            e = exp_size.get(k, 0) # million
+            s = '{:>3} {:<40s} {:>10,} {:6.2f}% {:8.1f} {:8.1f}'.format(
+                i, k, v, v/total*100, v/1e6, e)
             f_stat.append(s)
         # message
         msg = '\n'.join([
             '-'*80,
             'Demultiplex report:',
             '{} : {:>10} {:6.1f}M'.format('Input reads', total, total/1e6),
-            '{:>3} {:<40s} {:>10} {:6} {:8s}'.format(
-                'order', 'filename', 'count', 'percent', 'million'),
+            '{:>3} {:<40s} {:>10} {:6} {:8s} {:8s}'.format(
+                'order', 'filename', 'count', 'percent', 'million', 'design'),
             '\n'.join(f_stat),
             '-'*80,
         ])
@@ -595,5 +598,4 @@ class Demx2(object):
         self.demx_barcode()
         self.wrap_dir()
         log.info('Demulplexing finish')
-        
-        
+
