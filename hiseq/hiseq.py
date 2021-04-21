@@ -18,7 +18,7 @@ import sys
 import argparse
 from multiprocessing import Pool
 from .utils.argsParser import *
-from .utils.sample_sheet import SampleSheet
+from .demx.sample_sheet import SampleSheet
 from .demx.demx import Demx, Demx2
 from .qc.fastqc import Fastqc
 from .trim.trimmer import TrimRn

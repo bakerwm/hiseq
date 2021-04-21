@@ -53,7 +53,7 @@ from hiseq.utils.seq import Fastx
 from .demx_index import DemxIndex
 from .demx_barcode import DemxBarcode
 from .read_index import IndexTable
-from hiseq.utils.sample_sheet import SampleSheet
+from .sample_sheet import SampleSheet
 
 
 class Demx(object):
@@ -171,7 +171,6 @@ class Demx(object):
         p7_idx_table = os.path.join(self.outdir, 'index_table.csv')
         with open(p7_idx_table, 'wt') as w:
             w.write('\n'.join(s)+'\n')
-
         if self.mission == 4:
             req_args = [
                 'fq1', 'fq2', 'outdir', 'mismatch', 'demo', 'gzipped',
@@ -187,24 +186,25 @@ class Demx(object):
     def demx_bc(self):
         """
         Demultiplex bc only
-        mission: 4
+        mission: 1
         """
         s = ['{},{}'.format(k, v[2]) for k,v in self.samples.items()]
         bc_idx_table = os.path.join(self.outdir, 'index_table.csv')
         with open(bc_idx_table, 'wt') as w:
             w.write('\n'.join(s)+'\n')
-
         if self.mission == 1:
             req_args = [
                 'fq1', 'fq2', 'outdir', 'in_read2', 'mismatch',
-                'barcode_n_left', 'barcode_n_right', 'demo', 'gzipped', 'overwrite']
+                'barcode_n_left', 'barcode_n_right', 'demo', 'gzipped', 
+                'overwrite']
             args = {i:getattr(self, i, None) for i in req_args if hasattr(self, i)}
             args.update({'index_table': bc_idx_table})
             DemxBarcode(**args).run()
 
 
     def split_p7_bc(self):
-        """For p7+bc mode
+        """
+        For p7+bc mode
         split table into
         1. p7 only
         2. bc only
@@ -538,6 +538,7 @@ class Demx2(object):
             is_r1 = re.search('_1.f(ast)?q+.gz', fq, re.IGNORECASE)
             suffix = '_1.fq.gz' if is_r1 else '_2.fq.gz'
             prefix = fq_name(fq, pe_fix=True)
+            prefix = re.sub('_raw$', '', prefix) # 
             s_name = self.d_smp.get(prefix, None) # i7_index -> sample_name
             if s_name and prefix in self.i7_ids:
                 s_file = os.path.join(self.outdir, s_name+suffix) # target file

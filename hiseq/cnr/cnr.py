@@ -2710,7 +2710,7 @@ class CnRReader(object):
 
 
         if isinstance(self.hiseq_type, str):
-            self.is_hiseq = self.hiseq_type.startswith('hiseq_')
+            self.is_hiseq = self.hiseq_type.startswith('cnr_')
         else:
             self.is_hiseq = False
 

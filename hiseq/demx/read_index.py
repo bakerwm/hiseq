@@ -17,10 +17,8 @@ Criteria:
 import os
 import sys
 import Levenshtein as lev # distance
-import logging
-from hiseq.utils.helper import *
-from hiseq.utils.helper import update_obj
-
+from .sample_sheet import SampleSheet
+from hiseq.utils.helper import update_obj, log, combinations
 
 
 
@@ -50,7 +48,14 @@ class IndexTable(object):
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
-        self.read_index()
+        # self.read_index()
+        if self.index_table.endswith('.xlsx'):
+            self.load_xlsx(self.index_table)
+        elif self.index_table.endswith('.csv'):
+            self.load_csv(self.index_table)
+        else:
+            raise ValueError('fail, expect: xlsx|csv, got {}'.format(
+                self.index_table))
 
 
     def init_args(self):
@@ -113,21 +118,60 @@ class IndexTable(object):
         return out
 
     
-    def read_index(self):
-        """Check: p7, p5, bc"""
+    def load_xlsx(self, x):
+        """Table saved in xlsx format
+        see YY00.xlsx
+        required columns:
+        ['Sample_name*', 'P7_index_id*', 'Barcode_id*', 'Reads, M']
+        """
         p7_list = []
         p5_list = []
         bc_list = []        
         d = {}
-        with open(self.index_table) as r:
+        tmpdir = tempfile.TemporaryDirectory().name
+        args = {'x': x, 'outdir': x}
+        df = SampleSheet(**args).to_demx_table()
+        for i in range(df.shape[0]):
+            name,p7,p5,bc = i.to_list()[:4]
+            p7 = p7.upper()
+            p5 = p5.upper()
+            bc = bc.upper()
+            if name in d:
+                log.error('duplicate filenames: {}'.name)
+                break
+            # save each index
+            if not p7 == 'NULL':
+                p7_list.append(p7)
+            if not p5 == 'NULL':
+                p5_list.append(p5)
+            if not bc == 'NULL':
+                bc_list.append(bc)                
+            d[name] = (p7,p5,bc)
+        # update:
+        args = {
+            'samples': d,
+            'p7_list': list(set(p7_list)),
+            'p5_list': list(set(p5_list)),
+            'bc_list': list(set(bc_list)),
+        }
+        self = update_obj(self, args, force=True)
+
+    
+    def load_csv(self, x):
+        """Check: p7, p5, bc, reads"""
+        p7_list = []
+        p5_list = []
+        bc_list = []        
+        d = {}
+        with open(x) as r:
             for line in r:
                 if line.startswith('#'):
                     continue
                 s = re.split('[,\s\t]', line.strip())
-                if not len(s) == 4:
+                if len(s) < 4:
                     log.error('illegal format, expect:name,p7,p5,bc')
                     break
-                name,p7,p5,bc = s
+                name,p7,p5,bc = s[:4]
                 p7,p5,bc = [i.upper() for i in [p7, p5, bc]] # upper case
                 if name in d:
                     log.error('duplicate filenames: {}'.name)
@@ -148,7 +192,6 @@ class IndexTable(object):
             'bc_list': list(set(bc_list)),
         }
         self = update_obj(self, args, force=True)
-        # return [d, p7_list, p5_list, bc_list]
     
     
     def check_index(self):
@@ -193,7 +236,6 @@ class IndexTable(object):
                 self.mismatch - 1))
         return not out
 
-    
 
 def illumina_index(seq_type="truseq", by_name=True):
     """
