@@ -457,6 +457,7 @@ class Demx2(object):
         bc_fq = {}
         for fq in self.raw_fq_list:
             prefix = fq_name(fq, pe_fix=True)
+            prefix = re.sub('_raw$', '', prefix) 
             s_name = self.d_smp.get(prefix, None) # i7_index -> sample_name
             if s_name and prefix in self.bc_ids:
                 bc_fq[prefix] = bc_fq.get(prefix, [])
@@ -533,25 +534,46 @@ class Demx2(object):
 
 
     def rename_i7_files(self):
+        """
+        in case:
+        i7_name were sanitized (by "-"):
+        eg: 2.1 -> 2-1
+        """
         q_size = {}
         for fq in self.raw_fq_list:
             is_r1 = re.search('_1.f(ast)?q+.gz', fq, re.IGNORECASE)
             suffix = '_1.fq.gz' if is_r1 else '_2.fq.gz'
             prefix = fq_name(fq, pe_fix=True)
-            prefix = re.sub('_raw$', '', prefix) # 
+            ###################################################################
+            # Fix sample names:
+            # fix for MGI, Next_Ad2.1 -> Next_Ad2-1_raw
+            prefix = re.sub('_raw$', '', prefix)
+            prefix = re.sub('Next_Ad2-', 'Next_Ad2.', prefix)
             s_name = self.d_smp.get(prefix, None) # i7_index -> sample_name
+            ###################################################################
+            s_file = os.path.join(self.outdir, s_name+suffix) # target file
             if s_name and prefix in self.i7_ids:
-                s_file = os.path.join(self.outdir, s_name+suffix) # target file
                 if os.path.isfile(s_file):
                     log.warning('renaming skipped, file exists: {}'.format(s_file))
                 else:
                     # os.rename(fq, s_file)
                     file_symlink(fq, s_file)
-                # count fq
+                # count fq                
                 if is_r1:
+                    try:
+                        if os.path.isfile(self.read_count_toml):
+                            n_size = Config().load(self.read_count_toml)
+                            n_fq = n_size.get(s_name, 0)
+                        else:
+                            n_fq = Fastx(s_file).number_of_seq()
+                    except OSError as e:
+                        print(e)
+                        n_fq = 0
                     q_size.update({
-                        s_name: Fastx(fq).number_of_seq()
+                        s_name: n_fq
                     })
+                    log.info('counting reads, {}, {}: {}'.format(
+                            prefix, s_name, n_fq))
         # return q_size
         self.i7_size = q_size
 
