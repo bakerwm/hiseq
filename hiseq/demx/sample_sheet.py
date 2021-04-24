@@ -231,7 +231,7 @@ class SampleSheet(object):
         3. unique
         """
         if isinstance(x, str):
-            out = re.sub('[^A-Za-z0-9_.\-]', '_', x)
+            out = re.sub('[^A-Za-z0-9_\-]', '_', x)
             out = re.sub('_+', '_', out)
         elif isinstance(x, list):
             out = [self.sanitize(i) for i in x]
@@ -272,12 +272,14 @@ class SampleSheet(object):
             i7_seq = HiSeqIndex(df2.index.to_list()).index,
             GB = gb.round(1),
         )
+        df2.reset_index(inplace=True)
         # add barcode width
         df2 = df2.assign(
+            index = self.sanitize(df2['index'].to_list()),
             i7_width = df2['i7_seq'].apply(len),            
         )
-        df2 = df2.loc[:, ['i7_seq', 'i7_width', 'GB']]
-        df2.to_csv(self.mgi_csv)
+        df2 = df2.loc[:, ['index', 'i7_seq', 'i7_width', 'GB']]
+        df2.to_csv(self.mgi_csv, index=False)
         return df2
 
 

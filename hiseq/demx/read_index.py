@@ -16,6 +16,7 @@ Criteria:
 
 import os
 import sys
+import re
 import Levenshtein as lev # distance
 from .sample_sheet import SampleSheet
 from hiseq.utils.helper import update_obj, log, combinations
