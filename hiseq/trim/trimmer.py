@@ -404,7 +404,8 @@ class Trim(object):
 
         # save fq files, cutadapt log
         file_copy(cut1.log, self.log_dir)
-        file_copy(self.cut2_fq, self.clean_fq)
+        if file_exists(self.cut2_fq) and not file_exists(self.clean_fq):
+            file_copy(self.cut2_fq, self.clean_fq)
 
         # 5. remove temp files
         del_list = [cut1_fq, self.rmdup_fq, self.cut2_fq]
