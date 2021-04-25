@@ -6,7 +6,7 @@
 1. unmap files:
   - bowtie  : _1.fastq, _2.fastq
   - bowtie2 : .1.fastq, .2.fastq
-  - STAR    : .unmap.1.fastq
+  - STAR    : .unmap.1.fastq (default: Unmapped.out.mate1/2)
 ###############
 
 Align()
@@ -1871,18 +1871,18 @@ class STAR(object):
         unmap2 = self.align_prefix + 'Unmapped.out.mate2'
 
         # new files
-        file_copy(bam_from, self.bam)
-        file_copy(log_from, self.align_log)
+        file_symlink(bam_from, self.bam)
+        file_symlink(log_from, self.align_log)
         if self.is_paired:
-            file_copy(unmap1, self.unmap1)
-            file_copy(unmap2, self.unmap2)
+            file_symlink(unmap1, self.unmap1)
+            file_symlink(unmap2, self.unmap2)
         else:
-            file_copy(unmap1, self.unmap1)
+            file_symlink(unmap1, self.unmap1)
             self.unmap2 = None
 
-        # remove old files
-        del_list = [bam_from, unmap1, unmap2]
-        file_remove(del_list, ask=False)
+        # # remove old files
+        # del_list = [bam_from, unmap1, unmap2]
+        # file_remove(del_list, ask=False)
 
 
     def parse_align(self, to_toml=True):
@@ -2010,10 +2010,10 @@ class STAR(object):
             self.unmap1 = self.unmap
             self.unmap2 = None
 
-        # temp fastq files
-        del_list = [self.unmap1, self.unmap2]
-        if not self.keep_tmp:
-            file_remove(del_list, ask=False)
+        # # temp fastq files
+        # del_list = [self.unmap1, self.unmap2]
+        # if not self.keep_tmp:
+        #    file_remove(del_list, ask=False)
 
         return (self.bam, self.unmap1, self.unmap2)
 
