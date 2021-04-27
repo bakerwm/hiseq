@@ -275,10 +275,10 @@ class SampleSheet(object):
         df2.reset_index(inplace=True)
         # add barcode width
         df2 = df2.assign(
-            index = self.sanitize(df2['index'].to_list()),
+            index = self.sanitize(df2['i7'].to_list()),
             i7_width = df2['i7_seq'].apply(len),            
         )
-        df2 = df2.loc[:, ['index', 'i7_seq', 'i7_width', 'GB']]
+        df2 = df2.loc[:, ['index', 'i7_seq', 'i7_width', 'GB', 'reads']]
         df2.to_csv(self.mgi_csv, index=False)
         return df2
 
@@ -333,6 +333,7 @@ class SampleSheet(object):
             '{:<20}: {:}'.format('No. of i7', n_i7),
             '{:<20}: {:}'.format('No. of i7 with bc', n_i7_bc),
             '{:<20}: {:,}M'.format('No. of reads', int(n_total)),
+            '{:<20}: {:,}G'.format('No. of bases', int(n_total*0.3)),
             '-'*80,
         ])
         print(msg)
