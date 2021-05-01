@@ -1256,6 +1256,27 @@ class RNAseqR1(object):
         self.qc_genebody_enrich()
 
 
+    def pseudo_align(self):
+        """
+        pseudo_align_dir: salmon.
+        Quantification + DEanalysis 
+        aligner: salmon, kallisto
+        deseq:   DESeq2
+        
+        required arguments:
+        aligner: salmon|kallisto
+            fq1
+            fq2
+            outdir
+            index
+            'index_name',
+            'smp_name',
+            'threads',
+            'overwrite'
+        """
+        pass
+        
+        
     def report(self):
         """
         Create report for one sample

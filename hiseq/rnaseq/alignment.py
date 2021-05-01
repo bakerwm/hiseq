@@ -346,7 +346,8 @@ class AlignR1(object):
         """
         args_local = AlignR1Config(**self.__dict__) # update
         self = update_obj(self, args_local.__dict__, force=True)
-        Toml(self.__dict__).to_toml(self.config_toml)
+        Config().dump(self.__dict__, self.config_toml)
+#         Toml(self.__dict__).to_toml(self.config_toml)
 
 
     def run(self):
@@ -1162,6 +1163,7 @@ class AlignerConfig(object):
           - aligner
         """
         args_default = {
+            'aligner': 'bowtie',
             'fq1': None,
             'fq2': None,
             'outdir': None,
@@ -1299,6 +1301,7 @@ class Bowtie(object):
     """
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
+        self.aligner = 'bowtie' # force changed.
         self.init_args()
         self.prep_cmd()
 
@@ -1309,7 +1312,6 @@ class Bowtie(object):
         """
         args_local = AlignerConfig(**self.__dict__)
         self = update_obj(self, args_local.__dict__, force=True) # update
-        self.aligner = 'bowtie' # force changed.
         Toml(self.__dict__).to_toml(self.config_toml)        
 
 
@@ -1489,6 +1491,7 @@ class Bowtie2(object):
     """
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
+        self.aligner = 'bowtie2'
         self.init_args()
         self.prep_cmd()
 
@@ -1499,7 +1502,6 @@ class Bowtie2(object):
         """
         args_local = AlignerConfig(**self.__dict__)
         self = update_obj(self, args_local.__dict__, force=True) # update
-        self.aligner = 'bowtie2'
         Toml(self.__dict__).to_toml(self.config_toml)        
 
 
@@ -1739,6 +1741,7 @@ class STAR(object):
     """
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
+        self.aligner = 'STAR'
         self.init_args()
         self.prep_cmd()
 
@@ -1749,7 +1752,6 @@ class STAR(object):
         """
         args_local = AlignerConfig(**self.__dict__)
         self = update_obj(self, args_local.__dict__, force=True) # update
-        self.aligner = 'STAR'
         Toml(self.__dict__).to_toml(self.config_toml)
 
         ## prefix for files
@@ -2069,17 +2071,123 @@ class Kallisto(object):
 class Salmon(object):
     """
     Run bowtie for: 1 fq, 1 index
+    
+    required arguments:
+        'fq1': None,
+        'fq2': None,
+        'outdir': None,
+        'index': None,            
+        'index_name': None,
+        'smp_name': None,
+        'threads': 1,
+        'overwrite': False,
+    
+    Example:
+    salmon index -t tx.fa -i tx
+    salmon quant -i tx -l A -p 8 --gcBias -o outdir -1 fq1 -2 fq2
     """
     def __init__(self, **kwargs):
-        pass
+        self = update_obj(self, kwargs, force=True)
+        self.aligner = 'salmon'
+        self.init_args()
 
     def init_args(self):
-        pass
+        args_local = AlignerConfig(**self.__dict__)
+        self = update_obj(self, args_local.__dict__, force=True) # update
+        Config().dump(self.__dict__, self.config_toml)
+        self.align_prefix = os.path.join(self.subdir, self.smp_name)
+        self.prep_cmd()
+        # update output files: quant.sf
+        self.quant_sf = os.path.join(self.subdir, 'quant.sf')
+
+
+    def prep_cmd(self):
+        if file_exists(self.fq2):
+            args_fq = '-1 {} -2 {}'.format(self.fq1, self.fq2)
+        else:
+            args_fq = '-r {}'.format(self.fq1)
+        self.cmd = ' '.join([
+            'salmon quant -l A --gcBias -i {}'.format(self.index),
+            '-p {}'.format(self.threads),
+            '-o {}'.format(self.subdir),
+            args_fq,
+            '> {}'.format(self.align_log),
+        ])
+
+        # save cmd
+        with open(self.cmd_shell, 'wt') as w:
+            w.write(self.cmd + '\n')
+
+
+    def parse_align(self):
+        """logs/salmon_quant.log
+        log:
+        [2021-04-28 00:55:01.228] [jointLog] [info] Mapping rate = 89.598%
         
+        Mapping rate = 90.4%
+        """
+        quant_log = os.path.join(self.subdir, 'logs', 'salmon_quant.log')
+        rate = 0
+        n_total = 1
+        n_map = 0
+        try:
+            with open(quant_log) as r:
+                for line in r:
+                    line = re.sub('^.*\] ', '', line.strip()) # remove prefix
+                    if 'Mapping rate =' in line:
+                        rate = line.split()[-1]
+                        rate = float(rate.replace('%', ''))
+                    if line.startswith('Observed '):
+                        n_total = int(line.split()[1])
+                    if line.startswith('Counted'):
+                        n_map = int(line.split()[1])
+        except:
+            log.error('failed parsing log file: {}'.format(quant_log))
+        n_unmap = n_total - n_map
+        dd = {
+            'total': n_total, 
+            'map': n_map, 
+            'unique': n_map, 
+            'multiple': 0, 
+            'unmap': n_unmap,
+            'fqname': self.smp_name,
+            'index_name': self.index_name,
+        }
+        # to toml format
+        Config().dump(dd, self.align_toml)
+        # to txt format
+        groups = ['total', 'map', 'unique', 'multiple', 'unmap',
+            'fqname', 'index_name']
+        header = '\t'.join(groups)
+        v = '\t'.join([str(dd.get(i, 0)) for i in groups])
+        with open(self.align_stat, 'wt') as w:
+            w.write('#'+header+'\n'+v+'\n')
+        # message
+        msg = '{} / {} ({:.2f}%) : {}'.format(n_map, n_total, rate, self.smp_name)
+        log.info(msg)
+        return dd
+
 
     def run(self):
-        pass
+        if file_exists(self.quant_sf) and not self.overwrite:
+            log.info('align() skipped, file exists: {}'.format(self.quant_sf))
+        else:
+            try:
+                run_shell_cmd(self.cmd)
+            except:
+                log.error('align() failed, check {}'.format(self.align_log))
+        # parse log file
+        self.parse_align()
+        return self.quant_sf
 
+    
+
+    
+    
+    
+    
+    
+    
 
 ## for index
 ## to-do
@@ -2163,6 +2271,13 @@ class AlignIndex(object):
             'chrName.txt',
             'chrStart.txt',
             'genomeParameters.txt']]
+        salmon_files = [os.path.join(index, i) for i in [
+            'info.json',
+            'pos.bin',
+            'mphf.bin',
+            'ctable.bin',
+            'seq.bin'
+        ]]
 
         ## check
         chk0 = all(file_exists(bowtie_files))
@@ -2170,6 +2285,7 @@ class AlignIndex(object):
         chk2 = all(file_exists(hisat2_files))
         chk3 = all(file_exists(bwa_files))
         chk4 = all(file_exists(star_files))
+        chk5 = all(file_exists(salmon_files))
 
         ## check file exists
         if chk0:
@@ -2182,6 +2298,8 @@ class AlignIndex(object):
             aligner = 'bwa'
         elif chk4:
             aligner = 'star' # STAR
+        elif chk5:
+            aligner = 'salmon' # Salmon
         else:
             aligner = None
 
@@ -2197,7 +2315,7 @@ class AlignIndex(object):
         
         ## return the aligner, from index
         if self.aligner is None:
-            chk0 = not self.get_aligner(index=index) is None # 
+            chk0 = self.get_aligner(index=index) is not None # 
         else:
             chk0 = self.aligner.lower() == self.get_aligner(index=index)
 
@@ -2234,6 +2352,11 @@ class AlignIndex(object):
                 |- MT_trRNA/
                 |- transposon/
                 |- piRNA_cluster/
+                
+        ## salmon
+        path-to-genome/
+            |- salmon_index /
+                |- genome/
         """
         self.update(kwargs, force=True) # input args
 
@@ -2354,9 +2477,13 @@ class AlignIndex(object):
         chrLength = 0
         aligner = self.get_aligner(index).lower()
 
-        if aligner in ['bowtie', 'bowtie2', 'hisat2', 'star']:
+        if aligner in ['bowtie', 'bowtie2', 'hisat2', 'star', 'salmon', 'kallisto']:
             # get genome size
-            if aligner.lower() == 'star':
+            if aligner.lower() == 'salmon':
+                info_json = os.path.join(index, 'info.json')
+                info_d = Config().load(info_json)
+                chrLength = info_d.get('seq_length', 1)
+            elif aligner.lower() == 'star':
                 gsize = os.path.join(index, 'chrNameLength.txt')
             else:
                 if aligner == 'bowtie':
