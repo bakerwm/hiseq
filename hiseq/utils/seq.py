@@ -13,6 +13,7 @@ import shutil
 import numpy as np
 import pandas as pd
 from xopen import xopen
+import pyfastx
 import collections # Fastx().collapse()
 from hiseq.utils.helper import *
 
@@ -351,23 +352,19 @@ class Fastx(object):
             region = '1:-1' # the full length
         # convert "7,-7" to "7:-7"
         region = region.replace(',', ":")
-
         p = re.compile('^(-?\d+):(-?\d+)$')
         m = p.search(region)
         if m:
             pass
         else:
             log.error('unknown region format, expect: 1:-1, got: {}'.format(region))
-
         # 0-indexed
         start = int(m.group(1))
         end = int(m.group(2))
         if start > 0:
             start = start - 1
-
         if end < 0:
             end = end + 1
-
         return (start, end)
 
 
@@ -376,15 +373,21 @@ class Fastx(object):
         Extract substring, by start, end (0-index)
         convert to python style
         """
-        if start == 0 and end == 0:
-            pass
-        elif start == 0:
-            s = s[:end]
-        elif end == 0:
-            s = s[start:]
+        if isinstance(s, str):
+            if start == 0 and end == 0:
+                pass
+            elif start == 0:
+                s = s[:end]
+            elif end == 0:
+                s = s[start:]
+            else:
+                # exception: start:-end > length
+                if start - end > len(s):
+                    s = None
+                else:
+                    s = s[start:end]
         else:
-            s = s[start:end]
-
+            s = None
         return s
 
 
@@ -398,19 +401,36 @@ class Fastx(object):
         1:-1,   the full length
         """
         start, end = self.region_to_pos(region)
-
+#         with xopen(out, 'wt') as w:
+#             for name,seq,qual,comment in pyfastx.Fastx(self.input):
+#                 s = seq[7:-7]
+#                 q = qual[7:-7]
+#                 a = '@{}\n{}\n+\n{}'.format(name, s, q)
+#                 w.write(a+'\n')
         with xopen(self.input) as r, xopen(out, 'wt') as w:
             for name, seq, qual, comment in self.readfq(r):
                 seq = self.sub_string(seq, start, end)
-                # specific length
-                if len(seq) < self.len_min:
-                    continue
-                name = name + ' ' + comment
-                if qual is None: # fasta
-                    w.write('\n'.join(['>'+name, seq]) + '\n')
+                qual = self.sub_string(qual, start, end)
+                # update name
+                # !!!! error !!!!
+                # STAR 2.5.2a, 
+                # does not allow 'white spaces' at the end of name-line of fastq
+                # throw error:
+                # ReadAlignChunk_processChunks.cpp:115:processChunks EXITING because of FATAL ERROR in input reads: unknown file format: the read ID should start with @ or >
+                if isinstance(comment, str):
+                    if len(comment) > 0:
+                        name = name + ' ' + comment #fix comment=None
+                # filter length
+                if isinstance(seq, str):
+                    if len(seq) < self.len_min:
+                        continue
+                    if isinstance(qual, str):
+                        out = '@{}\n{}\n+\n{}'.format(name, seq, qual)
+                    else:
+                        out = '>{}\n{}'.format(name, seq)
+                    w.write(out+'\n')
                 else:
-                    qual = self.sub_string(qual, start, end)
-                    w.write('\n'.join(['@'+name, seq, '+', qual]) + '\n')
+                    continue
 
 
     def subseq_pe(self, input2, out1, out2, region=None):
@@ -431,8 +451,14 @@ class Fastx(object):
                 name2, seq2, qual2, comment2 = read2
                 seq1 = self.sub_string(seq1, start, end)
                 seq2 = self.sub_string(seq2, start, end)
-                name1 = name1 + ' ' + comment1
-                name2 = name2 + ' ' + comment2
+                if isinstance(comment1, str):
+                    if len(comment1) > 0:
+                        name1 = name1 + ' ' + comment1 #fix comment=None
+                if isinstance(comment2, str):
+                    if len(comment2) > 0:
+                        name2 = name2 + ' ' + comment2 #fix comment=None
+#                 name1 = name1 + ' ' + comment1
+#                 name2 = name2 + ' ' + comment2
                 # specific length
                 if len(seq1) < self.len_min or len(seq2) < self.len_min:
                     continue
