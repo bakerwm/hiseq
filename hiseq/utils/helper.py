@@ -2107,14 +2107,11 @@ class Bam(object):
         n = 0
         for read in samfile:
             if read.is_paired:
-                break
-            n += 1
+                n += 1
             if n == topn:
                 break
-
         samfile.close()
-
-        return n != topn
+        return n == topn
 
 
     def getNumReads(self):
