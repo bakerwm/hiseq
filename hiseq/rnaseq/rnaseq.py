@@ -731,6 +731,7 @@ class RNAseqR1(object):
                 'outdir': self.clean_dir,
                 'library_type': None,
                 'len_min': 20,
+                'cut_after_trim': '7,-7',
                 'cut_to_length': self.cut_to_length,
                 'recursive': self.recursive,
                 'parallel_jobs': 1 # do not allowed > 1
@@ -839,7 +840,9 @@ class RNAseqR1(object):
             'overwrite': self.overwrite
         }
         args_local.update(args_init)
-
+        # fix, extra_index alignment
+        if args_local.get('genome_index', None) == args_local.get('extra_index', None):
+            args_local['extra_index'] = None
         # align = Alignment(**args_local)
         align = Align(**args_local)
         align.run()
