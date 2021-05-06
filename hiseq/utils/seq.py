@@ -401,14 +401,9 @@ class Fastx(object):
         1:-1,   the full length
         """
         start, end = self.region_to_pos(region)
-#         with xopen(out, 'wt') as w:
-#             for name,seq,qual,comment in pyfastx.Fastx(self.input):
-#                 s = seq[7:-7]
-#                 q = qual[7:-7]
-#                 a = '@{}\n{}\n+\n{}'.format(name, s, q)
-#                 w.write(a+'\n')
         with xopen(self.input) as r, xopen(out, 'wt') as w:
             for name, seq, qual, comment in self.readfq(r):
+                name = name.strip()
                 seq = self.sub_string(seq, start, end)
                 qual = self.sub_string(qual, start, end)
                 # update name
@@ -417,9 +412,9 @@ class Fastx(object):
                 # does not allow 'white spaces' at the end of name-line of fastq
                 # throw error:
                 # ReadAlignChunk_processChunks.cpp:115:processChunks EXITING because of FATAL ERROR in input reads: unknown file format: the read ID should start with @ or >
-                if isinstance(comment, str):
-                    if len(comment) > 0:
-                        name = name + ' ' + comment #fix comment=None
+#                 if isinstance(comment, str):
+#                     if len(comment) > 0:
+#                         name = name + ' ' + comment #fix comment=None
                 # filter length
                 if isinstance(seq, str):
                     if len(seq) < self.len_min:
