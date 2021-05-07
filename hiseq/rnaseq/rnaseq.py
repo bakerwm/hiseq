@@ -411,11 +411,15 @@ class RNAseqRn(object):
                 log.warning('merge_bam() failed.')
 
         ## calculate norm scale
-        self.align_scale = self.cal_norm_scale(self.bam)
-        with open(self.align_scale_txt, 'wt') as w:
-            w.write('{:.4f}\n'.format(self.align_scale))
-
-
+        if file_exists(self.align_scale_txt):
+            with open(self.align_scale_txt) as r:
+                self.align_scale = eval(r.readline().strip())
+        else:
+            self.align_scale = self.cal_norm_scale(self.bam)
+            with open(self.align_scale_txt, 'wt') as w:
+                w.write('{:.4f}\n'.format(self.align_scale))
+                
+        
     def bam_to_bw(self, norm=1000000):
         """
         Create bigWig
@@ -426,12 +430,11 @@ class RNAseqRn(object):
             'scaleFactor': self.align_scale,
             'outdir': self.bw_dir,
             'genome': self.genome,
-            'strandness': 0,
+            'strandness': 12,
             'binsize': self.binsize,
             'overwrite': self.overwrite,
             'genome_size': self.genome_size
         }
-
         Bam2bw(**args_local).run()
 
 
@@ -1724,6 +1727,8 @@ class RNAseqRnConfig(object):
             'bed': self.bam_dir + '/' + self.project_name + '.bed',
             'bg': self.bg_dir + '/' + self.project_name + '.bedGraph',
             'bw': self.bw_dir + '/' + self.project_name + '.bigWig',
+            'bw_fwd': self.bw_dir + '/' + self.project_name + '.fwd.bigWig',
+            'bw_rev': self.bw_dir + '/' + self.project_name + '.rev.bigWig',
             'align_scale_txt': self.align_dir + '/' + 'scale.txt',
             'genebody_enrich_matrix': self.qc_dir \
                 + '/05.genebody_enrich.mat.gz',
@@ -1966,6 +1971,8 @@ class RNAseqR1Config(object):
             'bam': self.bam_dir + '/' + self.project_name + '.bam',
             'bg': self.bg_dir + '/' + self.project_name + '.bedGraph',
             'bw': self.bw_dir + '/' + self.project_name + '.bigWig',
+            'bw_fwd': self.bw_dir + '/' + self.project_name + '.fwd.bigWig',
+            'bw_rev': self.bw_dir + '/' + self.project_name + '.rev.bigWig',
             'strandness_file': self.count_dir + '/strandness.txt',
             'count_sens': self.count_dir \
                 + '/' + self.project_name + '.sens.txt',
