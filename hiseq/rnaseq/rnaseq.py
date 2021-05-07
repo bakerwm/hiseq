@@ -88,6 +88,7 @@ from hiseq.utils.helper import *
 from hiseq.trim.trimmer import Trim
 from hiseq.rnaseq.alignment import Align, AlignIndex
 from hiseq.atac.atac_utils import *
+from hiseq.bam2bw.bam2bw import Bam2bw
 
 def print_dict(d):
     d = collections.OrderedDict(sorted(d.items()))
@@ -617,8 +618,11 @@ class RNAseqRn(object):
         """
         # run
         self.merge_bam()
-        self.bam_to_bg()
-        self.bg_to_bw()
+        if self.genome:
+            self.bam_to_bw()
+        else:
+            self.bam_to_bg()
+            self.bg_to_bw()
         self.qc_bam_cor()
         self.qc_genebody_enrich()
         self.report()
@@ -872,6 +876,23 @@ class RNAseqR1(object):
         return bamlist.pop() if len(bamlist) > 0 else None # last one
 
 
+    def bam_to_bw(self):
+        """
+        Convert bam to bigWig
+        """
+        args = {
+            'bam': self.bam,
+            'outdir': self.bw_dir,
+            'binsize': self.binsize,
+            'strandness': 12,
+            'genome': self.genome,
+            'scaleFactor': self.align_scale,
+            'overwrite': self.overwrite,
+            'genome_size': self.genome_size,
+        }
+        Bam2bw(**args).run()
+    
+    
     def bam_to_bg(self):
         """
         Convert bam to bedgraph
@@ -1118,8 +1139,11 @@ class RNAseqR1(object):
             self.align_rRNA()
 
         self.align_genome()
-        self.bam_to_bg()
-        self.bg_to_bw()
+        if self.genome:
+            self.bam_to_bw()
+        else:
+            self.bam_to_bg()
+            self.bg_to_bw()
 
         # count reads
         if file_exists(self.count_sens) and not self.overwrite:

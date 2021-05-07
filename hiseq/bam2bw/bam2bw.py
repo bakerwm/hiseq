@@ -14,6 +14,12 @@ How to normalize
 
 """
 
+import os
+import pathlib
+from shutil import which
+from hiseq.utils.helper import log, run_shell_cmd, Bam, check_path, file_exists, Config
+
+
 # solution-1: BAM -> bg -> bw
 class Bam2bw(object):
     """
@@ -56,7 +62,8 @@ class Bam2bw(object):
 
         # update, defaults
         self.init_args()
-        args_logger(self.__dict__, self.config_txt)
+        # args_logger(self.__dict__, self.config_txt)
+        Config().dump(self.__dict__, self.config_toml)
 
 
     def init_args(self):
@@ -84,6 +91,7 @@ class Bam2bw(object):
             'normalizeUsing': 'RPKM',
             'threads': 4,
             'config_txt': os.path.join(self.outdir, 'arguments.txt'),
+            'config_toml': os.path.join(self.outdir, 'arguments.toml'),
             'flag': True # whether run/not
         }
         # update
@@ -143,7 +151,7 @@ class Bam2bw(object):
         if os.path.exists(bw) and not self.overwrite:
             log.info('file exists, bigWig skipped ..., {}'.format(bw))
         else:
-            stdout, stderr = run_shell_cmd(cmd)
+            _, stdout, stderr = run_shell_cmd(cmd)
             with open(bw_log, 'wt') as w:
                 w.write(stdout + '\n' + stderr + '\n')
                 # p1 = subprocess.run(shlex.split(cmd), stdout=w, stderr=w)
@@ -253,7 +261,8 @@ class Bam2bw2(object):
 
         # update, defaults
         self.init_args()
-        args_logger(self.__dict__, self.config_txt)
+        # args_logger(self.__dict__, self.config_txt)
+        Config().dump(self.__dict__, self.config_toml)
 
 
     def init_args(self):
@@ -270,6 +279,7 @@ class Bam2bw2(object):
             'fragment': True,
             'threads': 4,
             'config_txt': os.path.join(self.outdir, 'arguments.txt'),
+            'config_toml': os.path.join(self.outdir, 'arguments.toml'),
             'flag': True # whether run/not
         }
         # update
@@ -364,7 +374,7 @@ class Bam2bw2(object):
         if os.path.exists(bw) and not self.overwrite:
             log.info('file exists, bigWig skipped ..., {}'.format(bw))
         else:
-            stdout, stderr = run_shell_cmd(cmd)
+            _, stdout, stderr = run_shell_cmd(cmd)
             with open(bw_log, 'wt') as w:
                 w.write(stdout + '\n' + stderr + '\n')
                 # p1 = subprocess.run(shlex.split(cmd), stdout=w, stderr=w)
