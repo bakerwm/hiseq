@@ -548,7 +548,7 @@ class Demx2(object):
             # Fix sample names:
             # fix for MGI, Next_Ad2.1 -> Next_Ad2-1_raw
             prefix = re.sub('_raw$', '', prefix)
-            prefix = re.sub('Next_Ad2-', 'Next_Ad2.', prefix)
+            prefix = re.sub('Next_Ad2[^0-9]', 'Next_Ad2.', prefix)
             s_name = self.d_smp.get(prefix, None) # i7_index -> sample_name
             ###################################################################
             s_file = os.path.join(self.outdir, s_name+suffix) # target file
