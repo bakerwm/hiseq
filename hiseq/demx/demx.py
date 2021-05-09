@@ -138,7 +138,8 @@ class Demx(object):
         self.bc_list = p.bc_list
         out = p.run()
         if not out:
-            raise ValueError('index illegal: {}'.format(self.index_table))
+            log.warning('index unknown: {}'.format(self.index_table))
+#             raise ValueError('index illegal: {}'.format(self.index_table))
 
 
     def get_mission(self):
@@ -546,9 +547,11 @@ class Demx2(object):
             prefix = fq_name(fq, pe_fix=True)
             ###################################################################
             # Fix sample names:
-            # fix for MGI, Next_Ad2.1 -> Next_Ad2-1_raw
+            # fix for MGI, Next_Ad2.1 <- Next_Ad2-1_raw
+            # fix for MGI, Next-Ad2.1 <- Next-Ad2_1_raw
             prefix = re.sub('_raw$', '', prefix)
-            prefix = re.sub('Next_Ad2-', 'Next_Ad2.', prefix)
+            prefix = re.sub('Next.Ad', 'Next_Ad', prefix)
+            prefix = re.sub('Ad2[^0-9]', 'Ad2.', prefix)
             s_name = self.d_smp.get(prefix, None) # i7_index -> sample_name
             ###################################################################
             s_file = os.path.join(self.outdir, s_name+suffix) # target file
