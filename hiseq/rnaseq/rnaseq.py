@@ -1561,9 +1561,13 @@ class RNAseqRxConfig(object):
             'config_toml': self.config_dir + '/config.toml',
             'mutant_bam': self.bam_dir + '/' + self.mutant_name + '.bam',
             'mutant_bw': self.bw_dir + '/' + self.mutant_name + '.bigWig',
+            'mutant_bw_fwd': self.bw_dir + '/' + self.mutant_name + '.fwd.bigWig',
+            'mutant_bw_ref': self.bw_dir + '/' + self.mutant_name + '.rev.bigWig',
             'wildtype_bam': self.bam_dir + '/' + self.wildtype_name + '.bam',
             'wildtype_bw': self.bw_dir + '/' + self.wildtype_name + '.bigWig',
-            'bw': self.bw_dir + '/' + self.mutant_name + '.bigWig',
+            'wildtype_bw_fwd': self.bw_dir + '/' + self.wildtype_name + '.fwd.bigWig',
+            'wildtype_bw_rev': self.bw_dir + '/' + self.wildtype_name + '.rev.bigWig',
+            # 'bw': self.bw_dir + '/' + self.mutant_name + '.bigWig',
             # 'mutant_count_sens': RNAseqReader(
             #     self.mutant_dir).get_r1_file('count_sens'),
             # 'mutant_count_anti': RNAseqReader(
