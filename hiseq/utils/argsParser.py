@@ -130,6 +130,28 @@ def add_qc_args():
     return parser
 
 
+def add_p7_args():
+    """
+    utils:
+      - fastqc
+    """
+    parser = argparse.ArgumentParser(
+        description='hiseq p7')
+    parser.add_argument('-i', '--fq', nargs='+', required=True,
+        help='reads in FASTQ files, or directory contains fastq files')
+    parser.add_argument('-o', '--outdir', default=None,
+        help='The directory to save results.')
+    parser.add_argument('-f', '--overwrite', action='store_true',
+        help='if spcified, overwrite exists file')
+    parser.add_argument('-j', '--parallel-jobs', default=1, type=int,
+        dest='parallel_jobs',
+        help='Number of jobs run in parallel, default: [1]')
+    parser.add_argument('-s', '--save-seq', dest='save_seq', 
+        action='store_true',
+        help='Save the i7 sequence to file')
+    return parser
+
+
 def add_trim_args():
     """
     - remove 3' adapter(s) (default: TruSeq RNA-Seq)
@@ -430,6 +452,9 @@ def add_rnaseq_args():
     parser.add_argument('--extra-para', dest='extra_para', default=None,
         help='Extra parameters for aligner, eg: -X 2000 for bowtie2. \
         default: [None]')
+    parser.add_argument('--norm-project', dest='norm_project', default=None,
+        help='The RNAseq_Rx project, for parseing norm scale. eg: \
+        RNAseq_gene/wt.vs.mut for RNAseq_te, default: [None]')
     return parser
 
 
