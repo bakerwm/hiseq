@@ -601,15 +601,15 @@ class Demx2(object):
                         else:
                             # os.rename(q, q_new)
                             file_symlink(q, q_new)
-                    # read count
-                    t = os.path.join(bc_dir, 'read_count.toml')
-                    try:
-                        d = Config().load(t)
-                        n_undemx += d.get('undemx', 0)
-                        d.pop('undemx')
-                        q_size.update(d)
-                    except:
-                        log.warning('file not exists: {}'.format(t))
+                # read count file
+                t = os.path.join(bc_dir, 'read_count.toml')
+                try:
+                    d = Config().load(t)
+                    n_undemx += d.get('undemx', 0)
+                    d.pop('undemx')
+                    q_size.update(d)
+                except:
+                    log.warning('file not exists: {}'.format(t))
         # return q_size #
         self.bc_size = q_size
         self.n_undemx = n_undemx
