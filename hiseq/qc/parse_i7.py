@@ -110,16 +110,19 @@ def guess_adapter(fx):
                 d[k] = d.get(k, 0) + 1
     # sort d by values
     d = dict(sorted(d.items(), key=lambda x: x[1], reverse=True))
-    if max(d.values()) == 0:
-        print('warning: no adapters detected')
-        out = None
+    out = None
+    if len(d) > 0:
+        if max(d.values()) == 0:
+            log.warning('no adapters detected')
+        else:
+            m = []
+            for k,v in d.items():
+                m.append('{}:{:.1f}%'.format(k, v/n_max*100))
+                if v == max(d.values()):
+                    out = k # incase, top, equal, ...
+            print('{}: {} [{}]  {}'.format('Guess_adapter', out, '; '.join(m), fx))
     else:
-        m = []
-        for k,v in d.items():
-            m.append('{}:{:.1f}%'.format(k, v/n_max*100))
-            if v == max(d.values()):
-                out = k # incase, top, equal, ...
-        print('{}: {} [{}]  {}'.format('Guess_adapter', out, '; '.join(m), fx))
+        log.warning('no adapters detected')
     # output
     return out
         
@@ -335,13 +338,13 @@ class HiSeqP7(object):
                 out = fx1 + fx2 + fx3 + fx4
             elif os.path.isfile(fq):
                 fname = fq_name(fq, pe_fix=False)
-                if fname.endswith('_1'):
+                if fname.endswith('_1') and os.path.exists(fq):
                     out = [fq]
             else:
                 log.warning('illegal fq, str expect, got {}'.format(
                     type(fq).__name__))
         elif isinstance(fq, list):
-            out = [i for k in fq for i in k]
+            out = [i for k in fq for i in self.init_fq(k)]
         else:
             log.warning('illegal fq, str or list expect, got {}'.format(
                     type(fq).__name__))
@@ -362,8 +365,12 @@ class HiSeqP7(object):
 
 
     def run_multi(self, x):
-        with Pool(processes=self.parallel_jobs) as pool:
-            pool.map(self.run_single, x)
+        if self.parallel_jobs > 1 and len(x) > 1:
+            with Pool(processes=self.parallel_jobs) as pool:
+                pool.map(self.run_single, x)
+        else:
+            for i in x:
+                self.run_single(i)
 
     
     def report(self):
