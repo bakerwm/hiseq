@@ -21,6 +21,7 @@ from .utils.argsParser import *
 from .demx.sample_sheet import SampleSheet
 from .demx.demx import Demx, Demx2
 from .qc.fastqc import Fastqc
+from .qc.parse_i7 import HiSeqP7
 from .trim.trimmer import TrimRn
 from .align.alignment import Alignment
 from .atac.atac import Atac
@@ -65,6 +66,7 @@ class Hiseq(object):
         demx         Demultiplexing reads (P7, barcode) from single Lane
         demx2        Demultiplexing multi barcode files
         qc           quality control, fastqc
+        p7           Check the P7 of HiSeq library
         trim         trim adapters, low-quality bases, ...
         align        Align fastq/a files to reference genome
         quant        Count genes/features
@@ -139,6 +141,13 @@ class Hiseq(object):
         args = vars(args) # convert to dict
         Fastqc(**args).run()
 
+        
+    def p7(self):
+        parser = add_p7_args()
+        args = parser.parse_args(sys.argv[2:])
+        args = vars(args) # convert to dict
+        HiSeqP7(**args).run()
+        
 
     def trim(self):
         """

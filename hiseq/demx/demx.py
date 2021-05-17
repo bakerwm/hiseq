@@ -546,11 +546,13 @@ class Demx2(object):
             suffix = '_1.fq.gz' if is_r1 else '_2.fq.gz'
             prefix = fq_name(fq, pe_fix=True)
             ###################################################################
-            # Fix sample names:
+            # Fix sample names: !!!!
             # fix for MGI, Next_Ad2.1 <- Next_Ad2-1_raw
             # fix for MGI, Next-Ad2.1 <- Next-Ad2_1_raw
             prefix = re.sub('_raw$', '', prefix)
-            prefix = re.sub('Next.Ad', 'Next_Ad', prefix)
+            prefix = re.sub('TruSeq.Index', 'TruSeq_Index', prefix, flags=re.IGNORECASE)
+            prefix = re.sub('Next.Ad', 'Next_Ad', prefix, flags=re.IGNORECASE)
+            # prefix = re.sub('Next.Ad', 'Next_Ad', prefix)
             prefix = re.sub('Ad2[^0-9]', 'Ad2.', prefix)
             s_name = self.d_smp.get(prefix, None) # i7_index -> sample_name
             ###################################################################
@@ -599,15 +601,15 @@ class Demx2(object):
                         else:
                             # os.rename(q, q_new)
                             file_symlink(q, q_new)
-                    # read count
-                    t = os.path.join(bc_dir, 'read_count.toml')
-                    try:
-                        d = Config().load(t)
-                        n_undemx += d.get('undemx', 0)
-                        d.pop('undemx')
-                        q_size.update(d)
-                    except:
-                        log.warning('file not exists: {}'.format(t))
+                # read count file
+                t = os.path.join(bc_dir, 'read_count.toml')
+                try:
+                    d = Config().load(t)
+                    n_undemx += d.get('undemx', 0)
+                    d.pop('undemx')
+                    q_size.update(d)
+                except:
+                    log.warning('file not exists: {}'.format(t))
         # return q_size #
         self.bc_size = q_size
         self.n_undemx = n_undemx
