@@ -373,6 +373,9 @@ class RNAseqRn(object):
         args_local = RNAseqRnConfig(**self.__dict__)
         self = update_obj(self, args_local.__dict__, force=True)
         Toml(self.__dict__).to_toml(self.config_toml)
+        # update genome_size: 
+        if self.extra_index:
+            self.genome_size = AlignIndex(index=self.extra_index, aligner=self.aligner).index_size()
 
 
     def get_bam_list(self):
@@ -394,7 +397,6 @@ class RNAseqRn(object):
         Merge replicates, BAM
         """
         self.bam_list = self.get_bam_list()
-
         cmd = ' '.join([
             'samtools merge -',
             ' '.join(self.bam_list),
@@ -410,14 +412,54 @@ class RNAseqRn(object):
             except:
                 log.warning('merge_bam() failed.')
 
-        ## calculate norm scale
-        if file_exists(self.align_scale_txt):
-            with open(self.align_scale_txt) as r:
-                self.align_scale = eval(r.readline().strip())
-        else:
-            self.align_scale = self.cal_norm_scale(self.bam)
+    
+    def get_norm_scale(self):
+        """
+        Option-1: from mapped reads
+        Option-2: from another project, RNAseqRx_dir, with the same design;
+        for example:
+        norm TE by genome mapped reads        
+        """
+        try:
+            p = RNAseqReader(self.norm_project)
+            if p.hiseq_type.endswith('_rx'):
+                rn_list = p.get_rn_dir()
+                for rn in rn_list:
+                    if os.path.basename(rn) == self.smp_name:
+                        rn_dir = rn
+                        break
+                    else:
+                        rn_dir = None
+                # parse the scale txt
+                if isinstance(rn_dir, str):
+                    q = RNAseqReader(rn_dir)
+                    q_scale = q.args.get('align_scale_txt')
+                    with open(q_scale) as r:
+                        out = eval(r.readline().strip())
+                    # create symlink
+                    file_symlink(q_scale, self.align_scale_txt)
+            else:
+                out = None
+        except:
+            log.warning('could not read scale from project: {}'.format(self.norm_project))
+            log.warning('force norm by current project: {}'.format(self.project_dir))
+            out = None
+        if not isinstance(out, float):
+            try:
+                ## calculate norm scale
+                if file_exists(self.align_scale_txt):
+                    with open(self.align_scale_txt) as r:
+                        out = eval(r.readline().strip())
+                else:
+                    out = self.cal_norm_scale(self.bam)
+            except:
+                log.error('force scale=1, failed: {},'.format(self.align_scale_txt))
+                out = 1
+            # save to txt
             with open(self.align_scale_txt, 'wt') as w:
-                w.write('{:.4f}\n'.format(self.align_scale))
+                w.write('{:.4f}\n'.format(out))
+        # final
+        return out
                 
         
     def bam_to_bw(self, norm=1000000):
@@ -451,14 +493,12 @@ class RNAseqRn(object):
             '-ibam {}'.format(self.bam),
             '| sort -k1,1 -k2,2n > {}'.format(self.bg)
         ])
-
         if file_exists(self.bg) and not self.overwrite:
             log.info('bam_to_bg() skipped, file exists:{}'.format(self.bg))
         else:
             cmd_shell = self.bg_dir + '/cmd.sh'
             with open(cmd_shell, 'wt') as w:
                 w.write(cmd + '\n')
-
             try:
                 run_shell_cmd(cmd)
             except:
@@ -474,14 +514,12 @@ class RNAseqRn(object):
             '{}'.format(shutil.which('bedGraphToBigWig')),
             '{} {} {}'.format(self.bg, self.genome_size_file, self.bw)
         ])
-
         if file_exists(self.bw) and not self.overwrite:
             log.info('bg_to_bw() skipped, file exists:{}'.format(self.bw))
         else:
             cmd_shell = self.bw_dir + '/cmd.sh'
             with open(cmd_shell, 'wt') as w:
                 w.write(cmd + '\n')
-
             try:
                 run_shell_cmd(cmd)
             except:
@@ -499,13 +537,11 @@ class RNAseqRn(object):
         n_map = bam.getNumberOfAlignments()
         if is_pe:
             n_map = n_map/2
-
         if n_map > 0:
             n_scale = norm/n_map
         else:
             log.error('no mapped reads detected')
             n_scale = 1
-
         return n_scale
 
 
@@ -621,11 +657,13 @@ class RNAseqRn(object):
         """
         # run
         self.merge_bam()
-        if self.genome:
-            self.bam_to_bw()
-        else:
-            self.bam_to_bg()
-            self.bg_to_bw()
+        self.align_scale = self.get_norm_scale() # return
+        self.bam_to_bw()
+#         if self.genome:
+#             self.bam_to_bw() # update self.align_scale
+#         else:
+#             self.bam_to_bg()
+#             self.bg_to_bw()
         self.qc_bam_cor()
         self.qc_genebody_enrich()
         self.report()
@@ -698,6 +736,9 @@ class RNAseqR1(object):
         obj_local = RNAseqR1Config(**self.__dict__)
         self = update_obj(self, obj_local.__dict__, force=True)
         Toml(self.__dict__).to_toml(self.config_toml)
+        # update genome_size: 
+        if self.extra_index:
+            self.genome_size = AlignIndex(index=self.extra_index, aligner=self.aligner).index_size()
 
 
     # main pipeline #
@@ -864,11 +905,60 @@ class RNAseqR1(object):
         if len(tmp1) > 0:
             file_symlink(tmp1[0], self.align_toml)
 
-        self.align_scale = self.cal_norm_scale(self.bam)
-        with open(self.align_scale_txt, 'wt') as w:
-            w.write('{:.4f}\n'.format(self.align_scale))
+#         self.align_scale = self.cal_norm_scale(self.bam)
+#         with open(self.align_scale_txt, 'wt') as w:
+#             w.write('{:.4f}\n'.format(self.align_scale))
+        self.align_scale = self.get_norm_scale()
 
 
+    def get_norm_scale(self):
+        """
+        Option-1: from mapped reads
+        Option-2: from another project, RNAseqRx_dir, with the same design;
+        for example:
+        norm TE by genome mapped reads        
+        """
+        try:
+            p = RNAseqReader(self.norm_project)
+            if p.hiseq_type.endswith('_rx'):
+                r1_list = p.get_r1_dir()
+                for r1 in r1_list:
+                    if os.path.basename(r1) == self.smp_name:
+                        r1_dir = r1
+                        break
+                    else:
+                        r1_dir = None
+                # parse the scale txt
+                if isinstance(r1_dir, str):
+                    q = RNAseqReader(r1_dir)
+                    q_scale = q.args.get('align_scale_txt')
+                    with open(q_scale) as r:
+                        out = eval(r.readline().strip())
+                    # link to file
+                    file_symlink(q_scale, self.align_scale_txt)
+            else:
+                out = None
+        except:
+            log.warning('could not read scale from project: {}'.format(self.norm_project))
+            log.warning('force norm by current project: {}'.format(self.project_dir))
+            out = None
+        if not isinstance(out, float):
+            try:
+                ## calculate norm scale
+                if file_exists(self.align_scale_txt):
+                    with open(self.align_scale_txt) as r:
+                        out = eval(r.readline().strip())
+                else:
+                    out = self.cal_norm_scale(self.bam)
+            except:
+                log.error('force scale=1, failed: {},'.format(self.align_scale_txt))
+                out = 1
+            with open(self.align_scale_txt, 'wt') as w:
+                w.write('{:.4f}\n'.format(out))
+        # final
+        return out
+            
+            
     def get_bam(self, x):
         """
         Get the align bam file, from x dicectory
@@ -1142,11 +1232,12 @@ class RNAseqR1(object):
             self.align_rRNA()
 
         self.align_genome()
-        if self.genome:
-            self.bam_to_bw()
-        else:
-            self.bam_to_bg()
-            self.bg_to_bw()
+        self.bam_to_bw()
+#         if self.genome:
+#             self.bam_to_bw()
+#         else:
+#             self.bam_to_bg()
+#             self.bg_to_bw()
 
         # count reads
         if file_exists(self.count_sens) and not self.overwrite:
@@ -1282,6 +1373,7 @@ class RNAseqConfig(object):
             'cut_to_length': 0,
             'recursive': False,
             'extra_para': None, # for alignment
+            'norm_project': None,
         }
         self = update_obj(self, args_init, force=False)
 
@@ -1408,6 +1500,7 @@ class RNAseqRxConfig(object):
             'wildtype': None,
             'wildtype_fq2': None,
             'outdir': None,
+            'norm_project': None,
         }
         # args_init = {
         #     'outdir': None,
@@ -1610,7 +1703,8 @@ class RNAseqRnConfig(object):
             'fq1': None,
             'fq2': None,
             'outdir': None,
-            'smp_name': None
+            'smp_name': None,
+            'norm_project': None,
         }
 
         # args_init = {
@@ -1797,7 +1891,8 @@ class RNAseqR1Config(object):
             'trimmed': False,
             'cut_to_length': 0,
             'recursive': False,
-            'extra_para': None
+            'extra_para': None,
+            'norm_project': None,
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'rnaseq_r1' #
