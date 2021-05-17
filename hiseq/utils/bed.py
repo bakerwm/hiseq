@@ -1,29 +1,104 @@
-"""Quality control for HiSeq data
-
-- Correlation: 500 window, pearson correlation  
-- peaks, overlap  
-- IDR, peaks (ChIP-seq, ATAC-seq)  
-...
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
 """
+Function, processing BED files
 
+1. convert formats between: GTF, GFF, 
+"""
 
 import os
+import pybedtools
+from hiseq.utils.helper import *
 import sys
 from itertools import count
 
-####
-## code from bx-python package
-####
 
-class TableReader(object):
+
+
+
+
+def bed2gtf(file_in, file_out):
+    """Convert BED to GTF
+    chrom chromStart chromEnd name score strand
     """
-    Reader for tab data
+    with open(file_in) as r, open(file_out, 'wt') as w:
+        for line in r:
+            fields = line.strip().split('\t')
+            start = int(fields[1]) + 1
+            w.write('\t'.join([
+                fields[0],
+                'BED_file',
+                'gene',
+                str(start),
+                fields[2],
+                '.',
+                fields[5],
+                '.',
+                'gene_id "{}"; gene_name "{}"'.format(fields[3], fields[3])
+                ]) + '\n')
+    return file_out
+
+
+
+def bed_to_saf(file_in, file_out):
+    """Convert BED to SAF format, for featureCounts
+    GeneID Chr Start End Strand
+
+    see: https://www.biostars.org/p/228636/#319624
+    """
+    if file_exists(file_out) and not self.overwrite:
+        log.info('bed_to_saf() skipped, file exists: {}'.format(file_out))
+    else:
+        try:
+            with open(file_in, 'rt') as r, open(file_out, 'wt') as w:
+                for line in r:
+                    tabs = line.strip().split('\t')
+                    chr, start, end = tabs[:3]
+                    # strand
+                    strand = '.'
+                    if len(tabs) > 5:
+                        s = tabs[5]
+                        if s in ['+', '-', '.']:
+                            strand = s
+                    # id
+                    if len(tabs) > 3:
+                        name = os.path.basename(tabs[3])
+                    else:
+                        name = '_'.join([chr, start, end, strand])
+                    # output
+                    w.write('\t'.join([name, chr, start, end, strand])+'\n')
+        except:
+            log.error('bed_to_saf() failed, see: {}'.format(file_out))
+    return file_out
+
+
+
+
+###############################################################################
+## code from bx-python package
+## 
+## To-Do, not finish 
+###############################################################################
+class TableReader(object):
+    """Reader for tab data
+    from bx-python package
+    
+    Parameters
+    ----------
+    input : str 
+    
+    return_header : bool
+    
+    return_comments : bool
+    
+    force_header : None
+    
+    comment_lines_startswith : str
     """
     def __init__(self, input, return_header=True, return_comments=True,
         force_header=None, comment_lines_startswith=['#']):
         self.input = input
-
         # options
         self.return_comments = return_comments
         self.return_header = return_header
@@ -70,7 +145,6 @@ class TableReader(object):
             raise err
 
 
-
     def parse_header(self, line):
         if line.startswith('#'):
             fields = line.lstrip('#').split('\t')
@@ -89,10 +163,8 @@ class TableReader(object):
 
 
 class TableRow(object):
+    """A row of a table
     """
-    A row of a table
-    """
-
     def __init__(self, reader, fields):
         self.reader = reader
         self.fields = fields
@@ -172,10 +244,8 @@ class ParseError(Exception):
 
 
 class Bed(object):
-
     def __init__(self, fields, reader=None):
-        """
-        Convertions for Bed file
+        """Convertions for Bed file
         """
         if not reader is None:
             TableRow.__init__(self, reader, fields)
@@ -348,5 +418,4 @@ class BedReader(TableReader):
         if self.discard_first_column:
             fields.pop(0)
         return Bed(fields, self) #self as argument reader
-
 
