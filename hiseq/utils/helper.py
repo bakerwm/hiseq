@@ -8,12 +8,13 @@ file modification,
 """
 
 
-from bam import *
-from bed import *
-from download import *
-from fastx import *
-from featurecounts import *
-from file imort *
+from .bam import *
+from .bed import *
+from .download import *
+from .fastx import *
+from .featurecounts import *
+from .file import *
+from .utils import *
 
 
 

@@ -8,6 +8,7 @@ attribution of the vectors
 
 
 import os
+import sys
 import logging
 from itertools import combinations
 

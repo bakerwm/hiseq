@@ -11,8 +11,8 @@ import os
 import pandas as pd
 import pybedtools
 from hiseq.utils.helper import *
-from bed import *
-from bam import *
+from .bed import *
+from .bam import *
 
 
 def read_fc_txt(x, fix_name=False):
