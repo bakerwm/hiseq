@@ -16,7 +16,7 @@ from xopen import xopen
 import pyfastx
 import collections # Fastx().collapse()
 from hiseq.utils.helper import *
-
+from hiseq.utils.utils import update_obj
 
 class Fastx(object):
     """

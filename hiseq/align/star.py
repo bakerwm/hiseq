@@ -5,25 +5,24 @@ Align reads to index, using STAR
 
 Basic usage: 
 
-1. SE
-bowtie2 -S -x index in.fq > out.sam 2> out.log
-
-2. PE
-bowtie2 -S -x index -1 r1.fq -2 r2.fq > out.sam 2> out.log
+STAR 
 """
 
 import os
 import sys
 import re
+import shutil
 import argparse
 from Levenshtein import distance
-from hiseq.utils.helper import *
-from align_index import *
-from utils import * # overwrite: check_file
+from hiseq.utils.seq import Fastx
+from hiseq.utils.utils import log, update_obj, Config, run_shell_cmd
+from hiseq.utils.file import check_fx, check_file, check_path, file_abspath, file_exists, fx_name, symlink_file, remove_file
+from hiseq.align.align_index import AlignIndex
+from hiseq.align.utils import check_fx_args, AlignReader
 
 
 def parse_star(x):
-    """Wrapper bowtie2 log
+    """Wrapper STAR log
     for PE: only proper paired reads
 
     *final.Log.out, (changed to *.log, in this script)
@@ -155,7 +154,7 @@ class StarConfig(object):
         self.small_genome = AlignIndex(
             self.index, self.aligner).index_size() < 10000000
         if self.smp_name is None:
-            self.smp_name = fq_name(self.fq1, pe_fix=True)
+            self.smp_name = fx_name(self.fq1, fix_pe=True)
         # update files
         self.init_files()
         if self.n_map < 2:
@@ -205,18 +204,12 @@ class StarConfig(object):
         }
         self = update_obj(self, default_files, force=True)
         self.align_prefix = prefix
-        check_path(self.project_dir)
+        check_path(self.project_dir, create_dirs=True)
 
 
 class Star(object):
     """Alignment, using STAR
     Single index, SE/PE
-
-    1. SE
-    bowtie2 -S -x index in.fq > out.sam 2> out.log
-
-    2. PE
-    bowtie2 -S -x index -1 r1.fq -2 r2.fq > out.sam 2> out.log
     """
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
@@ -304,13 +297,13 @@ class Star(object):
         ## default output of STAR
         ## bam, log, unmap files
         # new files
-        file_symlink(self.bam_raw, self.bam)
-        file_symlink(self.log_raw, self.align_log)
+        symlink_file(self.bam_raw, self.bam)
+        symlink_file(self.log_raw, self.align_log)
         if self.is_paired:
-            file_symlink(self.unmap1_raw, self.unmap1)
-            file_symlink(self.unmap2_raw, self.unmap2)
+            symlink_file(self.unmap1_raw, self.unmap1)
+            symlink_file(self.unmap2_raw, self.unmap2)
         else:
-            file_symlink(self.unmap1_raw, self.unmap1)
+            symlink_file(self.unmap1_raw, self.unmap1)
             self.unmap2 = None
         # remove old files
         del_list = []
@@ -318,7 +311,7 @@ class Star(object):
             del_list.extend([
                 self.unmap1, self.unmap2, self.unmap,
                 self.unmap1_raw, self.unmap2_raw])
-        file_remove(del_list, ask=False)
+        remove_file(del_list, ask=False)
 
 
     def run(self):
@@ -359,8 +352,8 @@ def get_args():
         '$ python star.py -1 f1.fq -x genome -o output -u -in 01.genome',
     ])    
     parser = argparse.ArgumentParser(
-        prog='run_bowtie',
-        description='run bowtie program',
+        prog='run_star',
+        description='run STAR program',
         epilog=example,
         formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('-1', '--fq1', required=True,
@@ -368,7 +361,7 @@ def get_args():
     parser.add_argument('-2', '--fq2', required=False, default=None,
                         help='Fasta/q file, read2 of PE, or SE read, optional')
     parser.add_argument('-x', '--index', required=True,
-                        help='The alignment index for bowtie')
+                        help='The alignment index for STAR')
     parser.add_argument('-o', '--outdir', default=None,
                         help='Directory saving results, default: [cwd]')
     parser.add_argument('-in', '--index-name', default=None, dest='index_name',
@@ -396,8 +389,10 @@ def main():
     args = vars(get_args().parse_args())
     # update: keep_tmp, keep_unmap
     args['keep_unmap'] = args['keep_tmp']
-    Bowtie(**args)
+    Star(**args).run()
 
 
 if __name__ == '__main__':
     main()
+    
+    

@@ -39,17 +39,18 @@ import pandas as pd
 from multiprocessing import Pool
 from Levenshtein import distance
 from hiseq.utils.seq import Fastx
-from hiseq.utils.helper import * # all help functions
-from bowtie import Bowtie
-from bowtie2 import Bowtie2
-from star import Star
-from utils import *
-from align_index import *
-
+from hiseq.utils.utils import update_obj, Config, get_date
+from hiseq.utils.file import check_path, file_abspath, file_prefix
+from hiseq.align.bowtie import Bowtie
+from hiseq.align.bowtie2 import Bowtie2
+from hiseq.align.star import Star
+from hiseq.align.salmon import Salmon
+from hiseq.align.utils import check_fx_args, get_args
+from hiseq.align.align_index import AlignIndex, check_index_args
 
 
 class Align(object):
-    """The main port for alignment/aligner
+    """The main port: fx: N; index: N
     support: multiple fx, multiple index
 
     force to list, even if `None`
@@ -64,15 +65,32 @@ class Align(object):
 
 
     def run(self):
-        """
-        See AlignRx()
-        """
+        msg = '\n'.join([
+            '-'*80,
+            '{:>14s} : {}'.format('Date', get_date()),
+            '{:>14s} : {}'.format('program', 'Align'),
+            '{:>14s} : {}'.format('config', self.config_toml),
+            '{:>14s} : {}'.format('aligner', self.aligner),
+            '{:>14s} : {}'.format('genome', self.genome),
+            '{:>14s} : {}'.format('index_list', self.index_list),
+            '{:>14s} : {}'.format('extra_index', self.extra_index),
+            '{:>14s} : {}'.format('fq1', self.fq1),
+            '{:>14s} : {}'.format('fq2', self.fq2),
+            '{:>14s} : {}'.format('outdir', self.outdir),
+            '{:>14s} : {}'.format('threads', self.threads),
+            '{:>14s} : {}'.format('parallel_jobs', self.parallel_jobs),
+            '{:>14s} : {}'.format('to_rRNA', self.to_rRNA),
+            '{:>14s} : {}'.format('to_chrM', self.to_chrM),
+            '{:>14s} : {}'.format('to_MT_trRNA', self.to_MT_trRNA),
+            '{:>14s} : {}'.format('to_chrM', self.to_chrM),
+            '-'*80,
+        ])
+        print(msg)
         AlignRx(**self.__dict__).run()
 
 
 class AlignRx(object):
-    """Alignment for multi fx/fx-pair, multiple index
-    fq=n, index=n
+    """Alignment: fx: N; index: N (same as: Align)
 
     Align to each index, one-by-one; 
     Align fq files in parallel, if specified;
@@ -105,8 +123,7 @@ class AlignRx(object):
 
 
 class AlignRn(object):
-    """Alignment for single fx/fx-pair, multiple index
-    fq=1, index=n
+    """Alignment: fx: 1, index: N
 
     Align to each index, one-by-one, not need: parallel
     """
@@ -123,7 +140,7 @@ class AlignRn(object):
         self = update_obj(self, args_local.__dict__, force=True)
         self.config_dir = os.path.join(self.outdir, self.smp_name, 'config')
         self.config_toml = os.path.join(self.config_dir, 'config.toml')
-        check_path(self.config_dir)
+        check_path(self.config_dir, create_dirs=True)
         Config().dump(self.__dict__, self.config_toml)
 
 
@@ -151,21 +168,13 @@ class AlignRn(object):
 
 
 class AlignR1(object):
-    """Alignment for single fx/fx-pair, single index
-    fq=1, index=n
-
+    """Alignment: fx: 1; index: 1
+    
     return: bam, unmap-1, unmap-2
     save: log, stat, ...
     """
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
-        self.init_args()
-
-
-    def init_args(self):
-        """
-        global config
-        """
         args_local = AlignR1Config(**self.__dict__) # update
         self = update_obj(self, args_local.__dict__, force=True)
 
@@ -175,6 +184,7 @@ class AlignR1(object):
         bowtie
         bowtie2
         STAR
+        salmon
         ...
         """
         aligner = {
@@ -184,7 +194,7 @@ class AlignR1(object):
 #             'bwa': BWA,
 #             'hisat2': Hisat2,
 #             'kallisto': Kallisto,
-#             'salmon': Salmon
+            'salmon': Salmon
         }
         port = aligner.get(self.aligner.lower(), None)
         if port is None:
@@ -195,9 +205,8 @@ class AlignR1(object):
 
 
 class AlignConfig(object):
-    """The main port for alignment/aligner
-    support: multiple fx, multiple index
-
+    """The main port: fx: N; index: N
+    
     force, even if `None`
     fq1: [fq1]
     fq2: None or list
@@ -208,9 +217,9 @@ class AlignConfig(object):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
         self.supported_aligner = [
-            'bowtie', 'bowtie2', 'hisat2', 'bwa', 'star',
+            'bowtie', 'bowtie2', 'hisat2', 'bwa', 'star', 'salmon'
             ]
-        if self.aligner not in self.supported_aligner:
+        if self.aligner.lower() not in self.supported_aligner:
             raise ValueError('aligner={}, unknown'.format(self.aligner))
 
 
@@ -220,12 +229,20 @@ class AlignConfig(object):
         see: check_index_args for default arguments
         """
         args_init = {
-            'aligner': None,
+            'aligner': 'bowtie',
             'fq1': None,
             'fq2': None,
             'outdir': None,
             'smp_name': None,
-            'index_name': None,
+            'index_list': None,
+            'genome': None,
+            'spikein': None,
+            'genome_index': None,
+            'spikein_index': None,
+            'extra_index': None,
+            'to_rRNA': False,
+            'to_chrM': False,
+            'to_MT_trRNA': False,
             'threads': 1,
             'parallel_jobs': 1,
             'overwrite': False,
@@ -256,7 +273,7 @@ class AlignConfig(object):
         # force fq2 to list
         if isinstance(self.fq2, str):
             self.fq2 = [self.fq2]
-        if not check_fx_args(self.fq1, self.fq2):
+        if not check_fx_args(self.fq1, self.fq2, check_empty=True):
             raise ValueError('fq1, fq2 not valid')
         self.fq1 = file_abspath(self.fq1)
         self.fq2 = file_abspath(self.fq2)
@@ -272,7 +289,6 @@ class AlignConfig(object):
     
 
     def init_index(self):
-        # alignment index, name
         self.index_list = check_index_args(**self.__dict__)
         if len(self.index_list) == 0:
             raise ValueError('no index found')
@@ -288,8 +304,9 @@ class AlignConfig(object):
 
 
 class AlignRnConfig(object):
-    """The main port for alignment/aligner
-    support: multiple fx, multiple index
+    """The main port: fx: 1; index: N
+    index_list
+    index_name
 
     force, even if `None`
     *fq1: str
@@ -320,7 +337,7 @@ class AlignRnConfig(object):
 
 
     def init_fx(self):
-        """Force fx to list
+        """
         fq1 : str required. 
         fq2 : None or str, optional, None
         smp_name ： str
@@ -332,7 +349,8 @@ class AlignRnConfig(object):
             if check_fx_args(self.fq1, self.fq2):
                 flag_err = False
         if flag_err:
-            raise ValueError('fq1, fq2 not valid')
+            raise ValueError('fq1, fq2 not valid, str expect, got {}'.format(
+            type(self.fq1).__name__))
         self.fq1 = file_abspath(self.fq1)
         self.fq2 = file_abspath(self.fq2)
         # auto: sample names
@@ -346,10 +364,13 @@ class AlignRnConfig(object):
         index_name: list
         """
         flag_err = True
+        # update index_name
+        if self.index_name is None:
+            self.index_name = [AlignIndex(i, self.aligner).index_name() \
+                               for i in self.index_list]
         if isinstance(self.index_list, list) and \
             isinstance(self.index_name, list):
-            if len(self.index_list) == len(self.index_name):
-                flag_err = False
+            flag_err = not len(self.index_list) == len(self.index_name)
         if flag_err:
             raise ValueError('index_list, index_name, not valid')
 
@@ -360,11 +381,11 @@ class AlignRnConfig(object):
         """
         self.config_dir = os.path.join(self.outdir, self.smp_name, 'config')
         self.config_toml = os.pathI(self.config_dir, 'config.toml')
-        check_path(self.config_dir)
+        check_path(self.config_dir, create_dirs=True)
 
 
 class AlignR1Config(object):
-    """For single fq, single index
+    """The main port: fx: 1; index: 1
     check arguments by Aligner()
     """
     def __init__(self, **kwargs):
@@ -420,6 +441,15 @@ class AlignR1Config(object):
             not isinstance(self.index_name, str):
             raise ValueError('index_list, index_name, not valid: {}, {}'.format(
                 self.index_list, self.index_name))
+        flag_err = True
+        # update index_name
+        if isinstance(self.index, str):
+            flag_err = not AlignIndex(self.index, self.aligner).is_valid()
+            if self.index_name is None:
+                self.index_name = AlignIndex(self.index).index_name()
+        if flag_err:
+            raise ValueError('index_list, index_name, not valid')
+
 
 def main():
     args = vars(get_args().parse_args())
@@ -430,7 +460,9 @@ def main():
 
 if __name__ == '__main__':
     main()
-            
+
+
+
 """The port for alignment
 support: multi fx files, multi indexes
 

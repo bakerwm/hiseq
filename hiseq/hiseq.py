@@ -24,6 +24,7 @@ from .qc.fastqc import Fastqc
 from .qc.parse_i7 import HiSeqP7
 from .trim.trimmer import TrimRn
 from .align.alignment import Alignment
+from .align.align import Align
 from .atac.atac import Atac
 from .rnaseq.rnaseq import RNAseq
 # from .rnaseq.rnaseq_pipe import RNAseqPipe
@@ -209,7 +210,8 @@ class Hiseq(object):
         args = vars(args) # convert to dict
         # print('Running hiseq align, aligner={}, fq1={}, out={}'.format(
         #     args.aligner, args.fq1, args.out))
-        Alignment(**args).run()
+        # Alignment(**args).run()
+        Align(**args).run()
 
 
     def quant(self):

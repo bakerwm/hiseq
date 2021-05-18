@@ -14,11 +14,15 @@ bowtie -S -x index -1 r1.fq -2 r2.fq > out.sam 2> out.log
 
 import os
 import sys
+import shutil
 import argparse
 from Levenshtein import distance
-from hiseq.utils.helper import *
-from align_index import *
-from utils import * # overwrite: check_file
+from hiseq.utils.seq import Fastx
+from hiseq.utils.utils import update_obj, Config, log, run_shell_cmd
+from hiseq.utils.file import check_fx, check_file, check_path, file_abspath, file_exists, fx_name, symlink_file, copy_file, remove_file
+from hiseq.align.align_index import AlignIndex
+from hiseq.align.utils import check_fx_args, AlignReader
+
 
 
 def parse_bowtie(x):
@@ -135,7 +139,7 @@ class BowtieConfig(object):
             self.index_name = AlignIndex(self.index).index_name()
         # sample
         if self.smp_name is None:
-            self.smp_name = fq_name(self.fq1, pe_fix=True)
+            self.smp_name = fx_name(self.fq1, fix_pe=True)
         # update files
         self.init_files()
 
@@ -153,6 +157,8 @@ class BowtieConfig(object):
         if not check_fx_args(self.fq1, self.fq2):
             raise ValueError('--fq1, --fq2 faild, not properly paired')
         # format
+        self.fq1 = file_abspath(self.fq1)
+        self.fq2 = file_abspath(self.fq2)
         self.fx_format = Fastx(self.fq1).format # fasta/q
         self.is_paired = file_exists(self.fq2) # fq2
         
@@ -179,7 +185,7 @@ class BowtieConfig(object):
             'align_flagstat': prefix + '.flagstat',
         }
         self = update_obj(self, default_files, force=True)
-        check_path(self.project_dir)
+        check_path(self.project_dir, create_dirs=True)
 
 
 class Bowtie(object):
@@ -190,7 +196,7 @@ class Bowtie(object):
     bowtie -S -x index in.fq > out.sam 2> out.log
 
     2. PE
-    bowtie2 -S -x index -1 r1.fq -2 r2.fq > out.sam 2> out.log
+    bowtie -S -x index -1 r1.fq -2 r2.fq > out.sam 2> out.log
     """
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
@@ -220,7 +226,7 @@ class Bowtie(object):
         # catch errors
         Warning: Exhausted best-first chunk memory   
 
-        1. set "-X 1000" or more, for large insert, or use bowtie2 
+        1. set "-X 1000" or more, for large insert, or use bowtie 
         2. set '--chunkmbs 200' or more, default: 64
         """
         if self.n_map < 1:
@@ -273,8 +279,8 @@ class Bowtie(object):
                 log.error('Bowtie() failed, check {}'.format(self.align_log))
         # rename unmap files, unmap_1.fastq -> unmap.1.fastq
         if self.is_paired:
-            file_symlink(self.unmap1_tmp, self.unmap1)
-            file_symlink(self.unmap2_tmp, self.unmap2)
+            symlink_file(self.unmap1_tmp, self.unmap1)
+            symlink_file(self.unmap2_tmp, self.unmap2)
         else:
             self.unmap1, self.unmap2 = (self.unmap, None)
         # log
@@ -291,7 +297,7 @@ class Bowtie(object):
             self.unmap
             ]
         if not self.keep_unmap:
-            file_remove(del_list, ask=False)
+            remove_file(del_list, ask=False)
         return (self.bam, self.unmap1, self.unmap2)
 
 

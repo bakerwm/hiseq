@@ -14,6 +14,7 @@ import pandas as pd
 from xopen import xopen
 import collections # Fastx().collapse()
 from hiseq.utils.helper import *
+from .utils import update_obj
 
 
 class Fastx(object):

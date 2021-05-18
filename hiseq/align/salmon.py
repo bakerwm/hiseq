@@ -18,11 +18,15 @@ txmeta()
 import os
 import sys
 import re
+import shutil
+import pathlib
 import argparse
 from Levenshtein import distance
-from hiseq.utils.helper import *
-from align_index import *
-from utils import * # overwrite: check_file
+from hiseq.utils.seq import Fastx
+from hiseq.utils.utils import log, update_obj, Config, run_shell_cmd
+from hiseq.utils.file import check_fx, check_file, check_path, file_abspath, file_exists, fx_name
+from hiseq.align.align_index import AlignIndex
+from hiseq.align.utils import check_fx_args
 
 
 def parse_salmon(x):
@@ -47,10 +51,8 @@ def parse_salmon(x):
     if check_file(x, check_empty=True):
         with open(x) as r:
             for line in r:
-                if not re.match('[0-9]+', line):
-                    continue
-                p1 = re.search(' (\d+) fragments werre mapped')
-                p2 = re.search('Observed (\d+) total fragments')
+                p1 = re.search('(\d+) fragments were mapped', line)
+                p2 = re.search('Observed (\d+) total fragments', line)
                 if p1:
                     mapped = eval(p1.group(1))
                 elif p2:
@@ -105,7 +107,7 @@ class SalmonConfig(object):
             self.index_name = AlignIndex(self.index).index_name()
         # sample
         if self.smp_name is None:
-            self.smp_name = fq_name(self.fq1, pe_fix=True)
+            self.smp_name = fx_name(self.fq1, fix_pe=True)
         # update files
         self.init_files()
 
@@ -125,6 +127,8 @@ class SalmonConfig(object):
         # format
         self.fx_format = Fastx(self.fq1).format # fasta/q
         self.is_paired = file_exists(self.fq2) # fq2
+        self.fq1 = file_abspath(self.fq1)
+        self.fq2 = file_abspath(self.fq2)
 
 
     def init_files(self):
@@ -143,12 +147,13 @@ class SalmonConfig(object):
             'unmap1': prefix + '.unmap.1.' + self.fx_format, # 
             'unmap2': prefix + '.unmap.2.' + self.fx_format, #
             'align_log': os.path.join(self.project_dir, 'logs', 'salmon_quant.log'),
+            'run_log': os.path.join(self.project_dir, 'run.log'),
             'align_stat': prefix + '.align.stat',
             'align_toml': prefix + '.align.toml',
             'align_flagstat': prefix + '.flagstat',
         }
         self = update_obj(self, default_files, force=True)
-        check_path(self.project_dir)
+        check_path(self.project_dir, create_dirs=True)
 
 
 class Salmon(object):
@@ -168,13 +173,13 @@ class Salmon(object):
     def get_cmd(self):
         """
         Example:
-        salmon quant -i $index -l A -p 8 --gcBias -o ${outdir}/$prefix -1 $r1 -2 $r2
+        salmon quant -i $index --gcBias -l A -p 8 -o ${outdir}/$prefix -1 $r1 -2 $r2
         """
         # fq 
         cmd_fx = '-1 {} -2 {}'.format(self.fq1, self.fq2) if self.fq2 else '-r {}'.format(self.fq1)
         self.cmd = ' '.join([
-            '{}'.format(shutil.which('salmon')),
-            '--gcBias',
+            '{} quant'.format(shutil.which('salmon')),
+            '--gcBias -l A',
             '-p {}'.format(self.threads),
             '-i {}'.format(self.index),
             '-o {}'.format(self.project_dir),
@@ -198,11 +203,10 @@ class Salmon(object):
         df = parse_salmon(self.align_log)
         df.update({
             'name': self.smp_name,
-            'index': self.index_name,
-            'unique_only': self.unique_only,
+            'index': self.index_name
             })
         Config().dump(df, self.align_toml)
-        return self.quant_sf
+        return (self.quant_sf, None, None) # bam, unmap1, unmap2
 
 
 def get_args():
@@ -238,7 +242,7 @@ def get_args():
 
 def main():
     args = vars(get_args().parse_args())
-    Salmon(**args)
+    Salmon(**args).run()
 
 
 if __name__ == '__main__':

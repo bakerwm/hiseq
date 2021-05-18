@@ -59,7 +59,7 @@ def in_dict( ):         -> del
 def in_attr( ):         -> del
 def args_checker( ):    -> Config()
 def args_logger( ):     -> Config()
-def symlink( ):         -> symlink_file()
+def 690( ):         -> symlink_file()
 def merge_names(x):
 """
 
@@ -71,6 +71,7 @@ import logging
 import fnmatch
 import binascii
 import subprocess
+import pyfastx
 from xopen import xopen
 from hiseq.utils.seq import Fastx
 
@@ -100,7 +101,7 @@ def check_fx(fx, **kwargs):
         
     show_error : bool
         Display the error message
-    """
+    """   
     show_error = kwargs.get('show_error', False)
     out = False
     if isinstance(fx, str):
@@ -422,7 +423,7 @@ def remove_file(x, **kwargs):
         if show_log:
             log.info('rm:{:3s}\tis_file:{}\t{:3s}'.format(rm_tag, file_tag, x))
     elif isinstance(x, list):
-        [remove_file(x, **kwargs) for i in x]
+        [remove_file(i, **kwargs) for i in x]
     elif isinstance(x, dict):
         for k,v in x.items:
             if isinstance(v, str) or isinstance(v, list):
@@ -687,7 +688,7 @@ def file_abspath(x):
     x : str,list
         Path to a file, or list of files
     """
-    if file is None:
+    if x is None:
         out = None
     elif isinstance(x, str):
         out = os.path.abspath(x)

@@ -6,12 +6,20 @@ check fastq/index, arguments, ...
 file existence 
 arguments 
 
+Including functions/classes:
+
+AlignReader
+check_fx_args
+get_args # for Align
 """
+import os
+import sys
 import logging
 import argparse
-import pyfastx
-from hiseq.utils.seq import Fastx
-from hiseq.utils.helper import *
+import hiseq
+from hiseq.utils.helper import log
+from hiseq.utils.utils import Config, update_obj
+from hiseq.utils.file import check_file, check_fx, check_fx_paired, file_exists
 
 
 logging.basicConfig(
@@ -20,6 +28,26 @@ logging.basicConfig(
     stream=sys.stdout)
 log = logging.getLogger(__name__)
 log.setLevel('INFO')
+
+
+
+
+def default_values(x):
+    """
+    load default values, saved in package file, in toml format
+    hiseq/bin/config.toml
+    
+    supported_genomes:
+    supported_aligner:
+    """
+    pkg_dir = os.path.dirname(hiseq.__file__)
+    f = os.path.join(pkg_dir, 'bin', 'config.toml')
+    if file_exists(f):
+        df = Config().load(f)
+        out = df.get(x, None)
+    else:
+        out = None
+    return out
 
 
 class AlignReader(object):
@@ -142,107 +170,108 @@ def check_fx_args(fq1, fq2=None, **kwargs):
         log.error('fq1 expect str or list, got {}'.format(
             type(fq1).__name__))
         out = False
-    return out
+    return out # (fq1, fq2) if out else None
 
 
-# fq files
-def check_fx(fx, **kwargs):
-    """Check the fastq/a files
-    1. file exist
-    2. fq1 required
-    3. fq type: fasta/q
-    """
-    kwargs['check_empty'] = kwargs.get('check_empty', True)
-    kwargs['show_error'] = kwargs.get('show_error', False)
-    if isinstance(fx, str):
-        if check_file(fx, **kwargs):
-            try:
-                fx_type = Fastx(fx).format # fasta/q
-                out = fx_type in ['fasta', 'fastq']
-            except ValueError as err:
-                log.info('Failed to read file, with error: {}'.format(err))
-                out = False
-#             finally:
-#                 log.info('check_fx() ...')            
-        else:
-            if kwargs['show_error']:
-                log.error('fx failed, {}'.format(fx))
-            out = False
-    else:
-        out = False
-    return out
+## fq files: deprecated: by hiseq.utils.file.check_fx()
+# def check_fx(fx, **kwargs):
+#     """Check the fastq/a files
+#     1. file exist
+#     2. fq1 required
+#     3. fq type: fasta/q
+#     """
+#     kwargs['check_empty'] = kwargs.get('check_empty', True)
+#     kwargs['show_error'] = kwargs.get('show_error', False)
+#     if isinstance(fx, str):
+#         if check_file(fx, **kwargs):
+#             try:
+#                 fx_type = Fastx(fx).format # fasta/q
+#                 out = fx_type in ['fasta', 'fastq']
+#             except ValueError as err:
+#                 log.info('Failed to read file, with error: {}'.format(err))
+#                 out = False
+# #             finally:
+# #                 log.info('check_fx() ...')            
+#         else:
+#             if kwargs['show_error']:
+#                 log.error('fx failed, {}'.format(fx))
+#             out = False
+#     else:
+#         out = False
+#     return out
 
 
-def check_fx_paired(fq1, fq2, **kwargs):
-    """Check the fq1 and fq2 are paired or not
-    the name of fq1, fq2 are the same
+## deprecated: by hiseq.utils.file.check_fx_paired()
+# def check_fx_paired(fq1, fq2, **kwargs):
+#     """Check the fq1 and fq2 are paired or not
+#     the name of fq1, fq2 are the same
 
-    fq1: @the-name/1
-    fq2: @the-name/2
+#     fq1: @the-name/1
+#     fq2: @the-name/2
 
-    scan the first read from the two files
-    """
-    if isinstance(fq1, str) and isinstance(fq2, str):
-        if check_fx(fq1, **kwargs) and check_fx(fq2, **kwargs):
-            # check fq name:
-            fx1 = pyfastx.Fastx(fq1)
-            fx2 = pyfastx.Fastx(fq2)
-            for a,b in zip(fx1, fx2):
-                out = a[0][:-1] == b[0][:-1]
-                break
-        else:
-            out = False
-    else:
-        out = False
-    return out
+#     scan the first read from the two files
+#     """
+#     if isinstance(fq1, str) and isinstance(fq2, str):
+#         if check_fx(fq1, **kwargs) and check_fx(fq2, **kwargs):
+#             # check fq name:
+#             fx1 = pyfastx.Fastx(fq1)
+#             fx2 = pyfastx.Fastx(fq2)
+#             for a,b in zip(fx1, fx2):
+#                 out = a[0][:-1] == b[0][:-1]
+#                 break
+#         else:
+#             out = False
+#     else:
+#         out = False
+#     return out
 
-
-def check_file(x, **kwargs):
-    """Check the x file
-    1. file exists
+## deprecated: by hiseq.utils.file.check_file()
+# def check_file(x, **kwargs):
+#     """Check the x file
+#     1. file exists
     
-    Parameters
-    ----------
-    x : str
-        Path to a file
+#     Parameters
+#     ----------
+#     x : str
+#         Path to a file
     
-    Keyword Parameters
-    ------------------
-    show_error : bool
-        Show the error messages
+#     Keyword Parameters
+#     ------------------
+#     show_error : bool
+#         Show the error messages
         
-    show_log : bool
-        Show the log messages 
+#     show_log : bool
+#         Show the log messages 
         
-    check_empty : bool
-        Check if the file is empty or not,  gzipped empty file, size=20
+#     check_empty : bool
+#         Check if the file is empty or not,  gzipped empty file, size=20
         
-    emptycheck : bool
-        see check_empty
-    """
-    show_error = kwargs.get('show_error', False)
-    show_log = kwargs.get('show_log', False)
-    check_empty = kwargs.get('check_empty', False)
-    emptycheck = kwargs.get('emptycheck', False) # for old version
-    if isinstance(x, str):
-        if file_exists(x):
-            x_size = os.stat(x).st_size
-            # empty gzipped file, size=20
-            q_size = 20 if x.endswith('.gz') else 0
-            out = x_size > q_size if check_empty or emptycheck else True
-            if show_log:
-                flag = 'ok' if out else 'failed'
-                log.info('{:<6s} : {}'.format(flag, x))
-        else:
-            if show_error:
-                log.error('file not exists: {}'.format(x))
-            out = False # failed
-    elif isinstance(x, list):
-        out = all([check_file(i, **kwargs) for i in x])
-    else:
-        log.error('x expect str or list, got {}'.format(type(x).__name__))
-        out = False
-    return out
+#     emptycheck : bool
+#         see check_empty
+#     """
+#     show_error = kwargs.get('show_error', False)
+#     show_log = kwargs.get('show_log', False)
+#     check_empty = kwargs.get('check_empty', False)
+#     emptycheck = kwargs.get('emptycheck', False) # for old version
+#     if isinstance(x, str):
+#         if file_exists(x):
+#             x_size = os.stat(x).st_size
+#             # empty gzipped file, size=20
+#             q_size = 20 if x.endswith('.gz') else 0
+#             out = x_size > q_size if check_empty or emptycheck else True
+#             if show_log:
+#                 flag = 'ok' if out else 'failed'
+#                 log.info('{:<6s} : {}'.format(flag, x))
+#         else:
+#             if show_error:
+#                 log.error('file not exists: {}'.format(x))
+#             out = False # failed
+#     elif isinstance(x, list):
+#         out = all([check_file(i, **kwargs) for i in x])
+#     else:
+#         log.error('x expect str or list, got {}'.format(type(x).__name__))
+#         out = False
+#     return out
 
 
 

@@ -15,7 +15,18 @@ from .fastx import *
 from .featurecounts import *
 from .file import *
 from .utils import *
-
+## tmp file
+from .file import list_file as listfile
+from .file import list_dir as listdir
+from .file import fx_name as fq_name
+from .file import symlink_file as file_symlink
+from .file import copy_file as file_copy
+from .file import remove_file as file_remove
+from .file import file_is_gzipped as is_gz
+from .file import file_nrows as file_row_counter 
+from .file import gzip_file as gzip_cmd
+from .bam import is_sam_flag as sam_flag_check
+from .utils import update_obj
 
 
 

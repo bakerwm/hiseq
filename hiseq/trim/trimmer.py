@@ -873,7 +873,7 @@ class Cutadapt(object):
 
 
 
-@Logger('INFO')
+
 class Trimmer(object):
     """Processing fastq files
 
@@ -1124,7 +1124,6 @@ class Trimmer(object):
         return self.out_files
 
 
-# @Logger('INFO')
 # class Cutadapt(object):
 
 #     # def __init__(self, fq, outdir, fq2=None, **kwargs):
