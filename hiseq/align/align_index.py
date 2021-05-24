@@ -203,11 +203,14 @@ class AlignIndex(object):
 
     def is_valid(self, index=None):
         """The input index is valid"""
+        if index is None:
+            index = self.index
+        index_aligner = self.guess_aligner(index)
         # match the aligner
         if isinstance(self.aligner, str):
-            out = self.guess_aligner(index) == self.aligner.lower()
+            out = index_aligner == self.aligner
         else:
-            out = self.guess_aligner(index) is not None
+            out = index_aligner is not None
         return out
 
 
@@ -295,6 +298,8 @@ class AlignIndex(object):
         if index is None:
 #             log.error('index not valid, expect str, got NoneType')
             out = None
+        # gsize: file, chrom_sizes
+        gsize = None
         if self.is_valid(index):
             if self.is_star_index(index):
                 gsize = os.path.join(index, 'chrNameLength.txt')
@@ -312,7 +317,6 @@ class AlignIndex(object):
             else:
                 log.error('index_size() not support the index: {}'.format(
                     index))
-                gsize = None
         # output
         s = 0
         if file_exists(gsize):
@@ -320,8 +324,7 @@ class AlignIndex(object):
                 for line in r:
                     s += eval(line.strip().split('\t')[1])
         # return s if s > 0 else None
-        return s
-        
+        return gsize if out_file else s
 
 
 def fetch_index(genome, group=None, aligner='bowtie', genome_path=None):

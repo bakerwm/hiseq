@@ -10,14 +10,15 @@ How to normalize
 2. RPGC (reads per genomic content, 1x)
 3. RPKM per bin: 
 4. CPM  per bin:
-
-
 """
 
 import os
 import pathlib
 from shutil import which
-from hiseq.utils.helper import log, run_shell_cmd, Bam, check_path, file_exists, Config
+# from hiseq.utils.helper import log, run_shell_cmd, Bam, check_path, file_exists, Config
+from hiseq.utils.file import file_exists, check_path, file_prefix
+from hiseq.utils.utils import log, Config, run_shell_cmd, get_date, update_obj
+from hiseq.utils.bam import Bam
 
 
 # solution-1: BAM -> bg -> bw
@@ -56,13 +57,8 @@ class Bam2bw(object):
         Required:
         bam, outdir, genome, binsize, strandness, overwrite, reference
         """
-        # update self (obj)
-        for k, v in kwargs.items():
-            setattr(self, k, v)
-
-        # update, defaults
+        self = update_obj(self, kwargs, force=True)
         self.init_args()
-        # args_logger(self.__dict__, self.config_txt)
         Config().dump(self.__dict__, self.config_toml)
 
 
@@ -77,9 +73,9 @@ class Bam2bw(object):
             'hg38': 2913022398,
             'GRCh38': 2913022398}
         # gsize = effsize.get(genome, 0) 
-
         args_init = {
             'bam': None,
+            'prefix': None,
             'outdir': str(pathlib.Path.cwd()),
             'binsize': 50,
             'strandness': 0,
@@ -90,51 +86,37 @@ class Bam2bw(object):
             'scaleFactor': 1.0,
             'normalizeUsing': 'RPKM',
             'threads': 4,
-            'config_txt': os.path.join(self.outdir, 'arguments.txt'),
-            'config_toml': os.path.join(self.outdir, 'arguments.toml'),
+            'config_txt': os.path.join(self.outdir, 'config.txt'),
+            'config_toml': os.path.join(self.outdir, 'config.toml'),
             'flag': True # whether run/not
         }
-        # update
-        for k, v in args_init.items():
-            if hasattr(self, k):
-                continue
-            setattr(self, k, v)
-
-        # cmd
+        self = update_obj(self, args_init, force=False)
         self.bamcoverage = which('bamCoverage')
-
-        # bam
         if not file_exists(self.bam):
             self.flag = False
         Bam(self.bam).index()
-
-        # name
-        self.prefix = os.path.splitext(os.path.basename(self.bam))[0]
+#         self.prefix = os.path.splitext(os.path.basename(self.bam))[0]
+        if not isinstance(self.prefix, str):
+            self.prefix = file_prefix(self.bam)
         self.bw_fwd = os.path.join(self.outdir, self.prefix + '.fwd.bigWig')
         self.bw_rev = os.path.join(self.outdir, self.prefix + '.rev.bigWig')
         self.bw = os.path.join(self.outdir, self.prefix + '.bigWig')
         self.bw_fwd_log = os.path.join(self.outdir, self.prefix + '.fwd.deeptools.log')
         self.bw_rev_log = os.path.join(self.outdir, self.prefix + '.rev.deeptools.log')
         self.bw_log = os.path.join(self.outdir, self.prefix + '.deeptools.log')
-
-        # outdir
-        check_path(self.outdir)
-
+        check_path(self.outdir, create_dirs=True)
         # binsize
         if not isinstance(self.binsize, int):
             log.warning('binsize: int expected. {} got, auto-set: 50'.format(self.binsize))
             self.binsize = 50
-
         # strand
         if not self.strandness in [0, 1, 2, 12]:
             log.warning('strandness: [0|1|2|12] expected, {} got, auto-set: 0'.format(self.strandness))
             self.strandness = 0
-
         # overwrite
         if not isinstance(self.overwrite, bool):
             log.warning('overwrite: bool expected, {} got, auto-set: False'.format(self.overwrite))
             self.overwrite = False
-
         # genome/genome_size/reference
         if self.genome in effsize:
             self.genome_size = effsize.get(self.genome, None)
@@ -149,7 +131,7 @@ class Bam2bw(object):
 
     def run_cmd(self, cmd, bw, bw_log):
         if os.path.exists(bw) and not self.overwrite:
-            log.info('file exists, bigWig skipped ..., {}'.format(bw))
+            log.info('Bam2bw() skipped, file exists, ..., {}'.format(bw))
         else:
             _, stdout, stderr = run_shell_cmd(cmd)
             with open(bw_log, 'wt') as w:
@@ -175,7 +157,6 @@ class Bam2bw(object):
         cmd_txt = os.path.join(self.outdir, 'cmd_fwd.txt')
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + '\n')
-
         self.run_cmd(cmd, self.bw_fwd, self.bw_fwd_log)
 
 
@@ -205,11 +186,9 @@ class Bam2bw(object):
             '--numberOfProcessors {}'.format(self.threads), 
             '--scaleFactor {}'.format(self.scaleFactor),
             '--normalizeUsing  {}'.format(self.normalizeUsing)])
-
-        cmd_txt = os.path.join(self.outdir, 'cmd.txt')
+        cmd_txt = os.path.join(self.outdir, 'cmd.sh')
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + '\n')
-
         self.run_cmd(cmd, self.bw, self.bw_log)
         
 
@@ -219,7 +198,7 @@ class Bam2bw(object):
         exit by: flag
         """
         if self.flag is False:
-            log.error('bam2bw skipped, ...')
+            log.error('Bam2bw() failed, ...')
         elif self.strandness == 1:
             self.run_fwd()
         elif self.strandness == 2:
@@ -230,7 +209,7 @@ class Bam2bw(object):
         elif self.strandness == 0:
             self.run_non()
         else:
-            log.error('unknown strandness')
+            log.error('Bam2bw() failed, unknown strandness')
 
 
 class Bam2bw2(object):
@@ -261,7 +240,6 @@ class Bam2bw2(object):
 
         # update, defaults
         self.init_args()
-        # args_logger(self.__dict__, self.config_txt)
         Config().dump(self.__dict__, self.config_toml)
 
 
@@ -278,25 +256,15 @@ class Bam2bw2(object):
             'norm_size': 1000000, # 1 million
             'fragment': True,
             'threads': 4,
-            'config_txt': os.path.join(self.outdir, 'arguments.txt'),
-            'config_toml': os.path.join(self.outdir, 'arguments.toml'),
+            'config_txt': os.path.join(self.outdir, 'config.txt'),
+            'config_toml': os.path.join(self.outdir, 'config.toml'),
             'flag': True # whether run/not
         }
-        # update
-        for k, v in args_init.items():
-            if hasattr(self, k):
-                continue
-            setattr(self, k, v)
-
-        # cmd
+        self = update_obj(self, args_init, force=False)
         self.bamcoverage = which('bamCoverage')
-
-        # bam
         if not file_exists(self.bam):
             self.flag = False
         Bam(self.bam).index()
-
-        # name
         self.prefix = os.path.splitext(os.path.basename(self.bam))[0]
         self.bw_fwd = os.path.join(self.outdir, self.prefix + '.fwd.bigWig')
         self.bw_rev = os.path.join(self.outdir, self.prefix + '.rev.bigWig')
@@ -304,15 +272,10 @@ class Bam2bw2(object):
         self.bw_fwd_log = os.path.join(self.outdir, self.prefix + '.fwd.deeptools.log')
         self.bw_rev_log = os.path.join(self.outdir, self.prefix + '.rev.deeptools.log')
         self.bw_log = os.path.join(self.outdir, self.prefix + '.deeptools.log')
-
-        # outdir
-        check_path(self.outdir)
-
-        # binsize
+        check_path(self.outdir, create_dirs=True)
         if not isinstance(self.binsize, int):
             log.warning('binsize: int expected. {} got, auto-set: 50'.format(self.binsize))
             self.binsize = 50
-
         # norm size
         # default: 1 million
         if isinstance(self.norm_size, int):
@@ -320,17 +283,14 @@ class Bam2bw2(object):
                 self.norm_size = 1000000 # 1 million
         else:
             self.norm_size = 1000000 # 1 million
-
         # strand
         if not self.strandness in [0, 1, 2, 12]:
             log.warning('strandness: [0|1|2|12] expected, {} got, auto-set: 0'.format(self.strandness))
             self.strandness = 0
-
         # overwrite
         if not isinstance(self.overwrite, bool):
             log.warning('overwrite: bool expected, {} got, auto-set: False'.format(self.overwrite))
             self.overwrite = False
-
         # genome/genome_size/reference
         if self.genome in effsize:
             self.genome_size = effsize.get(self.genome, None)
@@ -365,7 +325,6 @@ class Bam2bw2(object):
         Norm to 1 million reads
         """
         r = self.get_reads(fragment=self.fragment)
-
         # norm by reads/fragment
         return r/self.norm_size
 
@@ -396,7 +355,6 @@ class Bam2bw2(object):
         cmd_txt = os.path.join(self.outdir, 'cmd_fwd.txt')
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + '\n')
-
         self.run_cmd(cmd, self.bw_fwd, self.bw_fwd_log)
 
 
@@ -413,7 +371,6 @@ class Bam2bw2(object):
         cmd_txt = os.path.join(self.outdir, 'cmd_rev.txt')
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + 'n')
-
         self.run_cmd(cmd, self.bw_rev, self.bw_rev_log)
         
 
@@ -426,11 +383,9 @@ class Bam2bw2(object):
             '--numberOfProcessors {}'.format(self.threads), 
             '--scaleFactor {}'.format(self.scaleFactor),
             '--normalizeUsing  {}'.format(self.normalizeUsing)])
-
         cmd_txt = os.path.join(self.outdir, 'cmd.txt')
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + '\n')
-
         self.run_cmd(cmd, self.bw, self.bw_log)
         
 

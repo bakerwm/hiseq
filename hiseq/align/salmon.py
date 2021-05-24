@@ -96,6 +96,7 @@ class SalmonConfig(object):
             'overwrite': False,
         }
         self = update_obj(self, args_init, force=False)
+        self.hiseq_type = 'salmon_r1'
         self.init_fx()
         if not isinstance(self.outdir, str):
             self.outdir = str(pathlib.Path.cwd())
@@ -134,11 +135,12 @@ class SalmonConfig(object):
     def init_files(self):
         self.project_dir = os.path.join(self.outdir, self.smp_name, 
             self.index_name)
+        self.config_dir = os.path.join(self.project_dir, 'config')
         # output files
         prefix = os.path.join(self.project_dir, self.smp_name)
         default_files = {
             'project_dir': self.project_dir,
-            'config_toml': os.path.join(self.project_dir, 'config.toml'),
+            'config_toml': os.path.join(self.config_dir, 'config.toml'),
             'cmd_shell': os.path.join(self.project_dir, 'cmd.sh'),
             'quant_sf': os.path.join(self.project_dir, 'quant.sf'),
             'bam': prefix + '.bam',
@@ -149,11 +151,11 @@ class SalmonConfig(object):
             'align_log': os.path.join(self.project_dir, 'logs', 'salmon_quant.log'),
             'run_log': os.path.join(self.project_dir, 'run.log'),
             'align_stat': prefix + '.align.stat',
-            'align_toml': prefix + '.align.toml',
+            'align_json': prefix + '.align.json',
             'align_flagstat': prefix + '.flagstat',
         }
         self = update_obj(self, default_files, force=True)
-        check_path(self.project_dir, create_dirs=True)
+        check_path([self.project_dir, self.config_dir], create_dirs=True)
 
 
 class Salmon(object):
@@ -205,7 +207,7 @@ class Salmon(object):
             'name': self.smp_name,
             'index': self.index_name
             })
-        Config().dump(df, self.align_toml)
+        Config().dump(df, self.align_json)
         return (self.quant_sf, None, None) # bam, unmap1, unmap2
 
 

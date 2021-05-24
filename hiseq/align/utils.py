@@ -98,20 +98,20 @@ class AlignReader(object):
         config = self.list_config()
         p = Config().load(config) if config else {}
         # alignment type
-        self.is_align = 'align_type' in p
+        self.is_align = 'hiseq_type' in p
         self.is_hiseq = self.is_align
-        self.align_type = p.get('align_type', None)
-        self.is_align_r1 = self.align_type == 'alignment_r1'
-        self.is_align_rn = self.align_type == 'alignment_rn'
+        self.hiseq_type = p.get('hiseq_type', None)
+        self.is_align_r1 = self.hiseq_type == 'align_r1'
+        self.is_align_rn = self.hiseq_type == 'align_rn'
         # for alignment_r1, parse files, stat
         self = update_obj(self, p, force=True)
         # bam, unmap1, unmap
         self.bam = getattr(self, 'bam', None)
         self.unmap1 = getattr(self, 'unmap1', None)
         self.unmap2 = getattr(self, 'unmap2', None)
-        self.align_toml = getattr(self, 'align_toml', None)
+        self.align_json = getattr(self, 'align_json', None)
         # map, unmap, ...
-        q = Config().load(self.align_toml) if self.align_toml else {}
+        q = Config().load(self.align_json) if self.align_json else {}
         self.total = q.get('total', 0)
         self.map = q.get('map', 0)
         self.unique = q.get('unique', 0)
@@ -125,7 +125,8 @@ class AlignReader(object):
     
 
 def check_fx_args(fq1, fq2=None, **kwargs):
-    """Check the fastx in arguments
+    """
+    Check the fastx in arguments
     
     Parameters
     ----------

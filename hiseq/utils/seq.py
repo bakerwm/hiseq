@@ -15,8 +15,30 @@ import pandas as pd
 from xopen import xopen
 import pyfastx
 import collections # Fastx().collapse()
-from hiseq.utils.helper import *
-from hiseq.utils.utils import update_obj
+# from hiseq.utils.helper import *
+# from hiseq.utils.utils import update_obj
+
+
+
+def update_obj(obj, d, force=True, remove=False):
+    """Update the object, by dict
+    d: dict
+    force: bool, update exists attributes
+    remove: bool, remove exists attributes
+    Update attributes from dict
+    force exists attr
+    """
+    if remove is True:
+        for k in obj.__dict__:
+            delattr(obj, k)
+    # add attributes
+    if isinstance(d, dict):
+        for k, v in d.items():
+            if not hasattr(obj, k) or force:
+                setattr(obj, k, v)
+    return obj
+
+
 
 class Fastx(object):
     """
@@ -200,7 +222,7 @@ class Fastx(object):
         outdir = os.path.dirname(out)
         check_path(outdir)
         
-        if file_exists(out):
+        if os.path.exists(out):
             log.info('file eixsts, {}'.format(out))
         else:
             i = 0

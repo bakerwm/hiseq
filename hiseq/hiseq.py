@@ -18,16 +18,12 @@ import sys
 import argparse
 from multiprocessing import Pool
 from .utils.argsParser import *
-from .demx.sample_sheet import SampleSheet
-from .demx.demx import Demx, Demx2
+from .demx.demx import Demx
 from .qc.fastqc import Fastqc
-from .qc.parse_i7 import HiSeqP7
 from .trim.trimmer import TrimRn
 from .align.alignment import Alignment
-from .align.align import Align
 from .atac.atac import Atac
 from .rnaseq.rnaseq import RNAseq
-# from .rnaseq.rnaseq_pipe import RNAseqPipe
 from .rnaseq.deseq_pair import DeseqPair
 from .chipseq.chipseq import ChIPseq
 from .cnr.cnr import CnR
@@ -38,7 +34,6 @@ from .atac.atac_utils import Bam2bw, Bam2cor, PeakIDR, BedOverlap
 from .utils.helper import *
 from .fragsize.fragsize import BamPEFragSize2
 from .get_trackhub.get_trackhub import TrackHub
-# from .peak.call_peak import Macs2
 from hiseq.peak.call_peak import Macs2
 from hiseq.sample.sample import FxSample
 
@@ -63,11 +58,8 @@ class Hiseq(object):
         chipseq      ChIPseq pipeline
         cnr          CUN&RUN pipeline
 
-        sheet        Preparing sample_sheet.csv for demx/demx2
-        demx         Demultiplexing reads (P7, barcode) from single Lane
-        demx2        Demultiplexing multi barcode files
+        demx         Demultiplexing reads (P7, barcode)
         qc           quality control, fastqc
-        p7           Check the P7 of HiSeq library
         trim         trim adapters, low-quality bases, ...
         align        Align fastq/a files to reference genome
         quant        Count genes/features
@@ -80,7 +72,7 @@ class Hiseq(object):
         run_trackhub Generate the trackhub urls
         fragsize     Fragment size of PE alignments
         bam2cor      Correlation between bam files
-        bam2bw       Convert bam to bigWig
+        bam2bw       Convert bam to bigWig 
         peak2idr     Calculate IDR for multiple Peaks
         bed2overlap  Calculate the overlap between bed intervals
         sample       Sample fastq file
@@ -100,18 +92,6 @@ class Hiseq(object):
         getattr(self, args.command)()
 
 
-    def sheet(self):
-        """
-        Prepare the sample sheet for demx
-        1. sample_name,i7,i5,barcode (Demx, whole-lane)
-        2. i7_name,i7,reads (Demx2, part)
-        """
-        parser = add_sheet_args()
-        args = parser.parse_args(sys.argv[2:])
-        args = vars(args)
-        SampleSheet(**args).run()
-
-
     def demx(self):
         """
         Demultiplexing reads: P7, barcode
@@ -122,16 +102,6 @@ class Hiseq(object):
         Demx(**args).run()
 
 
-    def demx2(self):
-        """
-        Demultiplexing reads: for multiple barcode files
-        """
-        parser = add_demx2_args()
-        args = parser.parse_args(sys.argv[2:])
-        args = vars(args)
-        Demx2(**args).run()
-
-
     def qc(self):
         """
         Quality control
@@ -140,15 +110,9 @@ class Hiseq(object):
         parser = add_qc_args()
         args = parser.parse_args(sys.argv[2:])
         args = vars(args) # convert to dict
+
         Fastqc(**args).run()
 
-        
-    def p7(self):
-        parser = add_p7_args()
-        args = parser.parse_args(sys.argv[2:])
-        args = vars(args) # convert to dict
-        HiSeqP7(**args).run()
-        
 
     def trim(self):
         """
@@ -210,8 +174,7 @@ class Hiseq(object):
         args = vars(args) # convert to dict
         # print('Running hiseq align, aligner={}, fq1={}, out={}'.format(
         #     args.aligner, args.fq1, args.out))
-        # Alignment(**args).run()
-        Align(**args).run()
+        Alignment(**args).run()
 
 
     def quant(self):
@@ -266,10 +229,10 @@ class Hiseq(object):
                         output=subdir,
                         prefix=name,
                         control=control,
-                        atac=args.get('is_atac', False),
+                        atac=args.get('is_atac', False), 
                         gsize=args.get('genome_size', 0),
                         overwrite=args.get('overwrite', False)).callpeak()
-
+        
 
     def motif(self):
         """
@@ -385,7 +348,7 @@ class Hiseq(object):
         # help
         if len(sys.argv) < 3:
             parser.parse_args(['-h'])
-
+        
         # main
         args = vars(args) # convert to dict
         # # check config or --fq1,--fq2,--genome,--outdir
@@ -398,7 +361,7 @@ class Hiseq(object):
         # chk1 = config is None
         # chk2 = design is None
         # chk3 = [i is None for i in [fq1, fq2, genome, outdir]]
-        #
+        # 
         # # if config is None and not all(chk2):
         # if all([chk1, chk2, chk3]):
         #     sys.exit('required: --config, or --design, or --fq1, --fq2, --genome, --outdir')
@@ -509,8 +472,8 @@ class Hiseq(object):
 
     def run_trackhub(self):
         """
-        Make trackhub
-        """
+        Make trackhub 
+        """ 
         parser = add_trackhub_args()
         args = parser.parse_args(sys.argv[2:])
         args = vars(args)

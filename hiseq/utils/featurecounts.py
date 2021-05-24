@@ -8,11 +8,78 @@
 """
 
 import os
-import pandas as pd
+import tempfile
 import pybedtools
-from hiseq.utils.helper import *
-from .bed import *
-from .bam import *
+import pandas as pd
+from shutil import which
+from hiseq.utils.bam import Bam
+from hiseq.utils.file import file_exists, file_abspath, file_prefix, check_path
+from hiseq.utils.utils import log, update_obj, Config, run_shell_cmd
+
+# from hiseq.utils.helper import *
+# from .bed import *
+# from .bam import *
+
+
+
+def bed_to_gtf(file_in, file_out):
+    """Convert BED to GTF
+    chrom chromStart chromEnd name score strand
+    """
+    if file_exists(file_out) and not overwrite:
+        log.info('bed_to_gtf() skipped, file exists: {}'.format(file_out))
+    else:
+        try:
+            with open(file_in) as r, open(file_out, 'wt') as w:
+                for line in r:
+                    fields = line.strip().split('\t')
+                    start = int(fields[1]) + 1
+                    w.write('\t'.join([
+                        fields[0],
+                        'BED_file',
+                        'gene',
+                        str(start),
+                        fields[2],
+                        '.',
+                        fields[5],
+                        '.',
+                        'gene_id "{}"; gene_name "{}"'.format(fields[3], fields[3])
+                        ]) + '\n')
+        except:
+            log.error('bed_to_gtf() failed, see: {}'.format(file_out))
+    return file_out
+
+
+def bed_to_saf(file_in, file_out, overwrite=False):
+    """Convert BED to SAF format, for featureCounts
+    GeneID Chr Start End Strand
+
+    see: https://www.biostars.org/p/228636/#319624
+    """
+    if file_exists(file_out) and not overwrite:
+        log.info('bed_to_saf() skipped, file exists: {}'.format(file_out))
+    else:
+        try:
+            with open(file_in, 'rt') as r, open(file_out, 'wt') as w:
+                for line in r:
+                    tabs = line.strip().split('\t')
+                    chr, start, end = tabs[:3]
+                    # strand
+                    strand = '.'
+                    if len(tabs) > 5:
+                        s = tabs[5]
+                        if s in ['+', '-', '.']:
+                            strand = s
+                    # id
+                    if len(tabs) > 3:
+                        name = os.path.basename(tabs[3])
+                    else:
+                        name = '_'.join([chr, start, end, strand])
+                    # output
+                    w.write('\t'.join([name, chr, start, end, strand])+'\n')
+        except:
+            log.error('bed_to_saf() failed, see: {}'.format(file_out))
+    return file_out
 
 
 def read_fc_txt(x, fix_name=False):
@@ -34,7 +101,10 @@ def read_fc_txt(x, fix_name=False):
 
 
 def read_fc_summary(x):
-    """Read the count.txt.summary
+    """
+    Read the count.txt.summary
+    output: dict
+    {index:, total:, map:, pct:}
     """
     if not file_exists(x):
         log.error('file not exists, {}'.format(x))
@@ -67,17 +137,19 @@ def read_fc_summary(x):
         if assign_min < 0.50:
             log.warning('Caution: -s {}, {:.2f}% assigned, see {}'.format(
                 s, assign_min, x))
-        print(assign_df)
+        log.info(assign_df)
     except:
         log.warning('reading file failed: {}'.format(self.summary))
         total, assign, assign_pct = [1, 0, 0]
     df = pd.DataFrame([total, assign, assign_pct]).T
     df.columns = ['total', 'map', 'pct']
-    return df
+    out = df.reset_index().to_dict('index')
+    return out[0] # index,total,map,pct
 
 
 class FeatureCounts(object):
-    """Run featureCounts for {BED|GTF} and BAM(s)
+    """
+    Run featureCounts for {BED|GTF} and BAM(s)
     
     Keyword parameters
     ------------------
@@ -114,7 +186,6 @@ class FeatureCounts(object):
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
-        self.init_files()
 
 
     def init_args(self):
@@ -129,53 +200,62 @@ class FeatureCounts(object):
             'feature_type': 'exon',
         }
         self = update_obj(self, args_init, force=False)
-        if not isinstance(self.gtf, str):
-            raise ValueError('gtf=, expect str, got {}'.format(
-                type(self.gtf).__name__))
-        if not file_exists(self.gtf):
-            raise ValueError('gtf=, file not exists: {}'.format(self.gtf))
-        if isinstance(self.bam_list, str):
-            self.bam_list = [self.bam_list]
-        elif isinstance(self.bam_list, list):
-            pass
-        else:
-            raise ValueError('bam_list, expect str or list, got {}'.format(
-                type(self.bam_list).__name__))
-        if not all(file_exists(self.bam_list)):
-            raise ValueError('bam-list, file not exists:')
-        # [Bam(i).index() for i in self.bam_list]
         if not isinstance(self.outdir, str):
             self.outdir = self._tmp(dir=True)
-        # check_path(self.outdir)
+        self.outdir = file_abspath(self.outdir)
         if not isinstance(self.prefix, str):
             self.prefix = 'count.txt'
         self.gtf = file_abspath(self.gtf)
         self.bam_list = file_abspath(self.bam_list)
-        self.outdir = file_abspath(self.outdir)
-        # strand
         if not self.strandness in [0, 1, 2]:
             raise ValueError('strandness=, not valid, expect [0, 1, 2], \
                 got {}'.format(strandness))
+        # update files
+        self.init_files()
+        self.init_gtf()
+        # dirs
+        check_path(self.config_dir, create_dirs=True)
+        Config().dump(self.__dict__, self.config_toml)
 
 
     def init_files(self):
-        config_dir = os.path.join(self.outdir, 'config')
+        self.config_dir = os.path.join(self.outdir, 'config')
         prefix = os.path.join(self.outdir, self.prefix)
         default_files = {
-            'config_toml': config_dir + '/config.toml',
+            'config_toml': self.config_dir + '/config.toml',
             'count_txt': prefix,
             'summary': prefix + '.summary',
-            'log': prefix + '.featureCounts.log',
+            'summary_json': prefix + '.summary.json',
+            'log_stdout': prefix + '.featureCounts.stdout',
+            'log_stderr': prefix + '.featureCounts.stderr',
             'stat': prefix + '.featureCounts.stat',
-            'cmd_shell': prefix + '.cmd.sh'
+            'cmd_shell': prefix + '.cmd.sh',
+            'saf': os.path.join(self.outdir, file_prefix(self.gtf) + '.saf')
         }
-        self.config_dir = config_dir
         self = update_obj(self, default_files, force=True) # key
-        # check_path(self.config_dir)
+
+
+    def init_gtf(self):
+        if isinstance(self.bam_list, str):
+            self.bam_list = [self.bam_list]
+        msg = '\n'.join([
+            '-'*80,
+            'Check files for FeatureCounts',
+            '{:>14s} : {}'.format('gtf', self.gtf),
+            '{:>14s} : {}'.format('bam_list', self.bam_list),
+            '-'*80,
+        ])
+        print(msg)
+        if not all([
+            isinstance(self.gtf, str),
+            isinstance(self.bam_list, list),
+            file_exists(self.gtf),
+            all(file_exists(self.bam_list)),
+        ]):
+            raise ValueError('FeatureCounts() failed, check above message.')
+        # check gtf
         self.gtf_ext = os.path.splitext(self.gtf)[1].lower()
-        if self.gtf_ext in ['.bed', '.narrowpeak', '.broadpeak']:
-            self.saf = os.path.join(self.outdir, file_prefix(self.gtf)[0] + '.saf')
-            bed_to_saf(self.gtf, self.saf)
+        self.is_paired = self.is_pe()
 
 
     def _tmp(self, dir=False):
@@ -203,40 +283,21 @@ class FeatureCounts(object):
         """
         # check gtf or saf or bed
         if self.gtf_ext in ['.gtf']:
-            arg = '-a {} -F GTF -t {} -g gene_id '.format(self.gtf, self.feature_type)
+            s = '-a {} -F GTF -t {} -g gene_id '.format(
+                self.gtf, self.feature_type)
         elif self.gtf_ext in ['.bed', '.narrowpeak', '.broadpeak']:
-            arg = '-a {} -F SAF'.format(self.saf) # SAF
+            bed_to_saf(self.gtf, self.saf)
+            s = '-a {} -F SAF'.format(self.saf) # SAF
         elif self.gtf_ext in ['.saf']:
-            arg = '-a {} -F SAF'.format(self.gtf)
+            s = '-a {} -F SAF'.format(self.gtf)
         else:
-            arg = ''
-        return arg
+            raise ValueError('unknown file, expect *.gtf, got {}'.format(
+                self.gtf))
+            s = ''
+        return s
 
 
-    def get_cmd(self):
-        """
-        prepare args for featureCounts
-        """
-        args_gtf = self.get_args_gtf()
-        args_pe = '-p -C -B' if self.is_pe() else ''
-        return ' '.join([
-            '{}'.format(shutil.which('featureCounts')),
-            '-s {}'.format(self.strandness),
-            args_gtf,
-            args_pe,
-            '-o {}'.format(self.count_txt),
-            '-T {}'.format(self.threads),
-            '-M -O --fraction',
-            ' '.join(self.bam_list),
-            '2> {}'.format(self.log)
-            ])
-
-
-    def pre_run(self):
-        # save config
-        check_path([self.config_dir])
-        Config().to_toml(self.__dict__, self.config_toml)
-        # show message
+    def show_msg(self):
         msg = '\n'.join([
             '-'*80,
             'Run featureCounts:',
@@ -245,18 +306,33 @@ class FeatureCounts(object):
             '{:>10s}: {}'.format('feature', self.feature_type),
             '{:>10s}: {}'.format('strand', self.strandness),
             '{:>10s}: {}'.format('count.txt', self.count_txt),
-            '{:>10s}: {}'.format('log', self.log),
+            '{:>10s}: {}'.format('log_stdout', self.log_stdout),
+            '{:>10s}: {}'.format('log_stderr', self.log_stderr),
             '-'*80,
         ])
         print(msg)
 
 
-    def run(self):
-        """Run featureCounts
+    def run_featurecounts(self):
         """
-        self.pre_run()
-        # run all
-        cmd = self.get_cmd()
+        prepare args for featureCounts
+        """
+        self.args_gtf = self.get_args_gtf()
+        self.args_bam = ' '.join(self.bam_list)
+        self.args_pe = '-p -C -B' if self.is_paired else ''
+        cmd = ' '.join([
+            '{}'.format(which('featureCounts')),
+            '-s {}'.format(self.strandness),
+            '-o {}'.format(self.count_txt),
+            '-T {}'.format(self.threads),
+            '-M -O --fraction',
+            self.args_pe,
+            self.args_gtf,
+            self.args_bam,
+            '1> {}'.format(self.log_stdout),
+            '2> {}'.format(self.log_stderr),
+            ])
+        # save command
         with open(self.cmd_shell, 'wt') as w:
             w.write(cmd + '\n')
         if file_exists(self.count_txt) and not self.overwrite:
@@ -266,6 +342,20 @@ class FeatureCounts(object):
             try:
                 run_shell_cmd(cmd)
             except:
-                log.error('FeatureCounts() failed, see: {}'.format(self.log))
-        return read_fc_summary(self.summary)
+                log.error('FeatureCounts() failed, see: {}'.format(
+                    self.log_stderr))
+
+
+    def wrap_summary(self):
+        df = read_fc_summary(self.summary)
+        Config().dump(df, self.summary_json)
+        return df
+        
+
+    def run(self):
+        """Run featureCounts
+        """
+        self.show_msg()
+        self.run_featurecounts()
+        return self.wrap_summary()
 

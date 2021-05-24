@@ -141,6 +141,7 @@ class StarConfig(object):
             'genomeLoad': 'LoadAndRemove',
         }
         self = update_obj(self, args_init, force=False)
+        self.hiseq_type = 'STAR_r1'
         self.init_fx()
         if not isinstance(self.outdir, str):
             self.outdir = str(pathlib.Path.cwd())
@@ -153,12 +154,14 @@ class StarConfig(object):
         # samll genome
         self.small_genome = AlignIndex(
             self.index, self.aligner).index_size() < 10000000
+        self.seed_max = 5 if self.small_genome else 50
+        self.n_map = 1 if self.unique_only else self.n_map
+        if self.n_map < 1:
+            self.n_map = 20 # default, see unique_only
         if self.smp_name is None:
             self.smp_name = fx_name(self.fq1, fix_pe=True)
         # update files
         self.init_files()
-        if self.n_map < 2:
-            self.n_map = 20 # default, see unique_only
 
 
     def init_fx(self):
@@ -181,11 +184,12 @@ class StarConfig(object):
     def init_files(self):
         self.project_dir = os.path.join(self.outdir, self.smp_name, 
             self.index_name)
+        self.config_dir = os.path.join(self.project_dir, 'config')
         # output files
         prefix = os.path.join(self.project_dir, self.smp_name)
         default_files = {
-            'project_dir': self.project_dir,
-            'config_toml': os.path.join(self.project_dir, 'config.toml'),
+#             'project_dir': self.project_dir,
+            'config_toml': os.path.join(self.config_dir, 'config.toml'),
             'cmd_shell': os.path.join(self.project_dir, 'cmd.sh'),
             'bam': prefix + '.bam',
             'sam': prefix + '.sam',
@@ -194,7 +198,7 @@ class StarConfig(object):
             'unmap2': prefix + '.unmap.2.' + self.fx_format, #
             'align_log': prefix + '.align.log',
             'align_stat': prefix + '.align.stat',
-            'align_toml': prefix + '.align.toml',
+            'align_json': prefix + '.align.json',
             'align_flagstat': prefix + '.flagstat',
             'bam_raw': prefix + 'Aligned.sortedByCoord.out.bam',
             'log_raw': prefix + 'Log.final.out',
@@ -204,7 +208,7 @@ class StarConfig(object):
         }
         self = update_obj(self, default_files, force=True)
         self.align_prefix = prefix
-        check_path(self.project_dir, create_dirs=True)
+        check_path([self.project_dir, self.config_dir], create_dirs=True)
 
 
 class Star(object):
@@ -258,8 +262,6 @@ class Star(object):
         2. (loop over samples): LoadAndKeep
         3. Remove
         """
-        self.seed_max = 5 if self.small_genome else 50
-        self.n_map = 1 if self.unique_only else self.n_map
         args_extra = self.extra_para if self.extra_para else ''
         args_reader = 'zcat' if self.fq1.endswith('.gz') else '-'
         args_fq2 = self.fq2 if self.is_paired else ''
@@ -336,7 +338,7 @@ class Star(object):
             'index': self.index_name,
             'unique_only': self.unique_only,
             })
-        Config().dump(df, self.align_toml)
+        Config().dump(df, self.align_json)
         return (self.bam, self.unmap1, self.unmap2)
 
 

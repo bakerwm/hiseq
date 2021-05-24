@@ -146,7 +146,7 @@ def add_p7_args():
     parser.add_argument('-j', '--parallel-jobs', default=1, type=int,
         dest='parallel_jobs',
         help='Number of jobs run in parallel, default: [1]')
-    parser.add_argument('-s', '--save-seq', dest='save_seq', 
+    parser.add_argument('-s', '--save-seq', dest='save_seq',
         action='store_true',
         help='Save the i7 sequence to file')
     return parser

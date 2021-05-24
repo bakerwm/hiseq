@@ -133,7 +133,7 @@ class Bowtie2Config(object):
             'smp_name': None,
             'threads': 1,
             'overwrite': False,
-            'n_map': 1,
+            'n_map': 0,
             'unique_only': False,
             'keep_tmp': False,
             'keep_unmap': True,
@@ -141,6 +141,7 @@ class Bowtie2Config(object):
             'default_bowtie2': False,
         }
         self = update_obj(self, args_init, force=False)
+        self.hiseq_type = 'bowtie2_r1'
         self.init_fx()
         if not isinstance(self.outdir, str):
             self.outdir = str(pathlib.Path.cwd())
@@ -177,11 +178,12 @@ class Bowtie2Config(object):
     def init_files(self):
         self.project_dir = os.path.join(self.outdir, self.smp_name, 
             self.index_name)
+        self.config_dir = os.path.join(self.project_dir, 'config')
         # output files
         prefix = os.path.join(self.project_dir, self.smp_name)
         default_files = {
-            'project_dir': self.project_dir,
-            'config_toml': os.path.join(self.project_dir, 'config.toml'),
+#             'project_dir': self.project_dir,
+            'config_toml': os.path.join(self.config_dir, 'config.toml'),
             'cmd_shell': os.path.join(self.project_dir, 'cmd.sh'),
             'bam': prefix + '.bam',
             'sam': prefix + '.sam',
@@ -190,12 +192,12 @@ class Bowtie2Config(object):
             'unmap2': prefix + '.unmap.2.' + self.fx_format, #
             'align_log': prefix + '.align.log',
             'align_stat': prefix + '.align.stat',
-            'align_toml': prefix + '.align.toml',
+            'align_json': prefix + '.align.json',
             'align_flagstat': prefix + '.flagstat',
         }
         self = update_obj(self, default_files, force=True)
-        check_path(self.project_dir, create_dirs=True)
-
+        check_path([self.project_dir, self.config_dir], create_dirs=True)
+        
 
 class Bowtie2(object):
     """Alignment, using Bowtie2
@@ -326,7 +328,7 @@ class Bowtie2(object):
             'index': self.index_name,
             'unique_only': self.unique_only,
             })
-        Config().dump(df, self.align_toml)
+        Config().dump(df, self.align_json)
         del_list = [self.sam]
         if not self.keep_unmap:
             del_list.extend([self.unmap1, self.unmap2, self.unmap])

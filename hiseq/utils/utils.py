@@ -10,16 +10,20 @@ attribution of the vectors
 import os
 import sys
 import json
-import json
 import yaml
 import toml
 import pickle
+import glob
 import logging
 import collections
 import subprocess
+import random
+import string
+from PIL import Image # pillow
 from datetime import datetime
 from dateutil import tz
 from itertools import combinations
+from hiseq.utils.file import file_exists
 # from .helper import log
 # from .file import file_exists, file_abspath
 
@@ -30,6 +34,259 @@ logging.basicConfig(
     stream=sys.stdout)
 log = logging.getLogger(__name__)
 log.setLevel('INFO')
+
+
+################################################################################
+## functions for hiseq-global
+
+def list_hiseq_file(x, keys='bam', hiseq_type='r1'):
+    """
+    Return the specific file from project_dir of hiseq
+
+    Parameters
+    ----------
+    x:  str
+        Directory of the hiseq project
+
+    keys:  str
+        keys of the file in hiseq project, eg: 'bam', 'align_dir', ...
+        default: ['bam']
+
+    hiseq_type:  str
+        Type of the hiseq, ['r1', 'rn', 'rx', 'rt', 'rp']
+        see: HiseqReader() for details; default: ['r1']
+    """
+    out = []
+    prj_dirs = list_hiseq_dir(x, hiseq_type) # all dirs
+    for d in prj_dirs:
+        a = read_hiseq(d)
+        out.append(getattr(a, keys, None))
+    return out
+
+
+
+def list_hiseq_dir(x, hiseq_type='r1'):
+    """
+    Return the project_dir of hiseq
+
+    Parameters
+    ----------
+    x:  str
+        Directory of the hiseq project
+
+    hiseq_type:  str
+        Type of the hiseq, ['r1', 'rn', 'rx', 'rt', 'rp']
+        see: HiseqReader() for details; default: ['r1']
+    """
+    a = read_hiseq(x)
+    out = []
+    if a.is_hiseq:
+        if hiseq_type == 'r1':
+            if a.is_hiseq_r1:
+                out.append(x)
+            elif a.is_hiseq_rn:
+                # ATACseq; CnR, ChIPseq, ... !!!!to-do
+                for i in a.rep_list:
+                    out.extend(list_hiseq_dir(i, 'r1'))
+            elif a.is_hiseq_rx:
+                # list all directories in project
+                dir_list = list_dir(a.project_dir, include_dir=True)
+                for i in dir_list:
+                    out.extend(list_hiseq_dir(i, 'r1'))
+            else:
+                pass
+        elif hiseq_type == 'rn':
+            if a.is_hiseq_rn:
+                out.append(x)
+            elif a.is_hiseq_rx:
+                # list all directories in project
+                dir_list = list_dir(a.project_dir, include_dir=True)
+                for i in dir_list:
+                    out.extend(list_hiseq_dir(i, 'rn'))
+            else:
+                pass
+        elif hiseq_type == 'rx':
+            if a.is_hiseq_rx:
+                out.append(x)
+        else:
+            pass
+    out = list(set(out)) # remove duplicates
+    return sorted(out)
+
+
+def read_hiseq(x, hiseq_type=True):
+    """
+    Parameters
+    ---------
+    x:  str
+        Path to Hiseq directory
+
+    hiseq_type: str
+        Check the x is one-of-hiseq_types, could be head/tail;
+        atacseq_r1, r1, rn, rnaseq_rx, ...
+        default: [True], do
+
+    Read config from hiseq directory
+    """
+    a = HiseqReader(x)
+    if hasattr(a, 'hiseq_type'):
+        a_hiseq_type = a.hiseq_type
+        k = False
+        if hiseq_type is True:
+            k = True #pass
+        elif isinstance(hiseq_type, str):
+            k = any([
+                a_hiseq_type == hiseq_type,
+                a_hiseq_type.startswith(hiseq_type),
+                a_hiseq_type.endswith(hiseq_type),
+            ])
+        else:
+            pass
+        # check
+        if not k:
+            log.warning('hiseq_dir not match, expect {}, got {}'.format(
+                hiseq_type, a_hiseq_type))
+    else:
+        # raise ValueError('not a hiseq dir: {}'.format(x))
+        log.warning('not a hiseq dir: {}'.format(x))
+    return a
+
+
+class HiseqReader(object):
+    """
+    Parameters
+    ---------
+    x: str
+        Path to Hiseq directory
+    """
+    def __init__(self, x):
+        self.x = x
+        self.init_args()
+
+
+    def init_args(self):
+        self.is_hiseq = False # init
+        d = self.load()
+        if isinstance(d, dict):
+            hiseq_types = [
+                'atacseq_type', 'rnaseq_type', 'hiseq_type',
+                'align_type'
+            ] # !!!! to-be-update
+            # which hiseq
+            hiseq_type = None
+            for h in hiseq_types:
+                if h in d:
+                    hiseq_type = h
+                    break
+            # which type
+            if isinstance(hiseq_type, str):
+                a = d.get(hiseq_type, None)
+            else:
+                a = None
+            # check output
+            if isinstance(a, str):
+                self.is_hiseq = True
+                self.hiseq_type = a
+                self.is_hiseq_r1 = a.endswith('_r1') # fq
+                self.is_hiseq_rn = a.endswith('_rn') # group
+                self.is_hiseq_rx = a.endswith('_rx') # group vs group
+                self.is_hiseq_rt = a.endswith('_rt') # !!
+                self.is_hiseq_rp = a.endswith('_rp') # report
+            else:
+                log.warning('unknown hiseq dir: {}'.foramt(self.x))
+        else:
+            log.warning('not a hiseq dir: {}'.format(self.x))
+        # update args
+        self.args = update_obj(self, d, force=True)
+
+
+    def list_config(self):
+        """
+        List the config files
+        Support: toml, pickle, yaml, json, ... [priority]
+        return file list
+        # hiseq
+        hiseq
+          |-config
+          |   |-config.toml
+
+        # alignment
+        align_dir
+          |- smp_nmae
+          |    |- index
+          |    |    |- config.pickle
+        """
+        c_files = ['config.' + i for i in ['toml', 'pickle', 'yaml', 'json']]
+        # search config files
+        out = None
+        for f in c_files:
+            c1 = os.path.join(self.x, 'config', f)
+            c2 = os.path.join(self.x, '*', '*', f)
+            c1x = glob.glob(c1)
+            c2x = glob.glob(c2)
+            if len(c1x) > 0:
+                out = c1x[0]
+                break
+            elif len(c2x) > 0:
+                out = c2x[0]
+                break
+            else:
+                continue
+        return out
+
+
+    def load(self):
+        if isinstance(self.x, str) and file_exists(self.x):
+            config_file = self.list_config()
+            out = Config().load(config_file)
+        else:
+            out = None
+        return out
+
+
+################################################################################
+## tmp functions
+def gen_random_string(slen=10):
+    return ''.join(random.sample(string.ascii_letters + string.digits, slen))
+
+
+def print_dict(d):
+    d = dict(sorted(d.items(), key=lambda x:x[0]))
+    # d = collections.OrderedDict(sorted(d.items()))
+    for k, v in d.items():
+        print('{:>20s}: {}'.format(k, v))
+
+
+def init_cpu(threads=1, parallel_jobs=1):
+    """
+    The number of threads, parallel_jobs
+    """
+    n_cpu = os.cpu_count() # alternative: multiprocessing.cpu_count()
+    max_jobs = int(n_cpu / 4.0)
+    ## check parallel_jobs (max: 1/4 of n_cpus)
+    if parallel_jobs > max_jobs: 
+        log.warning('Too large, change parallel_jobs from {} to {}'.format(
+            parallel_jobs, max_jobs))
+        parallel_jobs = max_jobs
+    ## check threads
+    max_threads = int(0.8 * n_cpu / parallel_jobs)
+    if threads * parallel_jobs > 0.8 * n_cpu:
+        log.warning('Too large, change threads from {} to {}'.format(
+            threads, max_threads))
+        threads = max_threads
+    return (threads, parallel_jobs)
+
+
+################################################################################
+
+
+
+
+
+
+
+
+
 
 
 
@@ -243,7 +500,7 @@ class Config(object):
         if x is None:
             x_dict = None # {} ?
         elif isinstance(x, dict):
-            x_dict = collections.OrderedDict(sorted(x.items()))
+            x_dict = dict(sorted(x.items(), key=lambda i:i[0]))
         elif isinstance(x, str):
             reader = self.get_reader(x)
             if reader is None:
@@ -355,8 +612,9 @@ class Config(object):
             try:
                 with open(x, 'r') as r:
                     if os.path.getsize(x) > 0:
-                        d = json.load(r)
-                        d = collections.OrderedDict(sorted(d.items()))
+                        d = json.load(r) # sorted by key
+                        d = dict(sorted(d.items(), key=lambda x:x[0]))
+                        # d = collections.OrderedDict(sorted(d.items()))
             except Exception as exc:
                 log.error('from_json() failed, {}'.format(exc))
             finally:
@@ -375,7 +633,8 @@ class Config(object):
                 with open(x, 'r') as r:
                     if os.path.getsize(x) > 0:
                         d = yaml.load(r, Loader=yaml.FullLoader)
-                        d = collections.OrderedDict(sorted(d.items()))
+                        d = dict(sorted(d.items(), key=lambda x:x[0]))
+                        # d = collections.OrderedDict(sorted(d.items()))
             except Exception as exc:
                 log.error('from_yaml() failed, {}'.format(exc))
             finally:
@@ -400,7 +659,8 @@ class Config(object):
                 with open(x, 'r') as r:
                     if os.path.getsize(x) > 0:
                         d = toml.load(x)
-                        d = collections.OrderedDict(sorted(d.items()))
+                        d = dict(sorted(d.items(), key=lambda x:x[0]))
+                        # d = collections.OrderedDict(sorted(d.items()))
             except Exception as exc:
                 log.error('from_toml() failed, {}'.format(exc))
             finally:
@@ -419,7 +679,8 @@ class Config(object):
                 with open(x, 'rb') as r:
                     if os.path.getsize(x) > 0:
                         d = pickle.load(r)
-                        d = collections.OrderedDict(sorted(d.items()))
+                        d = dict(sorted(d.items(), key=lambda x:x[0]))
+                        # d = collections.OrderedDict(sorted(d.items()))
             except Exception as exc:
                 log.error('from_pickle() failed, {}'.format(exc))
             finally:
@@ -571,3 +832,20 @@ class Config(object):
             delete=False)
         return tmp.name
     
+    
+    
+
+
+def convert_image(x, out_fmt='PNG'):
+    if not out_fmt in ['PNG', 'JPEG', "TIFF"]:
+        log.error('out_fmt: [PNG|JPEG|TIFF], {} got'.format(out_fmt))
+    out_ext = out_fmt.lower()
+    out_img = os.path.splitext(x)[0] + '.' + out_ext
+    # read/write
+    if os.path.exists(out_img):
+        log.warning('file exists, skipping ...: {}'.format(out_img))
+    else:
+        img = Image.open(x)
+        img.save(out_img, out_fmt)
+
+        

@@ -39,14 +39,16 @@ import pandas as pd
 from multiprocessing import Pool
 from Levenshtein import distance
 from hiseq.utils.seq import Fastx
-from hiseq.utils.utils import update_obj, Config, get_date
-from hiseq.utils.file import check_path, file_abspath, file_prefix
+from hiseq.utils.utils import update_obj, Config, get_date, read_hiseq
+from hiseq.utils.file import check_path, file_abspath, file_prefix, \
+    symlink_file, list_dir
 from hiseq.align.bowtie import Bowtie
 from hiseq.align.bowtie2 import Bowtie2
 from hiseq.align.star import Star
 from hiseq.align.salmon import Salmon
 from hiseq.align.utils import check_fx_args, get_args
 from hiseq.align.align_index import AlignIndex, check_index_args
+
 
 
 class Align(object):
@@ -62,6 +64,7 @@ class Align(object):
         self = update_obj(self, kwargs, force=True)
         args_local = AlignConfig(**self.__dict__)
         self = update_obj(self, args_local.__dict__, force=True) # update
+        Config().dump(self.__dict__, self.config_toml)
 
 
     def run(self):
@@ -77,6 +80,7 @@ class Align(object):
             '{:>14s} : {}'.format('fq1', self.fq1),
             '{:>14s} : {}'.format('fq2', self.fq2),
             '{:>14s} : {}'.format('outdir', self.outdir),
+            '{:>14s} : {}'.format('extra_para', self.extra_para),
             '{:>14s} : {}'.format('threads', self.threads),
             '{:>14s} : {}'.format('parallel_jobs', self.parallel_jobs),
             '{:>14s} : {}'.format('to_rRNA', self.to_rRNA),
@@ -138,17 +142,33 @@ class AlignRn(object):
         """
         args_local = AlignRnConfig(**self.__dict__) # update
         self = update_obj(self, args_local.__dict__, force=True)
-        self.config_dir = os.path.join(self.outdir, self.smp_name, 'config')
-        self.config_toml = os.path.join(self.config_dir, 'config.toml')
-        check_path(self.config_dir, create_dirs=True)
         Config().dump(self.__dict__, self.config_toml)
 
 
     def wrap_stat(self):
-        """Save alignment to one file
-        to-do
         """
-        pass
+        Save alignment to one file
+        all files in project_dir
+        """
+        print('!A-1', self.bam)
+        # save the last index-bam as output
+        last_bam = None
+        last_stat = None
+        last_flagstat = None
+        df = {} 
+        r1_dirs = list_dir(self.project_dir, include_dir=True)
+        for r1 in r1_dirs:
+            a = read_hiseq(r1, 'r1')
+            if a.is_hiseq:
+                s1 = Config().load(getattr(a, 'align_json'))
+                df.update(s1)
+                last_bam = a.bam
+                last_stat = a.align_stat
+                last_flagstat = a.align_flagstat
+        symlink_file(last_bam, self.bam) # save bam
+        symlink_file(last_stat, self.align_stat) # save flagstat
+        symlink_file(last_flagstat, self.align_flagstat) # save flagstat
+        Config().dump(df, self.align_json) # save stat
 
 
     def run(self):
@@ -158,13 +178,15 @@ class AlignRn(object):
                 'index': index,
                 'index_name': index_name,
                 'index_list': None,
-                })
+            })
             bam, unmap1, unmap2 = AlignR1(**args_local).run()
             # update the unmap files for next round
             args_local.update({
                 'fq1': unmap1,
-                'fq2': unmap2
-                })
+                'fq2': unmap2,
+            })
+        # combine stat
+        self.wrap_stat()
 
 
 class AlignR1(object):
@@ -249,16 +271,17 @@ class AlignConfig(object):
             'keep_tmp': False,
             'genome_size': 0,
             'genome_size_file': None,
+            'extra_para': None,
             'verbose': False,
         }
         self = update_obj(self, args_init, force=False)
-        self.align_type = 'alignment_rx' # force ?@!
+        self.hiseq_type = 'alignment_rx' # force ?@!
         if self.outdir is None:
             self.outdir = str(pathlib.Path.cwd())
         self.outdir = file_abspath(self.outdir)
         self.init_fx()
         self.init_index()
-        self.config_toml = self.outdir + '/config.toml'
+        self.init_files()
 
 
     def init_fx(self):
@@ -292,15 +315,26 @@ class AlignConfig(object):
         self.index_list = check_index_args(**self.__dict__)
         if len(self.index_list) == 0:
             raise ValueError('no index found')
-        inames = [AlignIndex(i).index_name() for i in self.index_list]
-        if isinstance(self.index_name, list):
-            if len(self.index_name) == len(self.index_list):
-                if all([isinstance(i, str) for i in self.index_name]):
-                    inames = self.index_name
-        self.index_name = inames #update
+#         inames = [AlignIndex(i).index_name() for i in self.index_list]
+#         if isinstance(self.index_name, list):
+#             if len(self.index_name) == len(self.index_list):
+#                 if all([isinstance(i, str) for i in self.index_name]):
+#                     inames = self.index_name
+#         self.index_name = inames #update
+        self.index_name = [AlignIndex(i).index_name() for i in self.index_list]
         # auto index_name, 01, 02, ...
         self.index_name = ['{:02d}_{}'.format(i, n) for i,n in zip(
             range(len(self.index_name)), self.index_name)]
+
+
+    def init_files(self):
+        """
+        Config only
+        config_toml
+        """
+        self.config_dir = os.path.join(self.outdir, 'config')
+        self.config_toml = os.path.join(self.config_dir, 'config.toml')
+        check_path(self.config_dir, create_dirs=True)
 
 
 class AlignRnConfig(object):
@@ -331,9 +365,10 @@ class AlignRnConfig(object):
             'index_name': None,
         }
         self = update_obj(self, args_init, force=False)
-        self.align_type = 'alignment_rn'
+        self.hiseq_type = 'alignment_rn'
         self.init_fx()
         self.init_index()
+        self.init_files()
 
 
     def init_fx(self):
@@ -353,6 +388,7 @@ class AlignRnConfig(object):
             type(self.fq1).__name__))
         self.fq1 = file_abspath(self.fq1)
         self.fq2 = file_abspath(self.fq2)
+        self.fx_format = Fastx(self.fq1).format # fasta/q
         # auto: sample names
         if not isinstance(self.smp_name, str):
             self.smp_name = file_prefix(self.fq1)
@@ -379,8 +415,20 @@ class AlignRnConfig(object):
         """Config only
         config_toml
         """
-        self.config_dir = os.path.join(self.outdir, self.smp_name, 'config')
-        self.config_toml = os.pathI(self.config_dir, 'config.toml')
+        self.project_dir = os.path.join(self.outdir, self.smp_name)
+        self.config_dir = os.path.join(self.project_dir, 'config')
+        prefix = os.path.join(self.project_dir, self.smp_name)
+        default_args = {
+            'config_toml': os.path.join(self.config_dir, 'config.toml'),
+            'bam': prefix + '.bam',
+            'unmap': prefix + '.unmap.' + self.fx_format,
+            'unmap1': prefix + '.unmap.1.' + self.fx_format, # 
+            'unmap2': prefix + '.unmap.2.' + self.fx_format, # 
+            'align_stat': prefix + '.align.stat',
+            'align_json': prefix + '.align.json',
+            'align_flagstat': prefix + '.flagstat',
+        }
+        self = update_obj(self, default_args, force=True)
         check_path(self.config_dir, create_dirs=True)
 
 
@@ -404,9 +452,10 @@ class AlignR1Config(object):
             'aligner': None,
             'index': None,
             'index_name': None,
+            'unique_only': False,
         }
         self = update_obj(self, args_init, force=False)
-        self.align_type = 'alignment_r1'
+        self.hiseq_type = 'alignment_r1'
         self.init_fx()
         self.init_index()
 
@@ -434,21 +483,37 @@ class AlignR1Config(object):
 
     def init_index(self):
         """Force: 
-        index_list: str
+        index: str
         index_name: str
+        :for single fq:
         """
-        if not isinstance(self.index, str) or \
-            not isinstance(self.index_name, str):
-            raise ValueError('index_list, index_name, not valid: {}, {}'.format(
-                self.index_list, self.index_name))
         flag_err = True
         # update index_name
         if isinstance(self.index, str):
             flag_err = not AlignIndex(self.index, self.aligner).is_valid()
             if self.index_name is None:
                 self.index_name = AlignIndex(self.index).index_name()
-        if flag_err:
-            raise ValueError('index_list, index_name, not valid')
+        else:
+            raise ValueError('index, not valid: {}'.format(self.index))
+            
+            
+#     def init_index(self):
+#         """Force: 
+#         index_list: str
+#         index_name: str
+#         """
+#         if not isinstance(self.index, str) or \
+#             not isinstance(self.index_name, str):
+#             raise ValueError('index_list, index_name, not valid: {}, {}'.format(
+#                 self.index_list, self.index_name))
+#         flag_err = True
+#         # update index_name
+#         if isinstance(self.index, str):
+#             flag_err = not AlignIndex(self.index, self.aligner).is_valid()
+#             if self.index_name is None:
+#                 self.index_name = AlignIndex(self.index).index_name()
+#         if flag_err:
+#             raise ValueError('index_list, index_name, not valid')
 
 
 def main():

@@ -4,14 +4,20 @@
 """
 Function, processing BAM files
 
+functions/classes:
+
+Bam
+Bam2cor
+Bam2fingerprint
+
 BAM:
-  - sort 
-  - index 
-  - count 
-  - rmdup 
-  - proper_pair 
-  - subset 
-  - frag_size * 
+  - sort
+  - index
+  - count
+  - rmdup
+  - proper_pair
+  - subset
+  - frag_size *
   - read_size *
   - to_bed
   - to_bg *
@@ -21,11 +27,16 @@ BAM:
 """
 
 import os
+import sys
+import re
+import pathlib
 import numpy as np
 import pysam
 import pybedtools
-import logging
-from hiseq.utils.helper import *
+from shutil import which
+from hiseq.utils.utils import log, update_obj, get_date, Config, run_shell_cmd
+from hiseq.utils.file import check_path, file_exists, file_abspath, \
+    file_prefix, read_lines
 
 
 class Bam(object):
@@ -104,17 +115,17 @@ class Bam(object):
         """
         if outfile is None:
             outfile = os.path.splitext(self.bam)[0] + '.rmdup.bam'
-        sambamba = shutil.which('sambamba')
-        log = outfile + '.sambamba.log'
+        sambamba = which('sambamba')
+        log_stderr = outfile + '.sambamba.log'
         cmd = '{} markdup -r -t {} --overflow-list-size 800000 \
             --tmpdir="./" {} {} 2> {}'.format(
             sambamba,
             str(self.threads),
             self.bam,
             outfile,
-            log)
+            log_stderr)
         if os.path.exists(outfile) and overwrite is False:
-            logging.info('file exists: {}'.format(outfile))
+            log.info('file exists: {}'.format(outfile))
         else:
             run_shell_cmd(cmd)
         return outfile
@@ -141,9 +152,9 @@ class Bam(object):
             subdir = self._tmp(delete=False)
         check_path(subdir)
         # src, dest
-        dest = os.path.join(subdir, os.path.basename(self.bam))        
+        dest = os.path.join(subdir, os.path.basename(self.bam))
         # run
-        self.index()        
+        self.index()
         srcfile = pysam.AlignmentFile(self.bam, 'rb')
         destfile = pysam.AlignmentFile(dest, 'wb', template=srcfile)
         # counter
@@ -248,7 +259,7 @@ class Bam(object):
            Maximum number of chunks of size `alignments` to be used
            in the convergence method.
         """
-        assert self.isPaired(self.bam), \
+        assert self.is_paired(self.bam), \
             'can only estimate insert size from' \
             'paired bam files'
         samfile = pysam.AlignmentFile(self.bam)
@@ -354,7 +365,7 @@ class Bam(object):
 
     def getNumberOfAlignments(self):
         """Return number of alignments in bamfile.
-        """        
+        """
         if not os.path.exists(self.bam + '.bai'):
             pysam.index(self.bam)
         samfile = pysam.AlignmentFile(self.bam)
@@ -367,8 +378,8 @@ class Bam(object):
 def is_sam_flag(x, return_codes=False):
     """For sam flags
     The flags for sam format are in binary code:
-    see: https://samtools.github.io/hts-specs/SAMv1.pdf 
-    
+    see: https://samtools.github.io/hts-specs/SAMv1.pdf
+
     1    0x1   template having multiple segments in sequencing
     2    0x2   each segment properly aligned according to the aligner
     4    0x4   segment unmapped
@@ -381,7 +392,7 @@ def is_sam_flag(x, return_codes=False):
     512  0x200 not passing filters, such as platform/vendor quality controls
     1024 0x400 PCR or optical duplicate
     2048 0x800 supplementary alignment
-    
+
     see: Bitwise operator
     """
     f = {
@@ -414,7 +425,339 @@ def is_sam_flag(x, return_codes=False):
     if return_codes and h:
         out = h
     else:
-        out = len(h) > 0            
+        out = len(h) > 0
     return out
 
+
+class Bam2cor(object):
+    """
+    Compute correlation between replicates
+
+    input: bam
+    output: count_matrix
+            cor_matrix
+            cor_plot
+            ...
+
+    window = 500bp
+
+    eg:
+    multiBamSummary bins --binSize 500 --smartLabels -o *bam.npz \
+        --outRawCounts *counts.tab -b bam
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+
+
+    def init_args(self):
+        args_init = {
+            'cor_method': 'pearson',
+            'make_plot': True,
+            'bam_dir': None,
+            'bam_list': None,
+            'outdir': None,
+            'prefix': None,
+            'binsize': 500,
+            'threads': 1,
+            'overwrite': False,
+            'multibamsummary': which('multiBamSummary'),
+            'plotcorrelation': which('plotCorrelation'),
+            'plotpca': which('plotPCA'),
+            'flag': True # whether run/not
+        }
+        self = update_obj(self, args_init, force=False)
+        # output
+        if self.outdir is None:
+            self.outdir = str(pathlib.Path.cwd())
+        self.outdir = file_abspath(self.outdir)
+        if not isinstance(self.prefix, str):
+            self.prefix = 'multibam'
+        # check commands
+        self.flag = all([
+            isinstance(self.multibamsummary, str),
+            isinstance(self.plotcorrelation, str),
+            isinstance(self.plotpca, str),
+        ])
+        if not self.flag:
+            raise ValueError('check bam and commands')
+        self.init_bam()
+        self.init_files()
+        # save config
+        check_path(self.outdir, create_dirs=True)
+        Config().dump(self.__dict__, self.config_toml)
+
+
+    def init_bam(self):
+        b = []
+        if isinstance(self.bam_dir, str):
+            b = listfile(self.bam_dir, '*.bam')
+        elif isinstance(self.bam_list, str):
+            if self.bam_list.endswith('.bam'):
+                b.append(self.bam_list)
+            elif self.bam_list.endswith('.txt'):
+                b = read_lines(self.bam_list, comment='#')
+            else:
+                log.error('unknown bam: {}'.format(self.bam_list))
+        elif isinstance(self.bam_list, list):
+            b = self.bam_list
+        else:
+            log.error('bam_dir, bam required')
+        # file exists
+        b = [i for i in b if file_exists(i) and i.endswith('.bam')]
+        [Bam(i).index() for i in b] #
+        if len(b) == 0:
+            log.error('no bam files detected')
+        self.bam_list = b
+        self.bam_line = ' '.join(self.bam_list)
+        [Bam(b).index() for b in self.bam_list]
+
+
+    def init_files(self):
+        default_files = {
+            'config_toml': os.path.join(self.outdir, 'config.toml'),
+            'bam_npz': os.path.join(self.outdir, self.prefix + '.npz'),
+            'log': os.path.join(self.outdir, self.prefix + '.deeptools.log'),
+            'plot_cor_heatmap_png': os.path.join(self.outdir, self.prefix + '.cor_heatmap.png'),
+            'log_heatmap': os.path.join(self.outdir, self.prefix + '.cor_heatmap.log'),
+            'cor_counts': os.path.join(self.outdir, self.prefix + '.cor_counts.tab'),
+            'cor_matrix': os.path.join(self.outdir, self.prefix + '.cor.matrix'),
+            'plot_cor_pca_png': os.path.join(self.outdir, self.prefix + '.cor_PCA.png'),
+            'log_pca': os.path.join(self.outdir, self.prefix + '.cor_PCA.log')
+        }
+        self = update_obj(self, default_files, force=True) # key
+        check_path(self.outdir, create_dirs=True)
+
+
+    def bam_summary(self):
+        cmd = ' '.join([
+            '{} bins --binSize {}'.format(self.multibamsummary, self.binsize),
+            '-p {}'.format(self.threads),
+            '--smartLabels -o {}'.format(self.bam_npz),
+            '--outRawCounts {}'.format(self.cor_counts),
+            '--bamfiles {}'.format(self.bam_line)
+        ])
+        cmd_txt = os.path.join(self.outdir, self.prefix + '.bam_cor.sh')
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+        if os.path.exists(self.bam_npz) and not self.overwrite:
+            log.warning('file exists: {}'.format(self.bam_npz))
+        else:
+            _, stdout, stderr = run_shell_cmd(cmd)
+            with open(self.log, 'wt') as w:
+                w.write(stdout + '\n' + stderr + '\n')
+        # check
+        if not os.path.exists(self.bam_npz):
+            log.error('Bam2cor() failed, output file not found: {}'.format(
+                self.bam_npz))
+
+
+    def plot_cor_heatmap(self):
+        cmd = ' '.join([
+            '{} -in {}'.format(self.plotcorrelation, self.bam_npz),
+            '--corMethod {}'.format(self.cor_method),
+            '--plotTitle "{} Correlation"'.format(self.cor_method),
+            '--whatToPlot heatmap --colorMap RdYlBu --plotNumbers',
+            '-o {}'.format(self.plot_cor_heatmap_png),
+            '--outFileCorMatrix {}'.format(self.cor_matrix)
+            ])
+        cmd_txt = os.path.join(self.outdir, self.prefix + '.heatmap.sh')
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+        if os.path.exists(self.plot_cor_heatmap_png) and not self.overwrite:
+            log.warning('Bam2cor.plot_cor_heatmap() skipped, file exists: {}'.format(
+                self.plot_cor_heatmap_png))
+        else:
+            _, stdout, stderr = run_shell_cmd(cmd)
+            with open(self.log_heatmap, 'wt') as w:
+                w.write(stdout + '\n' + stderr + '\n')
+        # check
+        if not os.path.exists(self.plot_cor_heatmap_png):
+            log.error('Bam2cor() failed, output file not found: {}'.format(
+                self.plot_cor_heatmap_png))
+
+
+    def plot_cor_pca(self):
+        """
+        plotPCA:
+        Make PCA plot, for bam_summary
+        correlation
+        """
+        cmd = ' '.join([
+            '{} -in {}'.format(self.plotpca, self.bam_npz),
+            '-o {}'.format(self.plot_cor_pca_png),
+            '-T "PCA for Bam files"'
+            ])
+        cmd_txt = os.path.join(self.outdir, self.prefix + '.pca.sh')
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+        if os.path.exists(self.plot_cor_pca_png) and not self.overwrite:
+            log.warning('Bam2cor.plot_cor_pca() skipped, file exists: {}'.format(self.bam_npz))
+        else:
+            _, stdout, stderr = run_shell_cmd(cmd)
+            with open(self.log_pca, 'wt') as w:
+                w.write(stdout + '\n' + stderr + '\n')
+        # check
+        if not os.path.exists(self.plot_cor_pca_png):
+            log.error('Bam2cor() failed, output file not found: {}'.format(self.plot_cor_pca_png))
+
+
+    def run(self):
+        if len(self.bam_list) > 1:
+            self.bam_summary()
+            # plot
+            if self.make_plot is True:
+                self.plot_cor_heatmap()
+                self.plot_cor_pca()
+        else:
+            log.error('require >=2 bam files')
+
+
+class Bam2fingerprint(object):
+    """
+    QC for bam files
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+
+
+    def init_args(self):
+        """
+        Required arguments for ATACseq analysis
+        """
+        args_init = {
+            'bam_dir': None,
+            'bam_list': None,
+            'threads': 8,
+            'outdir': None,
+            'prefix': None,
+            'title': 'BAM_fingerprint',
+            'labels': None,
+            'overlap': False,
+            'overwrite': False
+            }
+        self = update_obj(self, args_init, force=False)
+        if self.outdir is None:
+            self.outdir = str(pathlib.Path.cwd())
+        self.init_bam()
+        self.init_files()
+        # save config
+        check_path(self.outdir, create_dirs=True)
+        Config().dump(self.__dict__, self.config_toml)
+
+
+    def init_bam(self):
+        b = []
+        if isinstance(self.bam_dir, str):
+            b = listfile(self.bam_dir, '*.bam')
+        elif isinstance(self.bam_list, str):
+            if self.bam_list.endswith('.bam'):
+                b.append(self.bam_list)
+            elif self.bam_list.endswith('.txt'):
+                b = read_lines(self.bam_list, comment='#')
+            else:
+                log.error('unknown bam: {}'.format(self.bam_list))
+        elif isinstance(self.bam_list, list):
+            b = self.bam_list
+        else:
+            log.error('bam_dir, bam required')
+        print('!A-4', len(b), self.bam_list)
+        # file exists
+        b = [i for i in b if file_exists(i) and i.endswith('.bam')]
+        [Bam(i).index() for i in b] #
+        if len(b) == 0:
+            log.error('no bam files detected')
+        self.bam_list = b
+        self.bam_line = ' '.join(self.bam_list)
+        [Bam(b).index() for b in self.bam_list]
+
+
+    def init_files(self):
+        if not (isinstance(self.labels, list) and len(self.labels) == len(self.bam_list)):
+            self.labels = file_prefix(self.bam_list)
+        self.labels_line = ' '.join(self.labels)
+        ## output files
+        prefix = re.sub('[^A-Za-z0-9-.]', '_', self.title)
+        prefix = re.sub('_+', '_', prefix) # format string
+        if isinstance(self.prefix, str):
+            prefix = self.prefix
+        else:
+            self.prefix = prefix
+        self.fp_png = os.path.join(self.outdir, prefix + '.png')
+        self.fp_tab = os.path.join(self.outdir, prefix + '.tab')
+        self.config_toml = os.path.join(self.outdir, 'config.toml')
+
+
+    def run_fingerprint(self):
+        cmd = ' '.join([
+            '{}'.format(which('plotFingerprint')),
+            '--minMappingQuality 30 --skipZeros --numberOfSamples 50000',
+            '-p {}'.format(self.threads),
+            '--plotFile {}'.format(self.fp_png),
+            '--outRawCounts {}'.format(self.fp_tab),
+            '-b {}'.format(self.bam_line),
+            '--labels {}'.format(self.labels_line)
+            ])
+        # save cmd
+        cmd_txt = os.path.join(self.outdir, self.prefix + '_cmd.sh')
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+        # run
+        if file_exists(self.fp_png) and not self.overwrite:
+            log.info('Bam2fingerprint() skipped, file exists: {}'.format(self.fp_png))
+        else:
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.error('Bam2fingerprint() failed, see {}'.format(self.outdir))
+
+
+    def run(self):
+        msg = '\n'.join([
+            '-'*80,
+            '{:>14} : {}'.format('program', 'hiseq.utils.bam.Bam2fingerprint()'),
+            '{:>14} : {}'.format('bam', self.bam_list),
+            '{:>14} : {}'.format('n_bam', len(self.bam_list)),
+            '{:>14} : {}'.format('outdir', self.outdir),
+            '{:>14} : {}'.format('prefix', self.prefix),
+            '-'*80,
+        ])
+        print(msg)
+        self.run_fingerprint()
+                
+                
+def bwCompare(bw1, bw2, bw_out, operation='log2', **kwargs):
+    """
+    Compare two bigWig files: ip over input
+
+    example:
+    bigwigCompare -b1 bw1 -b2 bw2 --operation
+    {log2, ratio, subtract, add, mean, reciprocal_ratio,
+    first, second}
+    -o out.bw
+    """
+    binsize = kwargs.get('binsize', 50)
+    threads = kwargs.get('threads', 1)
+    overwrite = kwargs.get('overwrite', False)
+    cmd = ' '.join([
+        '{}'.format(which('bigwigCompare')),
+        '--bigwig1 {} --bigwig2 {}'.format(bw1, bw2),
+        '--operation {}'.format(operation),
+        '--skipZeroOverZero',
+        '--skipNAs',
+        '--binSize {}'.format(binsize),
+        '-p {}'.format(threads),
+        '-o {}'.format(bw_out)])
+    # savd cmd
+    bw_out_dir = os.path.dirname(bw_out)
+    check_path(bw_out_dir)
+    cmd_txt = os.path.join(bw_out_dir, 'cmd.txt')
+    with open(cmd_txt, 'wt') as w:
+        w.write(cmd + '\n')
+    # run
+    if os.path.exists(bw_out) and not overwrite:
+        log.info('bwCompare() skipped, file exists: {}'.format(bw_out))
+    else:
+        run_shell_cmd(cmd)
 
