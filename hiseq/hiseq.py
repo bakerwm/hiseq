@@ -24,7 +24,6 @@ from .trim.trimmer import TrimRn
 from .align.alignment import Alignment
 from .atac.atac import Atac
 from .rnaseq.rnaseq import RNAseq
-# from .rnaseq.rnaseq_pipe import RNAseqPipe
 from .rnaseq.deseq_pair import DeseqPair
 from .chipseq.chipseq import ChIPseq
 from .cnr.cnr import CnR
@@ -34,8 +33,7 @@ from .utils.seq import Fastx
 from .atac.atac_utils import Bam2bw, Bam2cor, PeakIDR, BedOverlap
 from .utils.helper import *
 from .fragsize.fragsize import BamPEFragSize2
-from .get_trackhub.get_trackhub import TrackHub 
-# from .peak.call_peak import Macs2
+from .get_trackhub.get_trackhub import TrackHub
 from hiseq.peak.call_peak import Macs2
 from hiseq.sample.sample import FxSample
 

@@ -27,7 +27,6 @@ class AlignIndex(object):
     aligner : Nonr or str
         The aligner (supported: ...)
         
-        
     >>> p = AlignIndex(x).is_valid()
     >>> p = AlignIndex(x, 'bowtie').is_valid()
     >>> AlignIndex(x).index_name()

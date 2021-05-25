@@ -17,26 +17,26 @@ from collections import OrderedDict
 from hiseq.utils.helper import *
 
 
-def bed2gtf(infile, outfile):
-    """Convert BED to GTF
-    chrom chromStart chromEnd name score strand
-    """
-    with open(infile) as r, open(outfile, 'wt') as w:
-        for line in r:
-            fields = line.strip().split('\t')
-            start = int(fields[1]) + 1
-            w.write('\t'.join([
-                fields[0],
-                'BED_file',
-                'gene',
-                str(start),
-                fields[2],
-                '.',
-                fields[5],
-                '.',
-                'gene_id "{}"; gene_name "{}"'.format(fields[3], fields[3])
-                ]) + '\n')
-    return outfile
+# def bed2gtf(infile, outfile):
+#     """Convert BED to GTF
+#     chrom chromStart chromEnd name score strand
+#     """
+#     with open(infile) as r, open(outfile, 'wt') as w:
+#         for line in r:
+#             fields = line.strip().split('\t')
+#             start = int(fields[1]) + 1
+#             w.write('\t'.join([
+#                 fields[0],
+#                 'BED_file',
+#                 'gene',
+#                 str(start),
+#                 fields[2],
+#                 '.',
+#                 fields[5],
+#                 '.',
+#                 'gene_id "{}"; gene_name "{}"'.format(fields[3], fields[3])
+#                 ]) + '\n')
+#     return outfile
 
 
 def cal_FRiP(inbed, inbam, genome="dm6"):
