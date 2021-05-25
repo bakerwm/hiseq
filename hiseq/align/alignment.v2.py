@@ -109,6 +109,7 @@ def print_df(x):
 
 
 
+@Logger('INFO')
 class Alignment(object):
     """
     The wrapper for alignment

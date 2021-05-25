@@ -66,11 +66,14 @@ def merge_names(x):
 import os
 import sys
 import re
+import pathlib
 import shutil
 import logging
 import fnmatch
 import binascii
 import subprocess
+import pyfastx
+import pysam
 from xopen import xopen
 from hiseq.utils.seq import Fastx
 
@@ -88,7 +91,8 @@ log.setLevel('INFO')
 ## check files          ##
 ##########################
 def check_fx(fx, **kwargs):
-    """Check the fastq/a files
+    """
+    Check the fastq/a files
     1. file exist
     2. fq1 required
     3. fq type: fasta/q
@@ -113,11 +117,16 @@ def check_fx(fx, **kwargs):
         else:
             if show_error:
                 log.error('fx failed, {}'.format(fx))
+    elif isinstance(fx, list):
+        out = [check_fx(i) for i in fx]
+    else:
+        pass
     return out
 
 
 def check_fx_paired(fq1, fq2, **kwargs):
-    """Check the fq1 and fq2 are paired or not
+    """
+    Check the fq1 and fq2 are paired or not
     the name of fq1, fq2 are the same
 
     fq1: @the-name/1
@@ -133,14 +142,28 @@ def check_fx_paired(fq1, fq2, **kwargs):
     show_error : bool
         Display the error message
     """
-    out = False
-    if check_fx(fq1, **kwargs) and check_fx(fq2, **kwargs):
-        # check fq name:
-        fx1 = pyfastx.Fastx(fq1)
-        fx2 = pyfastx.Fastx(fq2)
-        for a,b in zip(fx1, fx2):
-            out = a[0][:-1] == b[0][:-1]
-            break
+    if isinstance(fq1, str) and isinstance(fq2, str):
+        # name
+        chk1 = fx_name(fq1, fix_pe=True) == fx_name(fq2, fix_pe=True)
+        # exists
+        chk2 = all(check_fx([fq1, fq2], **kwargs))
+        # paired
+        try:
+            fx1 = pyfastx.Fastx(fq1)
+            fx2 = pyfastx.Fastx(fq2)
+            for a,b in zip(fx1, fx2):
+                chk3 = a[0][:-1] == b[0][:-1]
+                break
+        except:
+            chk3 = False
+        # output
+        out = all([chk1, chk2, chk3])
+    elif isinstance(fq1, list) and isinstance(fq2, list):
+        out = [check_fx_paired(f1, f2, **kwargs) for f1,f2 in zip(fq1, fq2)]
+    else:
+        log.error('illegal fq1,fq2; str,list expect, got {}, {}'.format(
+            type(fq1).__name__, type(fq2).__name__))
+        out = False
     return out
 
         
@@ -345,7 +368,7 @@ def symlink_file(src, dest, absolute_path=False, force=False):
         src_file = src if absolute_path else src_rel
         # do-the-thing
         if file_exists(dest_file) and not force:
-            log.error('symlink_file() skipped, dest exists: {}'.format(dest_file))
+            log.info('symlink_file() skipped, dest exists: {}'.format(dest_file))
         else:
             try:
                 os.symlink(src_file, dest_file)
@@ -422,7 +445,7 @@ def remove_file(x, **kwargs):
         if show_log:
             log.info('rm:{:3s}\tis_file:{}\t{:3s}'.format(rm_tag, file_tag, x))
     elif isinstance(x, list):
-        [remove_file(x, **kwargs) for i in x]
+        [remove_file(i, **kwargs) for i in x]
     elif isinstance(x, dict):
         for k,v in x.items:
             if isinstance(v, str) or isinstance(v, list):
@@ -535,7 +558,7 @@ def list_dir(x, full_name=True, recursive=False, include_dir=False):
     else:
         log.error('list_dir() skipped, x expect str, got {}'.format(
             type(x).__name__))
-    return out
+    return sorted(out)
 
 
 def list_file(path='.', pattern='*', full_name=True, recursive=False,
@@ -600,7 +623,7 @@ def list_fx(x, recursive=False):
         # out = [i for i in out if os.path.splitext(i)[1].lower() in ext_list]
         p = re.compile('\.f(ast)?(a|q)(\.gz)?', flags=re.IGNORECASE)
         out = [i for i in out if p.search(i)]
-    return out
+    return sorted(list(set(out)))
 
 
 def list_fx2(x, pattern='*', recursive=False):
@@ -664,8 +687,8 @@ def file_prefix(x, with_path=False):
     """
     if isinstance(x, str):
         if x.endswith('.gz') or x.endswith('.bz2'):
-            out = os.path.splitext(x)[0]
-        out = os.path.splitext(out)[0]
+            x = os.path.splitext(x)[0]
+        out = os.path.splitext(x)[0]
         if not with_path:
             out = os.path.basename(out)
     elif isinstance(x, list):
@@ -687,10 +710,10 @@ def file_abspath(x):
     x : str,list
         Path to a file, or list of files
     """
-    if file is None:
+    if x is None:
         out = None
     elif isinstance(x, str):
-        out = os.path.abspath(x)
+        out = os.path.abspath(os.path.expanduser(x))
     elif isinstance(x, list):
         out = [file_abspath(i) for i in x]
     else:
@@ -713,7 +736,7 @@ def file_exists(x):
         out = os.path.exists(x) # file/dir/link
 #         out = os.path.isfile(x)
     elif isinstance(x, list):
-        out = [file_exists(i, isfile) for i in x]
+        out = [file_exists(i) for i in x]
     else:
         log.warning('x, expect str,list, got {}'.format(type(file).__name__))
         out = False
@@ -732,7 +755,7 @@ def file_nrows(x):
             if not b: break
             yield b
     if file_exists(x):
-        with xopen(x, 'rt', encoding="utf-8", errors='ignore') as r:
+        with xopen(x, 'rt') as r:
             out = sum(bl.count('\n') for bl in blocks(r))
     else:
         log.error('x, file not exists, {}'.format(x))
@@ -767,8 +790,248 @@ def fx_name(x, fix_pe=False, fix_rep=False, fix_unmap=False):
         if fix_rep:
             out = re.sub('[._]rep[0-9]+$', '', out, flags=re.IGNORECASE)
     elif isinstance(x, list):
-        out = [fx_name(i, fix_pe) for i in x]
+        out = [fx_name(i, fix_pe, fix_rep, fix_unmap) for i in x]
     else:
         out = None
     return out
 
+
+def read_lines(x, nrows=0, skip=0, strip_white=True, comment=''):
+    """
+    Read plain text file
+    save each line as list()
+    
+    Parameters
+    ----------
+    x:  str
+        Path to a file
+        
+    nrows:  int
+        The maximum number of rows to read 
+        default: [0], ignored
+        
+    skip:  int
+        The number of lines of the data to skip before beginning to read data
+        default: [0]
+        
+    strip_white:  bool
+        Stipping of leading and trailing white space, default: [True]
+    
+    comment:  str
+        A string of one character, default [''], empty
+    
+    """
+    out = None
+    if isinstance(x, str):
+        if os.path.exists(x):
+            if os.path.isdir(x):
+                log.error('read_lines() failed, exptect <file>, got <dir>')
+            else:
+                l = []
+                try:
+                    i = 0
+                    with open(x) as r:
+                        for line in r:
+                            i += 1
+                            # skip rows
+                            if skip > 0 and i <= skip:
+                                continue
+                            # white-spaces
+                            s = line.strip()
+                            if strip_white:
+                                s = s.lstrip()
+                            # comment
+                            if len(comment) == 1 and s.startswith(comment):
+                                continue
+                            # nrows
+                            if nrows > 0 and i > nrows:
+                                break
+                            # save to output
+                            l.append(s)
+                except IOError as e:
+                    log.error(e)
+                out = l
+        else:
+            log.error('read_lines() failed, file not exists')
+    else:
+        log.error('read_lins() failed, expect str, got {}'.format(
+            type(x).__name__))
+    return out
+
+
+class Genome(object):
+    """
+    List related information of specific genome
+    1. get_fa(), genome fasta
+    2. get_fasize(), genome fasta size
+    3. bowtie_index(), bowtie index, optional, rRNA=True
+    4. bowtie2_index(), bowtie2 index, optional, rRNA=True
+    5. star_index(), STAR index, optional, rRNA=True
+    6. gene_bed(),
+    7. gene_rmsk(),
+    8. gene_gtf(), optional, version='ucsc|ensembl|ncbi'
+    9. te_gtf(), optional, version='ucsc'
+    10. te_consensus(), optional, fruitfly()
+    ...
+
+    directory structure of genome should be like this:
+    /path-to-data/{genome}/
+        |- bigZips  # genome fasta, fasize, chromosome
+        |- annotation_and_repeats  # gtf, bed, rRNA, tRNA, annotation
+        |- bowtie_index
+        |- bowtie2_index
+        |- STAR_index
+        |- hisat2_index
+        |- phylop100
+        |- ...
+
+    default: $HOME/data/genome/{genome}
+
+    """
+    def __init__(self, genome, genome_path=None,
+        repeat_masked_genome=False, **kwargs):
+        assert isinstance(genome, str)
+        self.genome = genome
+        self.repeat_masked_genome = repeat_masked_genome
+        self.kwargs = kwargs
+        if genome_path is None:
+            genome_path = os.path.join(str(pathlib.Path.home()),
+                'data', 'genome')
+        self.genome_path = genome_path
+
+
+    def get_fa(self):
+        """
+        Get the fasta file of specific genome
+        {genome}/bigZips/{genome}.fa
+        also check ".gz" file
+        """
+        fa = os.path.join(self.genome_path, self.genome, 'bigZips',
+            self.genome + '.fa')
+        if not file_exists(fa):
+            # gencode version
+            fa = os.path.join(self.genome_path, self.genome, 'fasta',
+                self.genome + '.fa')
+        fa_gz = fa + '.gz'
+        if not file_exists(fa):
+            if file_exists(fa_gz):
+                log.error('require to unzip the fasta file: %s' % fa_gz)
+            else:
+                log.error('fasta file not detected: %s' % fa)
+            return None
+        else:
+            return fa
+
+
+    def get_fasize(self):
+        """Get the fasta size file, chromosome size
+        optional, fetch chrom size from ucsc
+        http://hgdownload.cse.ucsc.edu/goldenPath/<db>/bigZips/<db>.chrom.sizes
+
+        or using UCSC tool: fetchChromSizes
+        fetchChromSizes hg39 > hg38.chrom.sizes
+        """
+        fa = self.get_fa()
+        fa_size = fa + '.chrom.sizes'
+        if not file_exists(fa_size):
+            log.warning('file not exists, run samtools faidx to generate it')
+            pysam.faidx(fa) # create *.fa.fai
+            os.rename(fa + '.fai', fa_size)
+        return fa_size
+
+
+    def phylop100(self):
+        """Return the phylop100 bigWig file of hg19, only
+        for conservation analysis
+        """
+        p = os.path.join(self.genome_path, self.genome, 'phyloP100way',
+            self.genome + '.100way.phyloP100way.bw')
+        if not file_exists(p):
+            p = None
+        return p
+
+
+    def gene_bed(self, version='refseq', rmsk=False):
+        """Return the gene annotation in BED format
+        support UCSC, ensembl, gencode
+        """
+        if rmsk:
+            suffix = '.rmsk.bed'
+        else:
+            suffix = '.refseq.bed'
+        g = os.path.join(self.genome_path, self.genome,
+            'annotation_and_repeats', self.genome + suffix)
+        if not file_exists(g):
+            g = None
+        return g
+
+
+    def gene_gtf(self, version='refseq'):
+        """Return the gene annotation in GTF format
+        support refseq, ensembl, gencode
+        """
+        version = version.lower() #
+        gtf = os.path.join(
+            self.genome_path,
+            self.genome,
+            'annotation_and_repeats',
+            self.genome + '.' + version + '.gtf')
+        if not file_exists(gtf):
+            gtf = os.path.join(
+            self.genome_path,
+            self.genome,
+            'gtf',
+            self.genome + '.' + version + '.gtf')
+        if not file_exists(gtf):
+            gtf = None
+        return gtf
+
+
+    def te(self, format='gtf'):
+        """Return TE annotation of the genome
+        or return TE consensus sequence for the genome (dm3)
+        """
+        # only dm3 supported
+        te_gtf = os.path.join(self.genome_path, self.genome,
+            self.genome + '_transposon',
+            self.genome + '_transposon.' + format)
+        if not file_exists(te_gtf):
+            te_gtf = None
+        return te_gtf
+
+
+    def piRNA_cluster(self, format='gtf'):
+        """Return TE annotation of the genome
+        or return TE consensus sequence for the genome (dm3)
+        """
+        # only dm3 supported
+        te_gtf = os.path.join(self.genome_path, self.genome,
+            self.genome + '_piRNA_clusters',
+            self.genome + '_piRNA_clusters.' + format)
+        if not file_exists(te_gtf):
+            te_gtf = None
+        return te_gtf
+    
+    
+    
+def bed_to_gtf(file_in, file_out):
+    """Convert BED to GTF
+    chrom chromStart chromEnd name score strand
+    """
+    with open(file_in) as r, open(file_out, 'wt') as w:
+        for line in r:
+            fields = line.strip().split('\t')
+            start = int(fields[1]) + 1
+            w.write('\t'.join([
+                fields[0],
+                'BED_file',
+                'gene',
+                str(start),
+                fields[2],
+                '.',
+                fields[5],
+                '.',
+                'gene_id "{}"; gene_name "{}"'.format(fields[3], fields[3])
+                ]) + '\n')
+    return file_out
+>>>>>>> fix_atac

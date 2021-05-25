@@ -44,7 +44,7 @@ import re
 from multiprocessing import Pool
 from Levenshtein import distance
 from hiseq.utils.helper import *
-from hiseq.trim.trimmer import Trimmer
+from hiseq.trim.trimmer import Trim
 from hiseq.align.alignment import Alignment, AlignIndex
 from hiseq.peak.call_peak import Macs2
 from hiseq.atac.atac_utils import *
@@ -737,7 +737,7 @@ class ChIPseqR1(object):
     def trim(self, trimmed=False):
         """
         Trim reads:
-        hiseq.trim.trimmer.Trimmer(fq1, outdir, fq2, cut_after_trim='9,-6').run()
+        hiseq.trim.trimmer.Trim(fq1, outdir, fq2, cut_after_trim='9,-6').run()
 
         if trimmed:
             do
@@ -775,7 +775,7 @@ class ChIPseqR1(object):
                 log.info('trim() skipped, file exists: {}'.format(
                     self.clean_fq_list))
             else:
-                trimmer = Trimmer(**args_trim)
+                trimmer = Trim(**args_trim)
                 trimmer.run()
                 fq1, fq2 = trimmer.out_files
                 symlink(fq1, clean_fq1)

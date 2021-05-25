@@ -15,11 +15,15 @@ bowtie2 -S -x index -1 r1.fq -2 r2.fq > out.sam 2> out.log
 import os
 import sys
 import re
+import shutil
 import argparse
 from Levenshtein import distance
-from hiseq.utils.helper import *
-from align_index import *
-from utils import * # overwrite: check_file
+from hiseq.utils.seq import Fastx
+from hiseq.utils.utils import update_obj, Config, log, run_shell_cmd
+from hiseq.utils.file import check_fx, check_file, check_path, file_abspath, file_exists, fx_name, symlink_file, copy_file, remove_file
+from hiseq.align.align_index import AlignIndex
+from hiseq.align.utils import check_fx_args, AlignReader
+
 
 
 def parse_bowtie2(x):
@@ -106,7 +110,7 @@ def parse_bowtie2(x):
 
 
 class Bowtie2Config(object):
-    """Check args, prepare files for bowtie
+    """Check args, prepare files for bowtie2
     arguments
     output files
     parser ?!
@@ -129,7 +133,7 @@ class Bowtie2Config(object):
             'smp_name': None,
             'threads': 1,
             'overwrite': False,
-            'n_map': 1,
+            'n_map': 0,
             'unique_only': False,
             'keep_tmp': False,
             'keep_unmap': True,
@@ -137,6 +141,7 @@ class Bowtie2Config(object):
             'default_bowtie2': False,
         }
         self = update_obj(self, args_init, force=False)
+        self.hiseq_type = 'bowtie2_r1'
         self.init_fx()
         if not isinstance(self.outdir, str):
             self.outdir = str(pathlib.Path.cwd())
@@ -148,7 +153,7 @@ class Bowtie2Config(object):
             self.index_name = AlignIndex(self.index).index_name()
         # sample
         if self.smp_name is None:
-            self.smp_name = fq_name(self.fq1, pe_fix=True)
+            self.smp_name = fx_name(self.fq1, fix_pe=True)
         # update files
         self.init_files()
 
@@ -173,11 +178,12 @@ class Bowtie2Config(object):
     def init_files(self):
         self.project_dir = os.path.join(self.outdir, self.smp_name, 
             self.index_name)
+        self.config_dir = os.path.join(self.project_dir, 'config')
         # output files
         prefix = os.path.join(self.project_dir, self.smp_name)
         default_files = {
-            'project_dir': self.project_dir,
-            'config_toml': os.path.join(self.project_dir, 'config.toml'),
+#             'project_dir': self.project_dir,
+            'config_toml': os.path.join(self.config_dir, 'config.toml'),
             'cmd_shell': os.path.join(self.project_dir, 'cmd.sh'),
             'bam': prefix + '.bam',
             'sam': prefix + '.sam',
@@ -186,11 +192,11 @@ class Bowtie2Config(object):
             'unmap2': prefix + '.unmap.2.' + self.fx_format, #
             'align_log': prefix + '.align.log',
             'align_stat': prefix + '.align.stat',
-            'align_toml': prefix + '.align.toml',
+            'align_json': prefix + '.align.json',
             'align_flagstat': prefix + '.flagstat',
         }
         self = update_obj(self, default_files, force=True)
-        check_path(self.project_dir)
+        check_path([self.project_dir, self.config_dir], create_dirs=True)
 
 
 class Bowtie2(object):
@@ -322,11 +328,12 @@ class Bowtie2(object):
             'index': self.index_name,
             'unique_only': self.unique_only,
             })
-        Config().dump(df, self.align_toml)
+        Config().dump(df, self.align_json)
         del_list = [self.sam]
         if not self.keep_unmap:
             del_list.extend([self.unmap1, self.unmap2, self.unmap])
-        file_remove(del_list, ask=False)
+        if not self.keep_unmap:
+            remove_file(del_list, ask=False)
         return (self.bam, self.unmap1, self.unmap2)
 
 
@@ -343,7 +350,7 @@ def get_args():
     ])    
     parser = argparse.ArgumentParser(
         prog='run_bowtie',
-        description='run bowtie program',
+        description='run bowtie2 program',
         epilog=example,
         formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('-1', '--fq1', required=True,
@@ -351,7 +358,7 @@ def get_args():
     parser.add_argument('-2', '--fq2', required=False, default=None,
                         help='Fasta/q file, read2 of PE, or SE read, optional')
     parser.add_argument('-x', '--index', required=True,
-                        help='The alignment index for bowtie')
+                        help='The alignment index for bowtie2')
     parser.add_argument('-o', '--outdir', default=None,
                         help='Directory saving results, default: [cwd]')
     parser.add_argument('-in', '--index-name', default=None, dest='index_name',
@@ -379,7 +386,7 @@ def main():
     args = vars(get_args().parse_args())
     # update: keep_tmp, keep_unmap
     args['keep_unmap'] = args['keep_tmp']
-    Bowtie(**args)
+    Bowtie2(**args).run()
 
 
 if __name__ == '__main__':

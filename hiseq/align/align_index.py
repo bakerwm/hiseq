@@ -3,11 +3,21 @@
 """For aligner index
 1. search/fetch index
 2. validate index
+
+Including functions/classes:
+
+AlignIndex
+fetch_index
+check_index_args
+
 """
 
 import os
-from hiseq.utils.helper import *
-from utils import *
+import pathlib
+import tempfile
+from hiseq.utils.utils import Config, update_obj, log
+from hiseq.utils.file import check_file, file_exists, remove_file
+from hiseq.align.utils import default_values
 
 
 class AlignIndex(object):
@@ -36,9 +46,8 @@ class AlignIndex(object):
         self = update_obj(self, kwargs, force=True)
         self.index = index
         self.aligner = aligner
-        self.supported_aligner = [
-            'bowtie', 'bowtie2', 'hisat2', 'bwa', 'star',
-            ]
+        self.supported_aligner = default_values('supported_aligner')
+        # see: hiseq/bin/config.toml
 
 
     def is_star_index(self, index=None):
@@ -148,6 +157,25 @@ class AlignIndex(object):
         return out
 
 
+    def is_salmon_index(self, index=None):
+        """The index is for salmon
+        check the files: info.json
+        "SeqHash":
+        "NameHash":
+        """
+        if index is None:
+            index = self.index
+#         if index is None:
+#             out = False
+        out = False
+        if isinstance(index, str):
+            f = os.path.join(index, 'info.json')
+            if file_exists(f):
+                df = Config().load(f)
+                out = 'SeqHash' in df
+        return out
+
+
     def guess_aligner(self, index=None):
         """Guess the aligner of the index
         Rules:
@@ -158,10 +186,13 @@ class AlignIndex(object):
             'bowtie2': self.is_bowtie2_index,
             'hisat2': self.is_hisat2_index,
             'bwa': self.is_bwa_index,
-            'star': self.is_star_index
+            'STAR': self.is_star_index,
+            'salmon': self.is_salmon_index,
         }
         for a in self.supported_aligner:
             is_index = fn.get(a, None)
+            if is_index is None:
+                continue
             if is_index(index):
                 aligner = a
                 break
@@ -172,11 +203,14 @@ class AlignIndex(object):
 
     def is_valid(self, index=None):
         """The input index is valid"""
+        if index is None:
+            index = self.index
+        index_aligner = self.guess_aligner(index)
         # match the aligner
         if isinstance(self.aligner, str):
-            out = self.guess_aligner(index) == self.aligner.lower()
+            out = index_aligner == self.aligner
         else:
-            out = self.guess_aligner(index) is not None
+            out = index_aligner is not None
         return out
 
 
@@ -247,7 +281,7 @@ class AlignIndex(object):
                         w.write('\n'.join(['{}\t{}'.format(a,b) for a,b in 
                             gsizes])+'\n')
                     out = tmp_f2
-                    file_remove(tmp_f1, ask=False)
+                    remove_file(tmp_f1, ask=False)
                 else:
                     out = None
         return out
@@ -264,6 +298,8 @@ class AlignIndex(object):
         if index is None:
 #             log.error('index not valid, expect str, got NoneType')
             out = None
+        # gsize: file, chrom_sizes
+        gsize = None
         if self.is_valid(index):
             if self.is_star_index(index):
                 gsize = os.path.join(index, 'chrNameLength.txt')
@@ -271,10 +307,16 @@ class AlignIndex(object):
                 self.is_bowtie2_index(index) or \
                 self.is_hisat2_index(index):
                 gsize = self.inspect_index(index, out_file)
+            elif self.is_salmon_index(index):
+                f = os.path.join(index, 'info.json')
+                if file_exists(f):
+                    df = Config().load(f)
+                    s = df.get('seq_length', None)
+                else:
+                    s = 0
             else:
                 log.error('index_size() not support the index: {}'.format(
                     index))
-                gsize = None
         # output
         s = 0
         if file_exists(gsize):
@@ -282,8 +324,7 @@ class AlignIndex(object):
                 for line in r:
                     s += eval(line.strip().split('\t')[1])
         # return s if s > 0 else None
-        return s
-        
+        return gsize if out_file else s
 
 
 def fetch_index(genome, group=None, aligner='bowtie', genome_path=None):
@@ -300,7 +341,7 @@ def fetch_index(genome, group=None, aligner='bowtie', genome_path=None):
         if group=`None`, return the name of the genome
 
     aligner : str
-        The aligner, [bowtie, bowtie2, star, bwa, ...] 
+        The aligner, [bowtie, bowtie2, star, bwa, salmon, ...] 
 
     genome_path : str
         The root of the genome data
@@ -326,8 +367,12 @@ def fetch_index(genome, group=None, aligner='bowtie', genome_path=None):
             |- transposon/
             |- piRNA_cluster/
     """
-    supported_genomes = ['dm3', 'dm6', 'mm9', 'mm10', 'hg19', 'hg38', 'GRCh38']
-    supported_aligner = ['bowtie', 'bowtie2', 'bwa', 'star', 'hisat2']
+    supported_genomes = default_values('supported_genomes')
+    supported_aligner = default_values('supported_aligner')
+    if supported_genomes is None:
+        raise ValueError('check file: hiseq/bin/config.toml')
+    if supported_aligner is None:
+        raise ValueError('check file: hiseq/bin/config.toml')
     # check arguments
     tag_err = False
     if not genome in supported_genomes:
@@ -366,8 +411,6 @@ def fetch_index(genome, group=None, aligner='bowtie', genome_path=None):
     return out
 
 
-
-
 def check_index_args(**kwargs):
     """Check the index for aligner
     exists
@@ -375,15 +418,25 @@ def check_index_args(**kwargs):
     aligner
     name
     ...
+<<<<<<< HEAD
 
     Parameters
     ----------
+=======
+    Parameters
+    ----------
+    index_list (ignore all)
+    extra_index (append)
+>>>>>>> fix_atac
     genome
     genome_index
     spikein
     spikein_index
+<<<<<<< HEAD
     index_list (ignore all)
     extra_index (append)
+=======
+>>>>>>> fix_atac
     to_rRNA
     to_MT
     to_chrM
@@ -437,7 +490,20 @@ def check_index_args(**kwargs):
     else:
         # for index_list
         index_list = [] # init
-        # level-2.1 : genome
+        # level-2.1 : spikein
+        if isinstance(spikein, str):
+            spikein_index = fetch_index(spikein, aligner=aligner)
+            if group:
+                group_index_sp = fetch_index(
+                    spikein, group=group, aligner=aligner)
+        if isinstance(spikein_index, str):
+            if group_index_sp:
+                index_list.append(group_index_sp)
+            if AlignIndex(spikein_index, aligner).is_valid():
+                index_list.append(spikein_index)
+            else:
+                log.error('spikein_index not valid: {}'.format(spikein_index))
+        # level-2.2 : genome
         if isinstance(genome, str):
             genome_index = fetch_index(genome, aligner=aligner)
             # for group_index
@@ -451,19 +517,6 @@ def check_index_args(**kwargs):
                 index_list.append(genome_index)
             else:
                 log.error('genome_index not valid: {}'.format(genome_index))
-        # level-2.2 : spikein
-        if isinstance(spikein, str):
-            spikein_index = fetch_index(spikein, aligner=aligner)
-            if group:
-                group_index_sp = fetch_index(
-                    spikein, group=group, aligner=aligner)
-        if isinstance(spikein_index, str):
-            if group_index_sp:
-                index_list.append(group_index_sp)
-            if AlignIndex(spikein_index, aligner).is_valid():
-                index_list.append(spikein_index)
-            else:
-                log.error('spikein_index not valid: {}'.format(spikein_index))
         # level-2.3 : extra
         if isinstance(extra_index, list):
             if len(extra_index) > 0:

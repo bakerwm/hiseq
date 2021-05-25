@@ -4,6 +4,14 @@
 """
 Function, processing BED files
 
+functions/classes:
+
+Bed
+BedOverlap
+bed2gtf
+bed_to_saf
+TableReader
+
 1. convert formats between: GTF, GFF, 
 """
 
@@ -11,34 +19,18 @@ import os
 import pybedtools
 from hiseq.utils.helper import *
 import sys
+import tempfile
+import pathlib
+import pybedtools
+from shutil import which
+from itertools import combinations
 from itertools import count
-
-
-
-
-
-
-def bed2gtf(file_in, file_out):
-    """Convert BED to GTF
-    chrom chromStart chromEnd name score strand
-    """
-    with open(file_in) as r, open(file_out, 'wt') as w:
-        for line in r:
-            fields = line.strip().split('\t')
-            start = int(fields[1]) + 1
-            w.write('\t'.join([
-                fields[0],
-                'BED_file',
-                'gene',
-                str(start),
-                fields[2],
-                '.',
-                fields[5],
-                '.',
-                'gene_id "{}"; gene_name "{}"'.format(fields[3], fields[3])
-                ]) + '\n')
-    return file_out
-
+from hiseq.utils.utils import convert_image, log, update_obj, Config, \
+    run_shell_cmd
+from hiseq.utils.file import check_path, file_exists, file_nrows, file_prefix, \
+    remove_file, Genome, read_lines
+from hiseq.utils.bam import Bam
+from hiseq.utils.featurecounts import FeatureCounts
 
 
 def bed_to_saf(file_in, file_out):
@@ -71,7 +63,6 @@ def bed_to_saf(file_in, file_out):
         except:
             log.error('bed_to_saf() failed, see: {}'.format(file_out))
     return file_out
-
 
 
 
@@ -418,4 +409,328 @@ class BedReader(TableReader):
         if self.discard_first_column:
             fields.pop(0)
         return Bed(fields, self) #self as argument reader
+    
+    
+class BedOverlap(object):
+    """
+    pybedtools API, to calculate the overlaps between bed files
+    pybedtools.contrib.venn_maker.venn_maker(beds, names, figure_filename, script_filename, run=True)
+    make venn plot
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
 
+
+    def init_args(self):
+        args_init = {
+            'peak_list': None,
+            'outdir': None,
+            'flag': False,
+            'prefix': 'peak_overlap',
+            'overwrite': False
+        }
+        self = update_obj(self, args_init, force=False)
+        if self.outdir is None:
+            self.outdir = str(pathlib.Path.cwd())
+        # update
+        self.init_peaks()
+        self.init_files()
+
+
+    def init_peaks(self):
+        p = []
+        if isinstance(self.peak_list, str):
+            p_ext = os.path.splitext(self.peak_list)[1]
+            if p_ext == '.txt':
+                p = read_lines(self.peak_list, comment='#')
+            elif p_ext in ['.bed', '.narrowPeak']:
+                p = [self.peak_list]
+            else:
+                log.error('unknown format, {}'.format(p_ext))
+        elif isinstance(self.peak_list, list):
+            p = self.peak_list
+        else:
+            log.error('illegal peak, expect str,list, got {}'.format(
+                type(self.peak).__name__))
+        # check all
+        p = [i for i in p if file_nrows(i) > 0] # filter by rows
+        if not all([
+            isinstance(p, list),
+            all(file_exists(p)),
+            len(p) > 1,
+        ]):
+            log.error('illegal peak, [>=2 files; >0 peaks]')
+        # overlap between 2-4 bed files
+        if len(p) > 4:
+            p = p[:4] # at most 4 files
+            log.error('supported for <=4 files, choose the first 4')
+        self.peak_list = p # assign
+
+
+    def init_files(self):
+        self.peak_names = file_prefix(self.peak_list)
+        if not isinstance(self.prefix, str):
+            self.prefix = 'peak_overlap'
+        # files
+        self.config_toml = os.path.join(self.outdir, 'config.toml')
+        self.tiff = os.path.join(self.outdir, self.prefix + '.tiff')
+        self.png = os.path.join(self.outdir, self.prefix + '.png')
+        self.venn_R = os.path.join(self.outdir, self.prefix + '.venn.R')
+
+
+    def run_overlap(self):
+        plt = pybedtools.contrib.venn_maker.venn_maker
+        if os.path.exists(self.tiff) and self.overwrite is False:
+            log.info('BedOverlap() skipped, file exists')
+        if len(self.peak_list) > 1:
+            log.info('Calculating overlaps between BED files')
+            try:
+                plt(self.peak_list, self.peak_names, figure_filename=self.tiff,
+                    script_filename=self.venn_R, run=True)
+            except:
+                log.error('run_overlap() failed')
+        # tiff -> png
+        if os.path.exists(self.png) and self.overwrite is False:
+            pass
+        else:
+            log.info('Coverting Tiff to png')
+            if os.path.exists(self.tiff):
+                convert_image(self.tiff, 'PNG')
+
+ 
+    def run(self):
+        self.run_overlap()
+        
+
+class PeakFRiP(object):
+    """
+    Calculate the FRiP 
+    see ENCODE: https://www.encodeproject.org/data-standards/terms/#enrichment
+    1. bedtools intersect
+    2. featureCounts
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+
+
+    def init_args(self):
+        args_init = {
+            'peak': None,
+            'bam': None,
+            'method': 'bedtools', #option: featureCounts
+            'genome': None,
+            'gsize': None,
+        }
+        self = update_obj(self, args_init, force=False)
+        if not all([
+            isinstance(self.peak, str),
+            isinstance(self.bam, str),
+            file_exists(self.peak),
+            file_exists(self.bam),
+            self.method in ['bedtools', 'featureCounts'],
+        ]):
+            raise ValueError('PeakFRiP() failed, check arguments')
+        # get gsize file
+        if isinstance(self.genome, str):
+            self.gsize = Genome(self.genome).get_fasize()
+        
+
+    def run_bedtools(self):
+        """
+        see: https://www.biostars.org/p/337872/#338646
+        sort -k1 -k2,2n -o peak.bed peak.bed
+        bedtools intersect -c -a peak.bed -b file.bam | awk '{i+=$n}END{print i}'
+        """
+        total = Bam(self.bam).count()
+        rip_txt = self._tmp(delete=False)
+        if file_exists(self.gsize):
+            args_sorted = '--sorted -g {}'.format(self.gsize)
+        else:
+            args_sorted = ''
+        cmd = ' '.join([
+            'sort -k1,1 -k2,2n -o {} {}'.format(self.peak, self.peak),
+            '&& bedtools intersect -c',
+            '-a {} -b {}'.format(self.peak, self.bam),
+            args_sorted,
+            r"| awk '{i+=$NF}END{print i}'",
+            '> {}'.format(rip_txt)
+            ])
+        run_shell_cmd(cmd)
+        with open(rip_txt, 'rt') as r:
+            rip = int(r.read().strip())
+        if total > 0:
+            frip = round(rip/total, 4) #  '{:.2f}'.format(rip/total*100)
+        else:
+            frip = 0
+        # fragments (PE)
+        if Bam(self.bam).is_paired():
+            total = int(total / 2.0)
+            rip = int(rip / 2.0)
+        remove_file(rip_txt, ask=False)
+        # output
+        out = {
+            'index': os.path.basename(self.bam),
+            'total': total,
+            'map': rip,
+            'pct': frip,
+        }
+        return out
+
+
+    def run_featureCounts(self):
+        """
+        see: https://www.biostars.org/p/337872/#337890
+        -p , fragments
+        """
+        fc = FeatureCounts(gtf=self.peak, bam_list=self.bam)
+        fc.run()
+        df = Config().load(fc.summary_json)
+        return df # index,total,map,pct
+
+
+    def _tmp(self, delete=True):
+        """
+        Create a tmp filename
+        """
+        tmp = tempfile.NamedTemporaryFile(prefix='tmp', suffix='.txt', delete=delete)
+        return tmp.name
+
+
+    def run(self):
+        if self.method == 'bedtools':
+            out = self.run_bedtools()
+        elif self.method == 'featureCounts':
+            out = self.run_featureCounts()
+        else:
+            out = None
+            log.error('method, unknown, [bedtools|featureCounts], got {}'.format(
+                self.method))
+        return out
+
+
+class PeakIDR(object):
+    """
+    Check IDR
+    Irreproducibility Discovery Rate
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+
+
+    def init_args(self):
+        args_init = {
+            'idr_cmd': which('idr'),
+            'peak_list': None,
+            'outdir': None,
+            'prefix': None,
+            'input_type': 'narrowPeak', # broadPeak, bed, gff
+            'cor_method': 'pearson', # spearman
+            'overwrite': False,
+            'flag': True # run all
+        }
+        self = update_obj(self, args_init, force=False)
+        if self.outdir is None:
+            self.outdir = str(pathlib.Path.cwd())
+        self.init_peaks()
+        check_path(self.outdir, create_dirs=True)
+        self.config_toml = os.path.join(self.outdir, self.prefix+'.config.toml')
+        Config().dump(self.__dict__, self.config_toml)
+
+    
+    def init_peaks(self):
+        p = []
+        if isinstance(self.peak_list, str):
+            p_ext = os.path.splitext(self.peak_list)[1]
+            if p_ext == '.txt':
+                p = read_lines(self.peak_list, comment='#')
+            elif p_ext in ['.bed', '.narrowPeak']:
+                p = [self.peak_list]
+            else:
+                log.error('unknown format, {}'.format(p_ext))
+        elif isinstance(self.peak_list, list):
+            p = self.peak_list
+        else:
+            log.error('illegal peak, expect str,list, got {}'.format(
+                type(self.peak).__name__))
+        # check all
+        p = [i for i in p if file_nrows(i) > 100] # filter by rows
+        if not all([
+            isinstance(p, list),
+            all(file_exists(p)),
+            len(p) > 1,
+        ]):
+            log.error('illegal peak, [>=2 files; >100peaks]')
+        self.peak_list = p # assign
+
+
+    def run_pair_idr(self, peakA=None, peakB=None):
+        """
+        Compute IDR for two group of peaks
+        """
+        if not all([
+            isinstance(peakA, str),
+            isinstance(peakB, str),
+            file_exists(peakA),
+            file_exists(peakB),
+        ]):
+            log.error('run_pair_idr() skipped, illegal peakA/peakB')
+            return None
+        # generate prefix/names
+        pA, pB = file_prefix([peakA, peakB])
+        prefix = '{}.vs.{}.idr'.format(pA, pB)
+        if isinstance(self.prefix, str):
+            prefix = self.prefix + prefix
+        # files
+        cmd_txt = os.path.join(self.outdir, prefix + '.cmd.sh')
+        idr_txt = os.path.join(self.outdir, prefix + '.txt')
+        idr_png = idr_txt + '.png'
+        idr_log = os.path.join(self.outdir, prefix + '.log')
+        # command
+        cmd = ' '.join([
+            '{} --samples {} {}'.format(self.idr_cmd, peakA, peakB),
+            '--input-file-type {}'.format(self.input_type),
+            '--plot', #.format(idr_png),
+            '--output-file {}'.format(idr_txt),
+            '--log-output-file {}'.format(idr_log)
+            ])
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+        if os.path.exists(idr_png) and not self.overwrite:
+            log.warning('run_idr() skipped, file exists: {}'.format(idr_png))
+        else:
+            try:
+                _, stdout, stderr = run_shell_cmd(cmd)
+                with open(idr_log, 'wt') as w:
+                    w.write(stdout + '\n' + stderr + '\n')
+            except:
+                log.error('idr command failed')
+        if not os.path.exists(idr_png):
+            log.error('Peak().idr() failed: {}'.format(idr_log))
+
+
+    def run(self):
+        """
+        Run A, B
+        """
+        # prepare config
+        msg = '\n'.join([
+            '-'*80,
+            '{:>14} : {}'.format('program', 'hiseq.utils.bed.PeakIDR()'),
+            '{:>14} : {}'.format('peaks', self.peak_list),
+            '{:>14} : {}'.format('outdir', self.outdir),
+            '{:>14} : {}'.format('prefix', self.prefix),
+            '{:>14} : {}'.format('peak_type', self.input_type),
+            '{:>14} : {}'.format('cor_method', self.cor_method),
+            '{:>14} : {}'.format('n_peaks', len(self.peak_list)),
+            '-'*80,
+        ])
+        print(msg)
+        if len(self.peak_list) > 1:
+            for peakA, peakB in combinations(self.peak_list, 2):
+                self.run_pair_idr(peakA, peakB)
+
+
+#

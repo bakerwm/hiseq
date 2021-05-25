@@ -13,8 +13,31 @@ import shutil
 import numpy as np
 import pandas as pd
 from xopen import xopen
+import pyfastx
 import collections # Fastx().collapse()
-from hiseq.utils.helper import *
+# from hiseq.utils.helper import *
+# from hiseq.utils.utils import update_obj
+
+
+
+def update_obj(obj, d, force=True, remove=False):
+    """Update the object, by dict
+    d: dict
+    force: bool, update exists attributes
+    remove: bool, remove exists attributes
+    Update attributes from dict
+    force exists attr
+    """
+    if remove is True:
+        for k in obj.__dict__:
+            delattr(obj, k)
+    # add attributes
+    if isinstance(d, dict):
+        for k, v in d.items():
+            if not hasattr(obj, k) or force:
+                setattr(obj, k, v)
+    return obj
+
 
 
 class Fastx(object):
@@ -147,11 +170,12 @@ class Fastx(object):
         fx_reader()
         """
         with xopen(self.input) as r, xopen(out, 'wt') as w:
-            for name, seq, qual in self.readfq(r):
+            for name, seq, qual, comment in self.readfq(r):
                 base_from = 'ACGTNacgtn'
                 base_to = 'TGCANtgcan'
                 tab = str.maketrans(base_from, base_to)
                 seq = seq.translate(tab)[::-1]
+                name = name + ' ' + comment
                 if qual is None:
                     w.write('\n'.join('>'+name, seq))
                 else:
@@ -198,15 +222,16 @@ class Fastx(object):
         outdir = os.path.dirname(out)
         check_path(outdir)
         
-        if file_exists(out):
+        if os.path.exists(out):
             log.info('file eixsts, {}'.format(out))
         else:
             i = 0
             with xopen(self.input, 'rt') as r, xopen(out, 'wt') as w:
-                for name, seq, qual in self.readfq(r):
+                for name, seq, qual, comment in self.readfq(r):
                     i += 1
                     if i > n:
                         break
+                    name = name + ' ' + comment
                     if self.format == 'fastq':
                         fx = '@{}\n{}\n+\n{}'.format(name, seq, qual)
                     elif self.format == 'fasta':
@@ -225,8 +250,9 @@ class Fastx(object):
             raise Exception('fasta file expected, input: {}'.format(self.input))
 
         with xopen(self.input) as r, xopen(out, 'wt') as w:
-            for name, seq, qual in self.readfq(r):
+            for name, seq, qual, comment in self.readfq(r):
                 qual = 'J' * len(seq) # Phred33, 41
+                name = name + ' ' + comment
                 w.write('\n'.join('@'+name, seq, '+', qual) + '\n')
 
 
@@ -265,14 +291,14 @@ class Fastx(object):
                         last = l[:-1] # save this line
                         break
             if not last: break
-            name, seqs, last = last[1:].partition(" ")[0], [], None
+            [name, _, comment], seqs, last = last[1:].partition(" "), [], None
             for l in fh: # read the sequence
                 if l[0] in '@+>':
                     last = l[:-1]
                     break
                 seqs.append(l[:-1])
             if not last or last[0] != '+': # this is a fasta record
-                yield name, ''.join(seqs), None # yield a fasta record
+                yield name, ''.join(seqs), None, comment # yield a fasta record
                 if not last: break
             else: # this is a fastq record
                 seq, leng, seqs = ''.join(seqs), 0, []
@@ -281,10 +307,10 @@ class Fastx(object):
                     leng += len(l) - 1
                     if leng >= len(seq): # have read enough quality
                         last = None
-                        yield name, seq, ''.join(seqs); # yield a fastq record
+                        yield name, seq, ''.join(seqs), comment; # yield a fastq record
                         break
                 if last: # reach EOF before reading enough quality
-                    yield name, seq, None # yield a fasta record instead
+                    yield name, seq, None, comment # yield a fasta record instead
                     break
 
 
@@ -348,23 +374,19 @@ class Fastx(object):
             region = '1:-1' # the full length
         # convert "7,-7" to "7:-7"
         region = region.replace(',', ":")
-
         p = re.compile('^(-?\d+):(-?\d+)$')
         m = p.search(region)
         if m:
             pass
         else:
             log.error('unknown region format, expect: 1:-1, got: {}'.format(region))
-
         # 0-indexed
         start = int(m.group(1))
         end = int(m.group(2))
         if start > 0:
             start = start - 1
-
         if end < 0:
             end = end + 1
-
         return (start, end)
 
 
@@ -373,15 +395,21 @@ class Fastx(object):
         Extract substring, by start, end (0-index)
         convert to python style
         """
-        if start == 0 and end == 0:
-            pass
-        elif start == 0:
-            s = s[:end]
-        elif end == 0:
-            s = s[start:]
+        if isinstance(s, str):
+            if start == 0 and end == 0:
+                pass
+            elif start == 0:
+                s = s[:end]
+            elif end == 0:
+                s = s[start:]
+            else:
+                # exception: start:-end > length
+                if start - end > len(s):
+                    s = None
+                else:
+                    s = s[start:end]
         else:
-            s = s[start:end]
-
+            s = None
         return s
 
 
@@ -395,19 +423,31 @@ class Fastx(object):
         1:-1,   the full length
         """
         start, end = self.region_to_pos(region)
-
         with xopen(self.input) as r, xopen(out, 'wt') as w:
-            for name, seq, qual in self.readfq(r):
+            for name, seq, qual, comment in self.readfq(r):
+                name = name.strip()
                 seq = self.sub_string(seq, start, end)
-                # specific length
-                if len(seq) < self.len_min:
-                    continue
-
-                if qual is None: # fasta
-                    w.write('\n'.join(['>'+name, seq]) + '\n')
+                qual = self.sub_string(qual, start, end)
+                # update name
+                # !!!! error !!!!
+                # STAR 2.5.2a, 
+                # does not allow 'white spaces' at the end of name-line of fastq
+                # throw error:
+                # ReadAlignChunk_processChunks.cpp:115:processChunks EXITING because of FATAL ERROR in input reads: unknown file format: the read ID should start with @ or >
+#                 if isinstance(comment, str):
+#                     if len(comment) > 0:
+#                         name = name + ' ' + comment #fix comment=None
+                # filter length
+                if isinstance(seq, str):
+                    if len(seq) < self.len_min:
+                        continue
+                    if isinstance(qual, str):
+                        out = '@{}\n{}\n+\n{}'.format(name, seq, qual)
+                    else:
+                        out = '>{}\n{}'.format(name, seq)
+                    w.write(out+'\n')
                 else:
-                    qual = self.sub_string(qual, start, end)
-                    w.write('\n'.join(['@'+name, seq, '+', qual]) + '\n')
+                    continue
 
 
     def subseq_pe(self, input2, out1, out2, region=None):
@@ -424,15 +464,21 @@ class Fastx(object):
         with xopen(self.input) as r1, xopen(input2) as r2, \
             xopen(out1, 'wt') as w1, xopen(out2, 'wt') as w2:
             for read1, read2 in zip(self.readfq(r1), self.readfq(r2)):
-                name1, seq1, qual1 = read1
-                name2, seq2, qual2 = read2
+                name1, seq1, qual1, comment1 = read1
+                name2, seq2, qual2, comment2 = read2
                 seq1 = self.sub_string(seq1, start, end)
                 seq2 = self.sub_string(seq2, start, end)
-
+                if isinstance(comment1, str):
+                    if len(comment1) > 0:
+                        name1 = name1 + ' ' + comment1 #fix comment=None
+                if isinstance(comment2, str):
+                    if len(comment2) > 0:
+                        name2 = name2 + ' ' + comment2 #fix comment=None
+#                 name1 = name1 + ' ' + comment1
+#                 name2 = name2 + ' ' + comment2
                 # specific length
                 if len(seq1) < self.len_min or len(seq2) < self.len_min:
                     continue
-
                 # write
                 if qual1 is None: # fa
                     w1.write('\n'.join(['>' + name1, seq1]) + '\n')
@@ -517,11 +563,12 @@ class Fastx(object):
             return x_cut
 
         with xopen(self.input) as r, xopen(out, 'wt') as w:
-            for name, seq, qual in self.readfq(r):
+            for name, seq, qual, comment in self.readfq(r):
                 seq = cut_cut(seq)
                 if len(seq) < len_min and discard_tooshort:
                     continue # skip
                 # write
+                name = name + ' ' + comment
                 if qual is None: # fasta
                     w.write('\n'.join(['>'+name, seq]) + '\n')
                 else:
@@ -659,7 +706,7 @@ class Fastx(object):
         n_max = 1000000
         n = 0
         with xopen(self.input) as r:
-            for _, seq, _ in self.readfq(r):
+            for _, seq, _, _ in self.readfq(r):
                 n += 1
                 if n > n_max:
                     break
@@ -717,7 +764,7 @@ class Fastx(object):
         fragSizes = []
         frames = []
         with xopen(self.input) as r:
-            for name, seq, qual in self.readfq(r):
+            for name, seq, qual, comment in self.readfq(r):
                 counter += 1
                 fragSizes.append(len(seq))
                 # last record

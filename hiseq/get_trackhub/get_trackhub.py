@@ -680,7 +680,7 @@ class HttpServer(object):
         # check http_root_dir and s
         # s contains http_root_dir
         if not self.s.startswith(self.http_root_dir):
-            log.errorr('s and http_root_dir not match')
+            log.error('s and http_root_dir not match')
             raise ValueError(self.msg)
 
         # argument type

@@ -23,7 +23,7 @@ setuptools.setup(
     keywords='hiseq RNAseq ATACseq ChIPseq smRNAseq',
     packages=setuptools.find_packages(),
     entry_points={
-        'console_scripts': ['hiseq=hiseq.hiseq:main'],
+        'console_scripts': ['hiseq=hiseq.main.hiseq:main'],
     },
     classifiers=[
         "Programming Language :: Python :: 3",
