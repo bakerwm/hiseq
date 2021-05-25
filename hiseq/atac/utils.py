@@ -523,8 +523,8 @@ def qc_tss_enrich(x, hiseq_type='r1', bw_type='r1'):
     elif a.is_hiseq_rn:
         bw_list = list_hiseq_file(x, 'bw', 'r1')
         arg_bw = ' '.join(bw_list)
-        smp_name = list_hiseq_file(x, 'smp_anme', 'r1')
-        arg_label = '--samplesLabel {}'.format(smp_name)
+        smp_name = list_hiseq_file(x, 'smp_name', 'r1') # multi
+        arg_label = '--samplesLabel {}'.format(' '.join(smp_name))
         per_group = '--perGroup' # plotProfile
     else:
         arg_bw = ''
@@ -591,8 +591,8 @@ def qc_genebody_enrich(x, hiseq_type='r1', bw_type='r1'):
     elif a.is_hiseq_rn:
         bw_list = list_hiseq_file(x, 'bw', 'r1')
         arg_bw = ' '.join(bw_list)
-        smp_name = list_hiseq_file(x, 'smp_name', 'r1')
-        arg_label = '--samplesLabel {}'.format(smp_name)
+        smp_name = list_hiseq_file(x, 'smp_name', 'r1') # multi
+        arg_label = '--samplesLabel {}'.format(' '.join(smp_name))
         per_group = '--perGroup' # plotProfile
     else:
         arg_bw = ''

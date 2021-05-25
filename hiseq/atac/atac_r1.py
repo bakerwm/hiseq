@@ -162,6 +162,7 @@ class AtacR1Config(object):
         default_files = {
             'config_toml': self.config_dir + '/config.toml', # updated
             'report_log': self.report_dir + '/report.log',
+            'report_html': self.report_dir + '/HiSeq_report.html',
             'raw_fq1': self.raw_dir + '/' + os.path.basename(self.fq1),
             'raw_fq2': self.raw_dir + '/' + os.path.basename(self.fq2),
             'clean_fq1': self.clean_dir + '/' + os.path.basename(self.fq1),

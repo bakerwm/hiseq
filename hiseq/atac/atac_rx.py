@@ -103,6 +103,7 @@ class AtacRxConfig(object):
         default_files = {
             'config_toml': self.config_dir + '/config.toml',
             'report_log': self.report_dir + '/report.log',
+            'report_html': self.report_dir + '/HiSeq_report.html',
         }
         self = update_obj(self, default_files, force=True) # key
         check_path([self.config_dir, self.report_dir], create_dirs=True)

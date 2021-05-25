@@ -250,6 +250,7 @@ class AtacRnConfig(object):
         default_files = {
             'config_toml': self.config_dir + '/config.toml', # updated
             'report_log': self.report_dir + '/report.log',
+            'report_html': self.report_dir + '/HiSeq_report.html',
 
             'bam': self.bam_dir + '/' + self.project_name + '.bam',
             'bam_rmdup': self.bam_dir + '/' + self.smp_name + '.rmdup.bam',
