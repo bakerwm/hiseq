@@ -23,7 +23,7 @@ from PIL import Image # pillow
 from datetime import datetime
 from dateutil import tz
 from itertools import combinations
-from hiseq.utils.file import file_exists
+from hiseq.utils.file import file_exists, list_dir
 # from .helper import log
 # from .file import file_exists, file_abspath
 
