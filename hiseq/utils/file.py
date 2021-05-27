@@ -1034,4 +1034,3 @@ def bed_to_gtf(file_in, file_out):
                 'gene_id "{}"; gene_name "{}"'.format(fields[3], fields[3])
                 ]) + '\n')
     return file_out
->>>>>>> fix_atac

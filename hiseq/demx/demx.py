@@ -304,7 +304,7 @@ class Demx(object):
         # level-1: p7 files
         p7_dir = os.path.join(self.outdir, 'p7_index')
         f1_list = listfile(p7_dir, '*.fq.gz')
-        f1_list = [i for i in f1_list if fq_name(i, pe_fix=True) in self.samples]
+        f1_list = [i for i in f1_list if fq_name(i, fix_pe=True) in self.samples]
         f1x_list = [os.path.join(self.outdir, os.path.basename(i)) for i in f1_list]
         for f1, f1x in zip(f1_list, f1x_list):
             if os.path.exists(f1) and not os.path.exists(f1x):
@@ -318,7 +318,7 @@ class Demx(object):
         for bc_table in bc_tables:
             bc_dir = os.path.dirname(bc_table)
             f2_list = listfile(bc_dir, '*.fq.gz')
-            f2_list = [i for i in f2_list if fq_name(i, pe_fix=True) in self.samples]
+            f2_list = [i for i in f2_list if fq_name(i, fix_pe=True) in self.samples]
             f2x_list = [os.path.join(self.outdir, os.path.basename(i)) for i in f2_list]
             for f2, f2x in zip(f2_list, f2x_list):
                 if os.path.exists(f2) and not os.path.exists(f2x):
@@ -457,7 +457,7 @@ class Demx2(object):
     def get_bc_raw_files(self):
         bc_fq = {}
         for fq in self.raw_fq_list:
-            prefix = fq_name(fq, pe_fix=True)
+            prefix = fq_name(fq, fix_pe=True)
             prefix = re.sub('_raw$', '', prefix) 
             s_name = self.d_smp.get(prefix, None) # i7_index -> sample_name
             if s_name and prefix in self.bc_ids:
@@ -544,7 +544,7 @@ class Demx2(object):
         for fq in self.raw_fq_list:
             is_r1 = re.search('_1.f(ast)?q+.gz', fq, re.IGNORECASE)
             suffix = '_1.fq.gz' if is_r1 else '_2.fq.gz'
-            prefix = fq_name(fq, pe_fix=True)
+            prefix = fq_name(fq, fix_pe=True)
             ###################################################################
             # Fix sample names: !!!!
             # fix for MGI, Next_Ad2.1 <- Next_Ad2-1_raw
