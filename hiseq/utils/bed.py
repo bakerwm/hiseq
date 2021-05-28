@@ -519,6 +519,7 @@ class PeakFRiP(object):
         args_init = {
             'peak': None,
             'bam': None,
+            'outdir': None,
             'method': 'bedtools', #option: featureCounts
             'genome': None,
             'gsize': None,
@@ -532,6 +533,9 @@ class PeakFRiP(object):
             self.method in ['bedtools', 'featureCounts'],
         ]):
             raise ValueError('PeakFRiP() failed, check arguments')
+        if not isinstance(self.outdir, str):
+            self.outdir = self._tmp(dir=True)
+        check_path(self.outdir, create_dirs=True)
         # get gsize file
         if isinstance(self.genome, str):
             self.gsize = Genome(self.genome).get_fasize()
@@ -544,7 +548,8 @@ class PeakFRiP(object):
         bedtools intersect -c -a peak.bed -b file.bam | awk '{i+=$n}END{print i}'
         """
         total = Bam(self.bam).count()
-        rip_txt = self._tmp(delete=False)
+#         rip_txt = self._tmp(delete=False)
+        rip_txt = os.path.join(self.outdir, 'frip_matrix.txt')
         if file_exists(self.gsize):
             args_sorted = '--sorted -g {}'.format(self.gsize)
         else:
@@ -584,18 +589,22 @@ class PeakFRiP(object):
         see: https://www.biostars.org/p/337872/#337890
         -p , fragments
         """
-        fc = FeatureCounts(gtf=self.peak, bam_list=self.bam)
+        fc = FeatureCounts(gtf=self.peak, bam_list=self.bam, outdir=self.outdir)
         fc.run()
-        df = Config().load(fc.summary_json)
-        return df # index,total,map,pct
+        df = Config().load(fc.summary_json) # multiple bam
+        return list(df.values())[0] # index,total,map,pct #first one; dict
 
-
-    def _tmp(self, delete=True):
+    
+    def _tmp(self, delete=True, dir=False, suffix='.txt'):
         """
-        Create a tmp filename
+        Create a tmp file/dir
         """
-        tmp = tempfile.NamedTemporaryFile(prefix='tmp', suffix='.txt', delete=delete)
+        if dir:
+            tmp = tempfile.TemporaryDirectory()
+        else:
+            tmp = tempfile.NamedTemporaryFile(prefix='tmp', suffix=suffix, delete=delete)
         return tmp.name
+
 
 
     def run(self):

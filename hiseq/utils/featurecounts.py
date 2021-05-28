@@ -346,9 +346,13 @@ class FeatureCounts(object):
 
 
     def wrap_summary(self):
+        # !!! single or multiple bam files ?! multiple
         df = read_fc_summary(self.summary)
-        Config().dump(df, self.summary_json)
-        return df
+        df['filename'] = df.index # add filename to column
+        d = df.transpose().to_dict('dict') # to dict
+        # df2 = df.reset_index().to_dict('dict')
+        Config().dump(d, self.summary_json)
+        return d
         
 
     def run(self):

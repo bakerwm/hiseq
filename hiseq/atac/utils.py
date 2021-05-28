@@ -6,7 +6,7 @@ General modules for ATACseq analysis
 
 analysis-module:
 """
-
+import sys
 import os
 import re
 import glob
@@ -84,6 +84,11 @@ def atac_align_genome(x, hiseq_type='_r1'):
 
     samtools view -bhS -f 2 -F 1804
 
+    ######
+    atac: "-I 10 -X 2000"
+    cnr: "-I -X "
+
+
     exclude: -F
         4    0x4    Read unmapped,
         8    0x8    Mate unmapped,
@@ -94,6 +99,8 @@ def atac_align_genome(x, hiseq_type='_r1'):
     a = read_hiseq(x, hiseq_type) # for general usage
     args_local = a.__dict__
     fq1, fq2 = getattr(a, 'clean_fq_list', [None, None])
+    align_extra = '-I 10 -X 2000' if a.hiseq_type.startswith('atac') else \
+        '-I 10 -X 700' if a.hiseq_type.startswith('cn') else ''  # cnr, cnt
     args_init = {
         'fq1': fq1,
         'fq2': fq2,
@@ -104,7 +111,7 @@ def atac_align_genome(x, hiseq_type='_r1'):
         'keep_tmp': getattr(a, 'keep_tmp', False),
         'max_fragment': 2000,
         'unique_only': True,
-        'extra_para': '-I 10 -X 2000', # specific for ATACseq
+        'extra_para': align_extra, # specific for ATACseq
     }
     args_local.update(args_init)
     if file_exists(a.bam) and not a.overwrite:
@@ -465,7 +472,7 @@ def qc_align(x, hiseq_type='r1'):
     return df
 
 
-def qc_lendist(x, hiseq_type='_r1'):
+def qc_lendist(x, hiseq_type='r1'):
     a = read_hiseq(x, hiseq_type) # for general usage
     if os.path.exists(a.lendist_txt) and a.overwrite is False:
         log.info('lendist() skipped: file exists: {}'.format(
@@ -473,17 +480,19 @@ def qc_lendist(x, hiseq_type='_r1'):
     else:
         BamPEFragSize(a.bam_rmdup).saveas(a.lendist_txt)
         
-        
-def qc_frip(x, hiseq_type='_r1'):
+
+def qc_frip(x, hiseq_type='r1'):
     a = read_hiseq(x, hiseq_type) # for general usage
+    qc_frip_dir = os.path.join(a.qc_dir, 'frip_files')
     if check_file(a.frip_json, check_empty=True):
         log.info('qc_frip() skipped, file exists: {}'.format(
             a.frip_json))
     else:
         try:
             # dict: index, total, n, frip
-            s = PeakFRiP(peak=a.peak, bam=a.bam_rmdup,
-                method='featureCounts').run()
+            s = PeakFRiP(peak=a.peak, bam=a.bam_rmdup, 
+                method='featureCounts', # bedtools
+                outdir=qc_frip_dir).run()
             # number of peaks
             s.update({
                 'id': a.project_name,
