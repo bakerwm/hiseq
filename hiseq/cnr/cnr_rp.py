@@ -2,7 +2,7 @@
 # -*- coding:utf-8 -*-
 
 """
-ATAC-seq pipeline: level-2 (generate report)
+CnR-seq pipeline: level-2 (generate report)
 Generate report
 """
 
@@ -11,21 +11,21 @@ import shutil
 import hiseq
 import argparse
 from hiseq.utils.file import file_exists, check_path
-from hiseq.utils.utils import log, update_obj, Config, get_date, run_shell_cmd, \
-    read_hiseq
+from hiseq.utils.utils import log, update_obj, Config, get_date, \
+    run_shell_cmd, read_hiseq
 
 
-class AtacRp(object):
+class CnrRp(object):
     """
     Parameters
     ----------
     x:  str
         Path to the hiseq project_dir
 
-    >>> AtacRp(project_dir).run()
-    >>> AtacRp(project_dir).report()
+    >>> CnrRp(project_dir).run()
+    >>> CnrRp(project_dir).report()
 
-    $ python atac_rp.py -i prj_dir
+    $ python cnr_rp.py -i prj_dir
     """
     def __init__(self, project_dir, **kwargs):
         self.project_dir = project_dir
@@ -43,7 +43,7 @@ class AtacRp(object):
         if not a.is_hiseq:
             raise ValueError('project_dir not hiseq_dir: {}'.format(self.x))
         # check default files
-        self.hiseq_type = 'atacseq_rp'
+        self.hiseq_type = 'cnr_rp'
         self.report_dir = os.path.join(self.project_dir, 'report')
         self.config_toml = os.path.join(self.report_dir, 'config.toml')
         self.report_html = os.path.join(self.report_dir, 'HiSeq_report.html')
@@ -57,7 +57,7 @@ class AtacRp(object):
     def report(self):
         pkg_dir = os.path.dirname(hiseq.__file__)
         hiseq_report_R = os.path.join(pkg_dir, 'bin', 'hiseq_report.R')
-        atac_report_html = os.path.join(
+        cnr_report_html = os.path.join(
             self.report_dir,
             'HiSeq_report.html')
         cmd = ' '.join([
@@ -73,9 +73,9 @@ class AtacRp(object):
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + '\n')
         # report_html
-        if file_exists(atac_report_html) and not self.overwrite:
+        if file_exists(cnr_report_html) and not self.overwrite:
             log.info('report() skipped, file exists: {}'.format(
-                atac_report_html))
+                cnr_report_html))
         else:
             run_shell_cmd(cmd)
 
@@ -87,10 +87,10 @@ class AtacRp(object):
 def get_args():
     example = '\n'.join([
         'Examples:',
-        '$ python atac_rp.py -i project_dir',
+        '$ python cnr_rp.py -i project_dir',
     ])
     parser = argparse.ArgumentParser(
-        prog='atac_rp',
+        prog='cnr_rp',
         description='Generate hiseq report',
         epilog=example,
         formatter_class=argparse.RawTextHelpFormatter)
@@ -104,7 +104,7 @@ def get_args():
 
 def main():
     args = vars(get_args().parse_args())
-    AtacRp(**args).run()
+    CnrRp(**args).run()
 
 
 if __name__ == '__main__':

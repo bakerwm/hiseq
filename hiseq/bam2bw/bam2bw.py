@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """
 Convert bam to bigWig
 
@@ -15,7 +16,6 @@ How to normalize
 import os
 import pathlib
 from shutil import which
-# from hiseq.utils.helper import log, run_shell_cmd, Bam, check_path, file_exists, Config
 from hiseq.utils.file import file_exists, check_path, file_prefix
 from hiseq.utils.utils import log, Config, run_shell_cmd, get_date, update_obj
 from hiseq.utils.bam import Bam

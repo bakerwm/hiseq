@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """
 CUT&RUN pipeline
 
@@ -30,9 +31,9 @@ O=$projPath/alignment/removeDuplicate/${histName}_bowtie2.sorted.rmDup.sam
 REMOVE_DUPLICATES=true METRICS_FILE=$projPath/alignment/removeDuplicate/picard_summary/${histName}_picard.rmDup.txt
 
 
-
 4. peak calling
-
+SEACR
+Macs2
 
 5. cut metrix
 
