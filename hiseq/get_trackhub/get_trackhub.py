@@ -5,22 +5,30 @@ Demo for trackhub, to create CompositeTrack
 
 Stage:
 
-1. Create simple compositeTrack (for few tracks)  
+1. Create simple compositeTrack (for few tracks)
 2. Create two compositeTracks
-3. Add subgroups for tracks (for large number of tracks) 
+3. Add subgroups for tracks (for large number of tracks)
 4. Automatic recognize subtrack, subgroups, ...
 """
 
 import os
 import sys
+import re
 import signal
 import time
 import yaml
 import logging
 import trackhub
+import tempfile
+import subprocess
+from shutil import which
 from urllib.request import urlopen
 from bs4 import BeautifulSoup
-from hiseq.utils.helper import *
+# from hiseq.utils.helper import *
+from hiseq.utils.file import file_exists, file_abspath, list_dir, \
+    check_path, remove_path
+from hiseq.utils.utils import log, update_obj, Config, get_date, run_shell_cmd
+
 
 
 # logging.basicConfig(
@@ -93,14 +101,14 @@ def run_shell_cmd(cmd):
 def dict2yaml(d, s):
     """
     convert dict to yaml, save to file
-    
+
     Parameters
     -----------
     d : dict
-        A dict saving objects 
+        A dict saving objects
     s : str
         path to a file, will saving the dict as YAML format
-    
+
     dimX:
         name: stage,
         label: stage,
@@ -121,7 +129,7 @@ def dict2yaml(d, s):
             'name': 'stage,',
             'label': 'stage,',
             'mapping': {
-                '1h': '1h,', 
+                '1h': '1h,',
                 '2h': '2h'
             }
         },
@@ -129,7 +137,7 @@ def dict2yaml(d, s):
             'name': 'gene,',
             'label': 'gene,',
             'mapping': {
-                'geneA': 'geneA,', 
+                'geneA': 'geneA,',
                 'geneB': 'geneB'
             }
         }
@@ -137,7 +145,7 @@ def dict2yaml(d, s):
     """
     with open(s, 'w') as w:
         try:
-            yaml.safe_dump(d, w, default_flow_style=False, allow_unicode=True, 
+            yaml.safe_dump(d, w, default_flow_style=False, allow_unicode=True,
                 encoding='utf-8', indent=4)
         except yaml.YAMLError as exc:
             log.error(exc)
@@ -169,7 +177,7 @@ def yaml2dict(s):
             'name': 'stage,',
             'label': 'stage,',
             'mapping': {
-                '1h': '1h,', 
+                '1h': '1h,',
                 '2h': '2h'
             }
         },
@@ -177,7 +185,7 @@ def yaml2dict(s):
             'name': 'gene,',
             'label': 'gene,',
             'mapping': {
-                'geneA': 'geneA,', 
+                'geneA': 'geneA,',
                 'geneB': 'geneB'
             }
         }
@@ -207,7 +215,7 @@ class HubUrl(object):
 
     Purpose
     -------
-    1. Check, validate hub_url 
+    1. Check, validate hub_url
     2. convert hub_url to trackhub_url
 
     Parameters
@@ -221,7 +229,7 @@ class HubUrl(object):
         default: [None]
 
     mirror : str
-        The UCSC genome browser mirror, one of ['usa', 'euro', 'asia'] or 
+        The UCSC genome browser mirror, one of ['usa', 'euro', 'asia'] or
         the URL of other mirror, default: [usa]
 
     position : str or None
@@ -232,7 +240,7 @@ class HubUrl(object):
         Validate the hub_url using hubCheck command line tool. default: [False]
 
     Example:
-    >>> a = HubUrl(hub_url=hub_url, genome='dm6', 
+    >>> a = HubUrl(hub_url=hub_url, genome='dm6',
         position='chr2:10,000,000-12,000,000').trackhub_url()
     >>> print(a)
 
@@ -275,7 +283,7 @@ class HubUrl(object):
         """
         if self.is_url(self.hub_url):
             cmd = ' '.join([
-                shutil.which('hubCheck'),
+                which('hubCheck'),
                 '-noTracks',
                 self.hub_url
                 ])
@@ -301,7 +309,7 @@ class HubUrl(object):
         - http://
         - https://
         - ftp://
-        
+
         auto fix: www.abc.com -> http://www.abc.com
         127.0.0.1
         www.name.com
@@ -332,7 +340,7 @@ class HubUrl(object):
         Parameters
         -----------
         s : str or None
-            The hub.txt url        
+            The hub.txt url
         """
         d = {}
         try:
@@ -355,7 +363,7 @@ class HubUrl(object):
         Parsing 'hub', 'genomesFile' in the file
         """
         args_hub = self.read_url(s)
-        return all([i in args_hub for i in 
+        return all([i in args_hub for i in
             ['hub', 'shortLabel', 'longLabel', 'genomesFile']])
 
 
@@ -386,7 +394,7 @@ class HubUrl(object):
             # parsing the genome (hg19, hg38, dm6, ...)
             # construct the genome_url
             genome_fname = args_hub.get('genomesFile', 'genomes.txt')
-            genome_url = os.path.join(os.path.dirname(self.hub_url), 
+            genome_url = os.path.join(os.path.dirname(self.hub_url),
                 genome_fname)
             args_genome = self.read_url(genome_url)
 
@@ -407,7 +415,7 @@ class HubUrl(object):
         Parameters
         -----------
         s : str
-            name of the mirrors: ['usa', 'euro', 'asia'], or the url to an 
+            name of the mirrors: ['usa', 'euro', 'asia'], or the url to an
             mirror
 
         return the url of mirror
@@ -459,7 +467,7 @@ class HubUrl(object):
             if m:
                 fmt_pos = '&position={chr}%3A{start}-{end}'.format(
                     chr=m.group(1),
-                    start=m.group(2), 
+                    start=m.group(2),
                     end=m.group(3))
 
         return fmt_pos
@@ -471,22 +479,22 @@ class HubUrl(object):
         It is user-friendly to share trackHub using trackhub_url, open the url
         will direct user to the trackHub
 
-        If hub_url only, user need to 
-        1. open UCSC genome browser: 'http://genome.ucsc.edu', 
-        2. choose 'My Data' -> 'Track Hubs', 
-        3. paste hub_url to the box next to 'URL:', under 'My Hubs' Tab, 
+        If hub_url only, user need to
+        1. open UCSC genome browser: 'http://genome.ucsc.edu',
+        2. choose 'My Data' -> 'Track Hubs',
+        3. paste hub_url to the box next to 'URL:', under 'My Hubs' Tab,
         4. click 'Add Hub'
-    
+
         For example:
-        hub_url: 
+        hub_url:
             - http://ip/hub.txt
-        trackhub_url: 
-            - http://genome.ucsc.edu/cgi-bin/hgTracks?db=hg19&hubUrl=http://ip/hub.txt 
+        trackhub_url:
+            - http://genome.ucsc.edu/cgi-bin/hgTracks?db=hg19&hubUrl=http://ip/hub.txt
 
         Parameters
         -----------
         mirror : str
-        The UCSC genome browser mirror, one of ['usa', 'euro', 'asia'] or 
+        The UCSC genome browser mirror, one of ['usa', 'euro', 'asia'] or
         the URL of other mirror, default: [usa]
 
         usa:  http://genome.ucsc.edu
@@ -515,7 +523,7 @@ class HttpServer(object):
 
     Main purpose: convert path to http_url, on the localhost server.
 
-    if http_server is 'localhost', it means the machine running this code 
+    if http_server is 'localhost', it means the machine running this code
     is hosting httpd service.
 
     # to-do
@@ -550,11 +558,11 @@ class HttpServer(object):
         'is_https': False
         }
     >>> HttpServer(**args).to_url()
-    
-    
+
+
     ## Default Apache2 configuration
 
-    On Ubuntu 18.04, could find these config in file: 
+    On Ubuntu 18.04, could find these config in file:
     `/etc/apache2/sites-available/000-default.conf`, or your *.conf
 
     $grep -i 'DocumentRoot' /etc/apache2/sites-available/000-default.conf
@@ -563,11 +571,11 @@ class HttpServer(object):
 
     it means, the http_root_dir is "/var/www/html"
 
-    $ hostname -I 
+    $ hostname -I
     1.2.3.4 # (fake ip, here)
 
     you can find the http_root_ip is '1.2.3.4'
-    
+
     ## For VirtualHost
 
     If VirtualHost has been build on the server, we can host the files on
@@ -577,13 +585,13 @@ class HttpServer(object):
 
     ```
     # file: /etc/apache2/sites-available/000-default.conf # or other .conf
-    
+
     Alias /public /data/public
     <Directory "/data/public">
             Require all granted
     </Directory>
-    ```    
-    
+    ```
+
     The `http_root_url` for the virtualHost was: `hostname/publi`, and the
     correspond `http_root_path` was: `/data/public`
     """
@@ -595,7 +603,7 @@ class HttpServer(object):
 
     def init_args(self):
         """Required Parameters
-            
+
         - s : absolute path of the file/dir on the server
         - http_root_dir
         - http_root_url
@@ -622,15 +630,15 @@ class HttpServer(object):
 
         Option-1:
         http_root_dir is a valid URL,
-          - parse http_root_alias, string after the {ip|domain}, 
+          - parse http_root_alias, string after the {ip|domain},
             http://www.123.com{http_root_alias}
 
         Option-2:
         http_root_alias if a valid dirname,
-          - parse the IP of 'localhost' HTTP server using shell command: 
-            `hostname -I` 
-          - determine HTTP server type: 'https' or 'http' 
-          - construct the http_root_url: 
+          - parse the IP of 'localhost' HTTP server using shell command:
+            `hostname -I`
+          - determine HTTP server type: 'https' or 'http'
+          - construct the http_root_url:
             {http}://{ip}{http_root_alias}
 
         """
@@ -642,14 +650,14 @@ class HttpServer(object):
         if self.is_url(self.http_root_url):
             self.http_root_url = self.http_root_url.rstrip('/')
             url = re.sub('^((https?)|^(ftp))://', '', self.http_root_url)
-            url_ip, url_dir = url.split('/', 1) # 
+            url_ip, url_dir = url.split('/', 1) #
             self.http_root_alias = '/' + url_dir
         elif len(self.http_root_alias) > 0:
             self.http_root_alias = self.http_root_alias.rstrip('/')
             url_ip = self.get_ip()
             url_http = 'https' if self.is_https else 'http'
             self.http_root_url = '{http}://{ip}{alias}'.format(
-                http=url_http, 
+                http=url_http,
                 ip=url_ip,
                 alias=self.http_root_alias)
         else:
@@ -661,19 +669,19 @@ class HttpServer(object):
             'Parameters',
             '{:>16s}: {}, {}'.format(
                 's',
-                isinstance(self.s, str), 
+                isinstance(self.s, str),
                 self.s),
             '{:>16s}: {}, {}'.format(
                 'http_root_dir',
-                isinstance(self.http_root_dir, str), 
+                isinstance(self.http_root_dir, str),
                 self.http_root_dir),
             '{:>16s}: {}, {}'.format(
                 'http_root_alias',
-                isinstance(self.http_root_alias, str), 
+                isinstance(self.http_root_alias, str),
                 self.http_root_alias),
             '{:>16s}: {}, {}'.format(
                 'http_root_url',
-                isinstance(self.http_root_url, str), 
+                isinstance(self.http_root_url, str),
                 self.http_root_url)
         ])
 
@@ -685,8 +693,8 @@ class HttpServer(object):
 
         # argument type
         if not all([isinstance(i, str) for i in [
-            self.s, 
-            self.http_root_dir, 
+            self.s,
+            self.http_root_dir,
             self.http_root_url,
             self.http_root_alias]]):
             raise ValueError(self.msg)
@@ -695,8 +703,8 @@ class HttpServer(object):
     def get_ip(self):
         """Return the public ip address of the server
 
-            - Ubuntu 
-            $ hostname -I 
+            - Ubuntu
+            $ hostname -I
             1.2.3.4
         """
         return run_shell_cmd('hostname -I')[1].strip()
@@ -714,7 +722,7 @@ class HttpServer(object):
         - http://
         - https://
         - ftp://
-        
+
         auto fix: www.abc.com -> http://www.abc.com
         127.0.0.1
         www.name.com
@@ -765,7 +773,7 @@ class TrackFile(object):
     Parameters
     ----------
     s : str
-        The path to a track file, 
+        The path to a track file,
 
     subgroups : dict
         The subgroups structure in dict format, including dimX, dimY, ...
@@ -780,7 +788,7 @@ class TrackFile(object):
         'Centropyge_loricula'], default: [1]
 
     label_rm_list : list
-        A list of strings, remove from the 'short_label', to make sure the 
+        A list of strings, remove from the 'short_label', to make sure the
         length of short label less than 17 characters. default: []
     """
     def __init__(self, s, **kwargs):
@@ -802,12 +810,12 @@ class TrackFile(object):
     def init_args(self):
         """Default values
 
-        subgroups support: 
-            dimX: 
+        subgroups support:
+            dimX:
             dimY:
             dimA:
             ... (A-Z)
-        self.subgroups = self.get_subgroups() 
+        self.subgroups = self.get_subgroups()
         """
         # default args
         self.subgroups = getattr(self, 'subgroups', {}) # pass groups
@@ -818,7 +826,7 @@ class TrackFile(object):
         self.fname = self.sanitize(self.fname)
         self.label = self.sanitize(self.fname, self.label_rm_list)
         self.ftype = self.filetype(self.fext)
-        # self.fcolor = self.pick_color(self.fname)        
+        # self.fcolor = self.pick_color(self.fname)
         self.subgroup = self.get_subgroup() # blank dict
         self.color = self.get_color() # '255,0,0'
 
@@ -827,7 +835,7 @@ class TrackFile(object):
 
 
     def is_track_file(self):
-        """trackhub supported files: 
+        """trackhub supported files:
         - bigWig
         - bigBed
         - bedGraph
@@ -837,7 +845,7 @@ class TrackFile(object):
 
     def is_bw(self):
         """bigWig files:
-        - bigWig 
+        - bigWig
         - bigwig
         - bw
         """
@@ -864,7 +872,7 @@ class TrackFile(object):
 
     def filetype(self, s):
         """Determine the type of file
-        
+
         Parameters
         ----------
         s : str
@@ -881,7 +889,7 @@ class TrackFile(object):
         ftypes = {
             'bw': 'bigWig',
             'bigwig': 'bigWig',
-            'bb': 'bigBed', 
+            'bb': 'bigBed',
             'bigbed': 'bigBed',
             'bg': 'bedGraph',
             'bdg': 'bedGraph'
@@ -893,7 +901,7 @@ class TrackFile(object):
     def sanitize(self, s, remove_list=None):
         """
         Sanitize a string, for shortLabel, letters, numbers allowed only [A-Za-z0-9]
-        
+
         Convert spaces to unserscore, remove other chaaracters
 
         Parameters
@@ -924,7 +932,7 @@ class TrackFile(object):
         """Assign subgroups for file
 
         Searching 'mapping()' of each subgroup in filename
-    
+
         return the 1st match
 
         Format for subgroups
@@ -946,7 +954,7 @@ class TrackFile(object):
                 }
             }
         }
-    
+
         # output format:
         # subgroup = {'stage': '2h', 'gene': 'geneA'}
         """
@@ -971,12 +979,12 @@ class TrackFile(object):
 
         # format:
         # subgroup = {'stage': '2h', 'gene': 'geneA'}
-        return subgroup 
+        return subgroup
 
 
     def fish_colors(self, colorPal=1, n=10):
         """Pick colors
-        
+
         Parameters
         ----------
         colorPal : int or str
@@ -990,12 +998,12 @@ class TrackFile(object):
         # colors from fishualize R package
         # https://nschiett.github.io/fishualize/articles/overview_colors.html
 
-        Colors from R package: 
+        Colors from R package:
         > fishualize::fish_pal(option = "Scarus_hoefleri")(10)
          [1] "#D2372CFF" "#E25719FF" "#F0780BFF" "#F89814FF"
          [5] "#EFB52BFF" "#C6CB43FF" "#7AD45CFF" "#00CE7DFF"
          [9] "#00BCABFF" "#0499EAFF"
-        
+
         > fishualize::fish_pal(option = "Gramma_loreto")(10)
          [1] "#020122FF" "#1E2085FF" "#4029CBFF"
          [4] "#6628EEFF" "#901CEDFF" "#B804CAFF"
@@ -1009,11 +1017,11 @@ class TrackFile(object):
         [10] "#000000FF"
         """
         # pre-defined colors
-        c1 = ['#D2372C', '#E25719', '#F0780B', '#F89814', '#EFB52B', 
+        c1 = ['#D2372C', '#E25719', '#F0780B', '#F89814', '#EFB52B',
             '#C6CB43', '#7AD45C', '#00CE7D', '#00BCAB', '#0499EA']
-        c2 = ['#020122', '#1E2085', '#4029CB', '#6628EE', '#901CED', 
+        c2 = ['#020122', '#1E2085', '#4029CB', '#6628EE', '#901CED',
             '#B804CA', '#D61693', '#E6445D', '#EE7A30', '#F0BF0B']
-        c3 = ['#8F1D1E', '#B30029', '#DF002A', '#FF7D1A', '#FFBD17', 
+        c3 = ['#8F1D1E', '#B30029', '#DF002A', '#FF7D1A', '#FFBD17',
             '#E7BE5A', '#988591', '#0043A0', '#001A72', '#000000']
 
         # RGB (10 colors, repeat twice, 20 items)
@@ -1040,7 +1048,7 @@ class TrackFile(object):
             fish = 'Scarus_hoefleri'
 
         # output colors
-        return color_d.get(fish, c1)[:n] 
+        return color_d.get(fish, c1)[:n]
 
 
     def hex2rgb(self, h):
@@ -1067,7 +1075,7 @@ class TrackFile(object):
             raise ValueError('hex color, str expected, got {}'.format(
                 type(h).__name__))
 
-        return ','.join(map(str, 
+        return ','.join(map(str,
             [int(h[1:3], 16),
             int(h[3:5], 16),
             int(h[5:7], 16)]
@@ -1081,7 +1089,7 @@ class TrackFile(object):
         ---------
         colorDim : str
             The dimension, to assign colors, dimX, dimY, dimA, ...
-    
+
         subgroups:
         {
             'dimX': {
@@ -1200,7 +1208,7 @@ class TrackHubConfig(object):
       |- dirB
       |   |- subgroups.yaml
       |   |- bw, bb files
-    
+
     2. template of subgroups.yaml
     dimX:
       label: stage
@@ -1302,7 +1310,7 @@ class TrackHubConfig(object):
                 self.email)
         ])
 
-        if not all([isinstance(i, str) for i in [self.data_dir, self.hub_name, 
+        if not all([isinstance(i, str) for i in [self.data_dir, self.hub_name,
             self.genome, self.user, self.email]]):
             raise ValueError(self.msg_args)
 
@@ -1324,12 +1332,12 @@ class TrackHubConfig(object):
 
         files in dirB, into compositeTrack1
         files in dirC, into compositeTrack2
-        
+
         Support only 2-level directory structure:
         """
         # 1st-level: data_dir
         subgrp_yaml = os.path.join(self.data_dir, 'subgroups.yaml')
-        g_lv1 = self.parse_group_files(data_dir=self.data_dir, 
+        g_lv1 = self.parse_group_files(data_dir=self.data_dir,
             grp_name=self.hub_name)
 
         d_grp = {}
@@ -1338,7 +1346,7 @@ class TrackHubConfig(object):
             d_grp = {self.hub_name: g_lv1}
         else:
         # 2nd-level: data_dir/subdir
-            d_lv1 = [i for i in listdir(self.data_dir, include_dir=True) 
+            d_lv1 = [i for i in list_dir(self.data_dir, include_dir=True)
                 if os.path.isdir(i)]
             if len(d_lv1) > 0:
                 g_lv2 = [self.parse_group_files(data_dir=d) for d in d_lv1]
@@ -1397,21 +1405,21 @@ class TrackHubConfig(object):
                 subgrp_lv1 = os.path.join(data_dir, 'subgroups.yaml')
                 if file_exists(subgrp_lv1):
                     # files: level=1
-                    f_lv1 = [i for i in listdir(data_dir)
+                    f_lv1 = [i for i in list_dir(data_dir)
                         if TrackFile(i).is_track_file()]
 
                     # files: level=2
-                    d_lv1 = [i for i in listdir(data_dir, include_dir=True) 
+                    d_lv1 = [i for i in list_dir(data_dir, include_dir=True)
                         if os.path.isdir(i)]
                     f_lv2 = [] # empty
                     if len(d_lv1) > 0:
-                        [f_lv2.extend([i for i in listdir(d) 
+                        [f_lv2.extend([i for i in list_dir(d)
                             if TrackFile(i).is_track_file()]) for d in d_lv1]
                     f_lv1.extend(f_lv2)
 
                     # output
                     d_grp = {
-                        'name': grp_name,     
+                        'name': grp_name,
                         'subgroups': subgrp_lv1,
                         'bw_files': [i for i in f_lv1 if TrackFile(i).is_bw()],
                         'bb_files': [i for i in f_lv1 if TrackFile(i).is_bb()]
@@ -1444,27 +1452,27 @@ class TrackHub():
     Parameters
     ----------
     data_dir : str
-        Path to the dir, host track files, bigWig*, bigBed 
+        Path to the dir, host track files, bigWig*, bigBed
 
     remote_dir : str
         Path to host the trackhub files, open accessiable, on the http server
 
     hub_name : str
-        The name of the trackhub, [A-Za-z0-9]  
+        The name of the trackhub, [A-Za-z0-9]
 
     genome : str
         The name of the UCSC genome release name, see the following link:
-        https://genome.ucsc.edu/FAQ/FAQreleases.html 
+        https://genome.ucsc.edu/FAQ/FAQreleases.html
 
     user : str
         The maintainer of this trackHub, default: [UCSC]
 
     email : str
-        The email address of the user, default: [abc@abc.com] 
+        The email address of the user, default: [abc@abc.com]
 
     dry_run : bool
         Try to render the tracks, create symlinks for the track files, instead
-        copying files to target directory. use this option to check the 
+        copying files to target directory. use this option to check the
         configuration
 
     short_label : str or None
@@ -1484,22 +1492,22 @@ class TrackHub():
     colorPal : int or str
         choose the group of colors, 1 to N, or the name of fish
         candidate list: [1, 2, 3, 'Scarus_hoefleri', 'Gramma_loreto',
-        'Centropyge_loricula'], default: [1]       
+        'Centropyge_loricula'], default: [1]
 
     label_rm_list : list
-        A list of strings, remove from the 'short_label', to make sure the 
-        length of short label less than 17 characters. 
+        A list of strings, remove from the 'short_label', to make sure the
+        length of short label less than 17 characters.
 
     # for HttpServer
 
     remote_dir : str
-        Path to host the track files, under the http_root_dir, The directory 
-        on the HTTP server requires open accessiable 
+        Path to host the track files, under the http_root_dir, The directory
+        on the HTTP server requires open accessiable
 
     http_root_dir : str
         The root_dir of HTTP server. Could be found in file
         `/etc/apache2/sites-available/000-browser.conf`, or other *.conf
-        files. If VirtualHost was set, Check the active *.conf file, for the 
+        files. If VirtualHost was set, Check the active *.conf file, for the
         <VirtualHost: ...> section.
 
     http_root_alias : str or None
@@ -1507,11 +1515,11 @@ class TrackHub():
         from http_root_url
 
     http_root_url : str
-        The URL correspond to the http_root_dir. Be aware the VirtualHost 
+        The URL correspond to the http_root_dir. Be aware the VirtualHost
         configuration
 
     is_https : bool
-        The HTTP server is using 'https'. default: [False] 
+        The HTTP server is using 'https'. default: [False]
 
     # for HubUrl #
 
@@ -1524,7 +1532,7 @@ class TrackHub():
         default: [None]
 
     mirror : str
-        The UCSC genome browser mirror, one of ['usa', 'euro', 'asia'] or 
+        The UCSC genome browser mirror, one of ['usa', 'euro', 'asia'] or
         the URL of other mirror, default: [usa]
 
     position : str or None
@@ -1578,7 +1586,7 @@ class TrackHub():
 
 
     def init_composite(self, subgroups_config):
-        """Add CompositeTrack, 
+        """Add CompositeTrack,
         Add views to CompositeTrack
 
         add subgroups, if exists
@@ -1586,13 +1594,13 @@ class TrackHub():
         Parameter:
         ----------
         track_files : dict
-            A dict saving track files and subgroups.yaml, in the following 
+            A dict saving track files and subgroups.yaml, in the following
             format:
 
         track_files format:
 
         {
-            'name': 'RNAseq', 
+            'name': 'RNAseq',
             'subgroups': 'subgroups.yaml',
             'bw_files': [...],
             'bb_files': [...]
@@ -1604,7 +1612,7 @@ class TrackHub():
         dimX:
             name: stage,
             label: stage,
-            mapping: 
+            mapping:
                 1h: 1h,
                 2h: 2h
         dimY:
@@ -1627,11 +1635,11 @@ class TrackHub():
         # For subgroups:
         #
         # required arguments:
-        # 
+        #
         # 1. subgroups, YAML file, saving subgroups structure
         # 2. dimensions, dimX, dimY, ...
-        # 3. sortOrder, gene=+ stage=+ (default: dimX, dimY, ...) 
-        # 4. filterComposite, dimA 
+        # 3. sortOrder, gene=+ stage=+ (default: dimX, dimY, ...)
+        # 4. filterComposite, dimA
 
         # load subgroups.yaml to dict
         # dimX, dimY, dimA, ...
@@ -1649,12 +1657,12 @@ class TrackHub():
             # prepare: dimensions
             # format: 'dimX=stage dimY=gene', or dict
             dimensions = ' '.join([
-                '{}={}'.format(k, v.get('name', None)) for k, v in 
+                '{}={}'.format(k, v.get('name', None)) for k, v in
                     subgroups_dict.items()])
 
             # prepare: sortOder
             # format: stage=+, gene=+
-            dim_list = [i.get('name', None) for i in 
+            dim_list = [i.get('name', None) for i in
                 list(subgroups_dict.values()) if i.get('name', None)]
             sortOrder = ' '.join(['{}=+'.format(i) for i in dim_list])
 
@@ -1715,7 +1723,7 @@ class TrackHub():
 
     def sanitize(self, s, remove_list=None):
         """Sanitize a string, for shortLabel, letters, numbers allowed only [A-Za-z0-9]
-        
+
         Convert spaces to unserscore, remove other chaaracters
 
         Parameters
@@ -1745,7 +1753,7 @@ class TrackHub():
     def add_CompositeTrack(self):
         """Check: if multiple compositeTrack() required?!  self.subgroups_list
 
-        if = 1: 
+        if = 1:
             composite_name = hub_nmae
         if > 1:
             composite_name = grp_config.get('name')
@@ -1760,7 +1768,7 @@ class TrackHub():
 
                 # add bigWig files
                 for bw in subgroups_config.get('bw_files', []):
-                    tk = TrackFile(bw, 
+                    tk = TrackFile(bw,
                         subgroups=subgroups_dict,
                         colorDim=self.colorDim, # dimX, dimY, dimA, ...
                         label_rm_list=self.label_rm_list).track
@@ -1768,7 +1776,7 @@ class TrackHub():
 
                 # add bigBed files
                 for bb in subgroups_config.get('bb_files', []):
-                    tk = TrackFile(bb, 
+                    tk = TrackFile(bb,
                         subgroups=subgroups_dict,
                         colorDim=self.colorDim, # dimX, dimY, dimA, ...
                         label_rm_list=self.label_rm_list).track
@@ -1811,11 +1819,11 @@ class TrackHub():
         if isinstance(self.remote_dir, str):
             # dir, to save track files, hub files
             # self.remote_hub_dir = os.path.join(self.remote_dir, self.hub_name)
-            check_path(self.remote_hub_dir)
+            check_path(self.remote_hub_dir, create_dirs=True)
 
             # construct tracks()
             tmp_dir = self.render()
-            path_remove(tmp_dir, ask=False)
+            remove_path(tmp_dir, ask=False)
 
             # upload files to remote/server
             trackhub.upload.upload_hub(self.hub, host='localhost',
@@ -1838,7 +1846,7 @@ class TrackHub():
         - http_root_url
 
         optional parameters
-        - genome 
+        - genome
         - mirror
         - validate_url
         - position
@@ -1867,7 +1875,7 @@ class TrackHub():
         - http_root_url
 
         optional parameters
-        - genome 
+        - genome
         - mirror
         - validate_url
         - position
@@ -1875,13 +1883,13 @@ class TrackHub():
         # upload files
         if not file_exists(self.hub_txt):
             self.upload()
-        
+
         # hub_url
         self.get_hub_url() # self.
 
         # trackhub_url
         self.trackhub_url = HubUrl(**self.__dict__).trackhub_url()
-        
+
         # save hub_url to hub.yaml
         hub_yaml = self.remote_hub_dir + '/hub.yaml'
         hub_dict = {'hub_url': self.hub_url, 'trackhub_url': self.trackhub_url}
@@ -1896,7 +1904,7 @@ class TrackHub():
     def run(self):
         """Run for all
 
-        1. --dry-run, self.render() 
+        1. --dry-run, self.render()
         2. self.trackhub_url()
 
         Parameters
@@ -1922,7 +1930,7 @@ def trackhub_config_template():
     """
     default_args = {
         'hub_name': 'tracks',
-        'data_dir': '', 
+        'data_dir': '',
         'remote_dir': '',
         'label_rm_list': ['RNAseq_', 'ATACseq_', 'CnR_'],
         'colorDim': 'dimX',
