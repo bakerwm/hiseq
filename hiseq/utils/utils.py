@@ -739,9 +739,6 @@ class Config(object):
         yaml.dump(), does not support OrderedDict
         Solution: OrderedDict -> json -> dict
         """
-        x_yaml = x
-        x = os.path.splitext(x_yaml)[0] + '.toml'
-        log.warning('OrderedDict is not supported in YAML, save as TOML instead: {}'.format(x))
         # check
         x = os.path.abspath(x)
         if not isinstance(d, dict):
@@ -755,10 +752,14 @@ class Config(object):
         else:
             try:
                 with open(x, 'wt') as w:
-                    toml.dump(d, w)
-                # return x
-            except Exception as exc:
-                log.error('to_yaml() failed, {}'.format(exc))
+                    yaml.dump(d, w)
+            except:
+                log.warning('saving as YOML failed, use TOML instead')
+                x_toml = os.path.splitext(x)[0] + '.toml'
+                with open(x_toml, 'wt') as w:
+                    toml.dump(d, w)                
+#             except Exception as exc:
+#                 log.error('to_yaml() failed, {}'.format(exc))
 
 
     def to_toml(self, d, x):

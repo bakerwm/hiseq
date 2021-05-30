@@ -190,7 +190,7 @@ def check_path(x, **kwargs):
     """
     show_error = kwargs.get('show_error', False)
     show_log = kwargs.get('show_log', False)
-    create_dirs = kwargs.get('create_dirs', False)
+    create_dirs = kwargs.get('create_dirs', True) # default: True
     if isinstance(x, str):
         out = False
         if os.path.isdir(x):

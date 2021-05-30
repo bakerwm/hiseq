@@ -48,12 +48,14 @@ from xopen import xopen
 from multiprocessing import Pool
 from contextlib import ExitStack
 import Levenshtein as lev # distance
-from hiseq.utils.helper import update_obj, check_file, check_path, file_abspath, combinations, log, Config, listfile, fq_name, file_symlink
+from hiseq.utils.utils import update_obj, log, Config
+from hiseq.utils.file import check_file, check_path, file_abspath, \
+    list_file, fx_name, symlink_file
 from hiseq.utils.seq import Fastx
-from .demx_index import DemxIndex
-from .demx_barcode import DemxBarcode
-from .read_index import IndexTable
-from .sample_sheet import SampleSheet
+from hiseq.demx.demx_index import DemxIndex
+from hiseq.demx.demx_barcode import DemxBarcode
+from hiseq.demx.read_index import IndexTable
+from hiseq.demx.sample_sheet import SampleSheet
 
 
 class Demx(object):
@@ -196,7 +198,7 @@ class Demx(object):
         if self.mission == 1:
             req_args = [
                 'fq1', 'fq2', 'outdir', 'in_read2', 'mismatch',
-                'barcode_n_left', 'barcode_n_right', 'demo', 'gzipped', 
+                'barcode_n_left', 'barcode_n_right', 'demo', 'gzipped',
                 'overwrite']
             args = {i:getattr(self, i, None) for i in req_args if hasattr(self, i)}
             args.update({'index_table': bc_idx_table})
@@ -303,8 +305,8 @@ class Demx(object):
         p7_table, bc_tables = self.split_p7_bc()
         # level-1: p7 files
         p7_dir = os.path.join(self.outdir, 'p7_index')
-        f1_list = listfile(p7_dir, '*.fq.gz')
-        f1_list = [i for i in f1_list if fq_name(i, fix_pe=True) in self.samples]
+        f1_list = list_file(p7_dir, '*.fq.gz')
+        f1_list = [i for i in f1_list if fx_name(i, fix_pe=True) in self.samples]
         f1x_list = [os.path.join(self.outdir, os.path.basename(i)) for i in f1_list]
         for f1, f1x in zip(f1_list, f1x_list):
             if os.path.exists(f1) and not os.path.exists(f1x):
@@ -317,8 +319,8 @@ class Demx(object):
         # level-2: bc files
         for bc_table in bc_tables:
             bc_dir = os.path.dirname(bc_table)
-            f2_list = listfile(bc_dir, '*.fq.gz')
-            f2_list = [i for i in f2_list if fq_name(i, fix_pe=True) in self.samples]
+            f2_list = list_file(bc_dir, '*.fq.gz')
+            f2_list = [i for i in f2_list if fx_name(i, fix_pe=True) in self.samples]
             f2x_list = [os.path.join(self.outdir, os.path.basename(i)) for i in f2_list]
             for f2, f2x in zip(f2_list, f2x_list):
                 if os.path.exists(f2) and not os.path.exists(f2x):
@@ -430,8 +432,8 @@ class Demx2(object):
         if not isinstance(self.outdir, str):
             self.outdir = 'results'
         # check input fastq files
-        f1 = listfile(self.datadir, '*.fq.gz', recursive=True)
-        f2 = listfile(self.datadir, '*.fastq.gz', recursive=True)
+        f1 = list_file(self.datadir, '*.fq.gz', recursive=True)
+        f2 = list_file(self.datadir, '*.fastq.gz', recursive=True)
         self.raw_fq_list = f1 + f2
         if len(self.raw_fq_list) < 2:
             raise ValueError('no fastq files in: {}'.format(self.datadir))
@@ -457,8 +459,8 @@ class Demx2(object):
     def get_bc_raw_files(self):
         bc_fq = {}
         for fq in self.raw_fq_list:
-            prefix = fq_name(fq, fix_pe=True)
-            prefix = re.sub('_raw$', '', prefix) 
+            prefix = fx_name(fq, fix_pe=True)
+            prefix = re.sub('_raw$', '', prefix)
             s_name = self.d_smp.get(prefix, None) # i7_index -> sample_name
             if s_name and prefix in self.bc_ids:
                 bc_fq[prefix] = bc_fq.get(prefix, [])
@@ -544,7 +546,7 @@ class Demx2(object):
         for fq in self.raw_fq_list:
             is_r1 = re.search('_1.f(ast)?q+.gz', fq, re.IGNORECASE)
             suffix = '_1.fq.gz' if is_r1 else '_2.fq.gz'
-            prefix = fq_name(fq, fix_pe=True)
+            prefix = fx_name(fq, fix_pe=True)
             ###################################################################
             # Fix sample names: !!!!
             # fix for MGI, Next_Ad2.1 <- Next_Ad2-1_raw
@@ -562,8 +564,8 @@ class Demx2(object):
                     log.warning('renaming skipped, file exists: {}'.format(s_file))
                 else:
                     # os.rename(fq, s_file)
-                    file_symlink(fq, s_file)
-                # count fq                
+                    symlink_file(fq, s_file)
+                # count fq
                 if is_r1:
                     try:
                         if os.path.isfile(self.read_count_toml):
@@ -589,9 +591,9 @@ class Demx2(object):
         if len(self.bc_ids) > 0:
             for i in self.bc_ids.index.to_list():
                 bc_dir = os.path.join(self.outdir, i)
-                bc_files = listfile(bc_dir, '*.fq.gz')
+                bc_files = list_file(bc_dir, '*.fq.gz')
                 for q in bc_files:
-                    q_name = fq_name(q)
+                    q_name = fx_name(q)
                     q_new = os.path.join(self.outdir, os.path.basename(q))
                     if q_name.startswith('undemx_'):
                         continue
@@ -600,7 +602,7 @@ class Demx2(object):
                             log.info('renaming skipped, file exists: {}'.format(q_new))
                         else:
                             # os.rename(q, q_new)
-                            file_symlink(q, q_new)
+                            symlink_file(q, q_new)
                 # read count file
                 t = os.path.join(bc_dir, 'read_count.toml')
                 try:

@@ -16,8 +16,9 @@ import os
 import re
 import glob
 from multiprocessing import Pool
-from hiseq.utils.helper import *
 from hiseq.utils.seq import Fastx
+from hiseq.utils.utils import update_obj, log
+from hiseq.utils.file import file_exists, file_abspath, check_path
 
 
 class FxSample(object):
@@ -64,7 +65,7 @@ class FxSample(object):
         if not isinstance(self.outdir, str):
             self.outdir = str(pathlib.Path.cwd())
         self.outdir = file_abspath(self.outdir)
-        check_path(self.outdir)
+        check_path(self.outdir, create_dirs=True)
 
 
     def sampleR1(self, fx):

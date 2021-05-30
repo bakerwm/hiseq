@@ -9,17 +9,78 @@ Functions for sequence, fastx
 import os
 import sys
 import re
+import logging
 import shutil
 import numpy as np
 import pandas as pd
 from xopen import xopen
 import pyfastx
 import collections # Fastx().collapse()
-# from hiseq.utils.helper import *
-# from hiseq.utils.utils import update_obj
+
+# hiseq.utils.utils
+# circular import
+logging.basicConfig(
+    format='[%(asctime)s %(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    stream=sys.stdout)
+log = logging.getLogger(__name__)
+log.setLevel('INFO')
 
 
 
+# hiseq.utils.file.check_path()
+# circular import
+def check_path(x, **kwargs):
+    """Check if x is path
+    Parameters
+    ----------
+    x : str
+        Path to a file
+    
+    Keyword Parameters
+    ------------------
+    show_error : bool
+        Show the error messages
+        
+    show_log : bool
+        Show the log messages 
+    
+    create_dirs : bool
+        Create the dirs
+    """
+    show_error = kwargs.get('show_error', False)
+    show_log = kwargs.get('show_log', False)
+    create_dirs = kwargs.get('create_dirs', True)
+    if isinstance(x, str):
+        out = False
+        if os.path.isdir(x):
+            out = True
+        elif os.path.isfile(x):
+            if show_error:
+                log.error('file exists, not a directory: {}'.format(x))
+        else:
+            if create_dirs:
+                try:
+                    os.makedirs(x)
+                    out = True
+                except:
+                    if show_error:
+                        log.error('`os.makedirs` failed: {}'.format(x))
+        # show log
+        flag = 'ok' if out else 'failed'
+        if show_log is True:
+            log.info('{:<6s} : {}'.format(flag, x))
+    elif isinstance(x, list):
+        out = all([check_path(i, **kwargs) for i in x])
+    else:
+        if show_error:
+            log.error('x expect str or list, got {}'.format(type(x).__name__))
+    return out
+
+
+
+# hiseq.utils.utils
+# circular import
 def update_obj(obj, d, force=True, remove=False):
     """Update the object, by dict
     d: dict
@@ -191,7 +252,7 @@ class Fastx(object):
         assert isinstance(n, int)
         assert isinstance(p, float)
         outdir = os.path.dirname(out)
-        check_path(outdir)
+        check_path(outdir, create_dirs=True)
 
         ## warning
         if n > 1000000:
@@ -220,7 +281,7 @@ class Fastx(object):
         Run the whole process for demostration
         """
         outdir = os.path.dirname(out)
-        check_path(outdir)
+        check_path(outdir, create_dirs=True)
         
         if os.path.exists(out):
             log.info('file eixsts, {}'.format(out))
