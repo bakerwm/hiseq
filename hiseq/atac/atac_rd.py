@@ -33,7 +33,7 @@ class AtacRd(object):
           'append': True,
         }
         self = update_obj(self, args_init, force=False)
-        self.atacseq_type = 'atacseq_rd'
+        self.hiseq_type = 'atacseq_rd'
         self.build_design = False # force
 
 

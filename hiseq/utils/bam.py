@@ -663,7 +663,6 @@ class Bam2fingerprint(object):
             b = self.bam_list
         else:
             log.error('bam_dir, bam required')
-        print('!A-4', len(b), self.bam_list)
         # file exists
         b = [i for i in b if file_exists(i) and i.endswith('.bam')]
         [Bam(i).index() for i in b] #

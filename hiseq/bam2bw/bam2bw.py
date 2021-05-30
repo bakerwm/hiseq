@@ -408,3 +408,45 @@ class Bam2bw2(object):
         else:
             log.error('unknown strandness')
 
+
+def bw_compare(bw1, bw2, bw_out, operation='log2', **kwargs):
+    """
+    Compare two bigWig files: ip over input
+
+    example:
+    bigwigCompare -b1 bw1 -b2 bw2 --operation 
+    {log2, ratio, subtract, add, mean, reciprocal_ratio, 
+    first, second}
+    -o out.bw
+    """
+    binsize = kwargs.get('binsize', 50)
+    threads = kwargs.get('threads', 1)
+    overwrite = kwargs.get('overwrite', False)
+    # outdir
+    bw_out_dir = os.path.dirname(bw_out)
+    bw_stdout = os.path.join(bw_out_dir, 'bw_compare.stdout')
+    bw_stderr = os.path.join(bw_out_dir, 'bw_compare.stderr')
+    check_path(bw_out_dir, create_dirs=True)
+    # cmd
+    cmd = ' '.join([
+        '{}'.format(which('bigwigCompare')),
+        '--bigwig1 {} --bigwig2 {}'.format(bw1, bw2),
+        '--operation {}'.format(operation),
+        '--skipZeroOverZero',
+        '--skipNAs',
+        '--binSize {}'.format(binsize),
+        '-p {}'.format(threads),
+        '-o {}'.format(bw_out),
+        '1> {}'.format(bw_stdout),
+        '2> {}'.format(bw_stderr),
+    ])
+    cmd_txt = os.path.join(bw_out_dir, 'cmd.sh')
+    with open(cmd_txt, 'wt') as w:
+        w.write(cmd + '\n')
+    # run
+    if os.path.exists(bw_out) and not overwrite:
+        log.info('bwCompare() skipped, file exists: {}'.format(bw_out))
+    else:
+        run_shell_cmd(cmd)
+
+

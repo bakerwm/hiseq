@@ -20,13 +20,15 @@ from multiprocessing import Pool
 # main args module modules
 from hiseq.atac.atac import Atac
 from hiseq.atac.atac import get_args as add_atac_args
+from hiseq.cnr.cnr import Cnr
+from hiseq.cnr.cnr import get_args as add_cnr_args
 
 
 # to-be-deprecated: replaced by specific get_args() in each command
 from hiseq.utils.argsParser import add_sheet_args, add_demx_args, \
     add_demx2_args, add_qc_args, add_p7_args, add_trim_args, add_align_args, \
     add_quant_args, add_peak_args, add_motif_args, add_rnaseq_args, \
-    add_rnaseq_args2, add_chipseq_args, add_cnr_args, \
+    add_rnaseq_args2, add_chipseq_args, \
     add_trackhub_args, add_deseq_pair_args, add_go_args, add_fragsize_args, \
     add_bam2bw_args, add_bam2cor_args, add_peak2idr_args, add_bed2overlap_args, \
     add_sample_args
@@ -40,7 +42,6 @@ from hiseq.align.align import Align
 from hiseq.rnaseq.rnaseq import RNAseq
 from hiseq.rnaseq.deseq_pair import DeseqPair
 from hiseq.chipseq.chipseq import ChIPseq
-from hiseq.cnr.cnr import CnR
 from hiseq.go.go import Go
 from hiseq.utils import download as dl # download.main()
 from hiseq.utils.fastx import Fastx
@@ -268,7 +269,7 @@ class Hiseq(object):
         CUN&RUN pipeline
         """
         args = self.init_args(add_cnr_args())
-        CnR(**args).run()
+        Cnr(**args).run()
 
 
     def fragsize(self):

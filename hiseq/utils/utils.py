@@ -26,6 +26,9 @@ from itertools import combinations
 from hiseq.utils.file import file_exists, list_dir
 # from .helper import log
 # from .file import file_exists, file_abspath
+from difflib import SequenceMatcher
+
+
 
 logging.basicConfig(
     format='[%(asctime)s %(levelname)s] %(message)s',
@@ -33,6 +36,22 @@ logging.basicConfig(
     stream=sys.stdout)
 log = logging.getLogger(__name__)
 log.setLevel('INFO')
+
+
+## Temp
+def find_longest_common_str(s1, s2):
+    if isinstance(s1, str) and isinstance(s2, str):
+        m = SequenceMatcher(None, s1, s2) # match
+        l = m.find_longest_match(0, len(s1), 0, len(s2))
+        out = s1[l.a:(l.a+l.size)]
+    else:
+        log.error('only support str, got s1={} s2={}'.type(
+            type(s1).__name__, type(s2).__name__))
+        out = None
+    return out
+
+
+
 
 ################################################################################
 ## functions for hiseq-global
@@ -146,7 +165,8 @@ def read_hiseq(x, hiseq_type=True):
                 hiseq_type, a_hiseq_type))
     else:
         # raise ValueError('not a hiseq dir: {}'.format(x))
-        log.warning('not a hiseq dir: {}'.format(x))
+        # log.warning('not a hiseq dir: {}'.format(x))
+        pass # reduce messagage #
     return a
 
 
@@ -191,9 +211,10 @@ class HiseqReader(object):
                 self.is_hiseq_rt = a.endswith('_rt') # !!
                 self.is_hiseq_rp = a.endswith('_rp') # report
             else:
-                log.warning('unknown hiseq dir: {}'.foramt(self.x))
+                log.warning('unknown hiseq dir: {}'.format(self.x))
         else:
-            log.warning('not a hiseq dir: {}'.format(self.x))
+            # log.warning('not a hiseq dir: {}'.format(self.x))
+            pass # reduce message log
         # update args
         self.args = update_obj(self, d, force=True)
 

@@ -112,14 +112,14 @@ class CnrRn(object):
 
 
     def run_multi_fx(self):
-        i_list = range(len(self.fq1))
-        # in parallel
-        if self.parallel_jobs > 1 and len(self.fq1) > 1:
-            with Pool(processes=self.parallel_jobs) as pool:
-                pool.map(self.run_single_fx, i_list)
-        else:
-            for i in i_list:
-                self.run_single_fx(i)
+        i_list = range(len(self.fq1)) # skip
+#         # in parallel
+#         if self.parallel_jobs > 1 and len(self.fq1) > 1:
+#             with Pool(processes=self.parallel_jobs) as pool:
+#                 pool.map(self.run_single_fx, i_list)
+#         else:
+        for i in i_list:
+            self.run_single_fx(i)
 
 
     def run(self):

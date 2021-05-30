@@ -15,7 +15,7 @@ import pysam
 import hiseq
 from hiseq.trim.trimmer import TrimR1
 from hiseq.align.align import Align
-from hiseq.bam2bw.bam2bw import Bam2bw
+from hiseq.bam2bw.bam2bw import Bam2bw, bw_compare
 from hiseq.cnr.callpeak import CallPeak
 from hiseq.fragsize.fragsize import BamPEFragSize
 from hiseq.utils.file import list_file, list_dir, check_file, \
@@ -24,10 +24,11 @@ from hiseq.utils.file import list_file, list_dir, check_file, \
 from hiseq.utils.bam import Bam, Bam2cor, Bam2fingerprint
 from hiseq.utils.bed import PeakIDR, BedOverlap, PeakFRiP
 from hiseq.utils.utils import log, update_obj, Config, get_date, \
-    read_hiseq, list_hiseq_file, run_shell_cmd
+    read_hiseq, list_hiseq_file, run_shell_cmd, \
+    find_longest_common_str
 
 
-def cnr_trim(x, hiseq_type='_r1'):
+def cnr_trim(x, hiseq_type='r1'):
     """
     Parameters
     ---------
@@ -247,15 +248,39 @@ def cnr_merge_bam(x, hiseq_type='_r1'):
         Config().dump(df, a.align_scale_json)
 
 
-def cnr_call_peak(x, hiseq_type='_r1'):
+def cnr_call_peak(x, hiseq_type='r1'):
     """
     Call peaks using MACS2 and SEACR
     -f BAMPE
     """
     a = read_hiseq(x, hiseq_type) # for general usage
+    if not a.is_hiseq:
+        log.error('qc_bam_fingerprint() failed, not a hiseq dir: {}'.format(x))
+        return None
+    # r1
+    ip_bam = None
+    input_bam = None
+    if a.is_hiseq_r1 or a.is_hiseq_rn:
+        if hasattr(a, 'bam_rmdup'):
+            ip_bam = a.bam_rmdup
+        elif hasattr(a, 'bam'):
+            ip_bam = a.bam
+        else:
+            pass
+    elif a.is_hiseq_rx:
+        if a.hiseq_type in ['chipseq_rx', 'cnr_rx', 'cnt_rx']:
+            # ip, input
+            ip_bam = a.ip_bam
+            input_bam = a.input_bam
+    else:
+        log.error('cnr_call_peak() failed, unknown hiseq dir: {}'.format(x))
+    # check point
+    if ip_bam is None:
+        return None
+    # cmd
     args = {
-        'ip': a.bam_rmdup, # rm_dup
-        'input': None,
+        'ip': ip_bam, # rm_dup
+        'input': input_bam,
         'outdir': a.peak_dir,
         'prefix': a.smp_name,
         'genome': a.genome,
@@ -301,6 +326,21 @@ def cnr_bam_to_bw(x, hiseq_type='_r1'):
     Bam2bw(**args).run()
 
 
+def cnr_bw_compare(x, hiseq_type='rx'):
+    """
+    Create bw, ip over input
+    bwCompare()
+    """
+    a = read_hiseq(x, hiseq_type)
+    if not (a.is_hiseq and hiseq_type.endswith('rx')):
+        log.error('cnr_bw_compare() failed, only support for rx')
+        return None
+    bw_compare(a.ip_bw, a.input_bw, a.bw, 'subtract',
+        threads=a.threads, binsize=10)
+    # log.error('get_ip_over_input_bw() failed, see {}'.format(
+    #           self.bw_dir))
+    
+    
 def get_mito_count(x):
     """
     Count reads on chrM (MT), ...
@@ -515,21 +555,48 @@ def qc_tss_enrich(x, hiseq_type='r1', bw_type='r1'):
     $ plotProfile -m mat.gz -o tss.png
     """
     a = read_hiseq(x, hiseq_type) # for general usage
+    if not a.is_hiseq:
+        log.error('qc_tss_enrich() failed, not a hiseq dir: {}'.format(x))
+        return None
     # r1
+    arg_bw = ''
+    arg_label = ''
+    per_group = ''
     if a.is_hiseq_r1:
         arg_bw = a.bw
         arg_label = '--samplesLabel {}'.format(a.smp_name)
         per_group = '' # plotProfile
     elif a.is_hiseq_rn:
         bw_list = list_hiseq_file(x, 'bw', 'r1')
-        arg_bw = ' '.join(bw_list)
         smp_name = list_hiseq_file(x, 'smp_name', 'r1') # multi
+        # shorter name
+        smp_name = [i.replace(a.smp_name+'_', '') for i in smp_name]
+        # add merge
+        bw_list.insert(0, a.bw)
+        smp_name.insert(0, a.smp_name)
+        # prepare args
+        arg_bw = ' '.join(bw_list)
         arg_label = '--samplesLabel {}'.format(' '.join(smp_name))
         per_group = '--perGroup' # plotProfile
+    elif a.is_hiseq_rx:
+        if a.hiseq_type in ['chipseq_rx', 'cnr_rx', 'cnt_rx']:
+            # ip, input
+            bw_list = [a.ip_bw, a.input_bw, a.bw]
+            arg_bw = ' '.join(bw_list)
+            # shorter name
+            s = find_longest_common_str(a.ip_name, a.input_name)
+            s1 = a.ip_name.replace(s, '')
+            s2 = a.input_name.replace(s, '')
+            ss = '{}.vs.{}'.format(s1, s2)
+            smp_name = [s1, s2, ss]
+            arg_label = '--samplesLabel {}'.format(' '.join(smp_name))
+            per_group = '--perGroup' # plotProfile
     else:
-        arg_bw = ''
-        arg_label = ''
-        per_group = ''
+        log.error('qc_tss_enrich() failed, unknown hiseq dir: {}'.format(x))
+    # check point
+    if arg_bw == '':
+        return None
+    # command
     cmd = ' '.join([
         '{}'.format(shutil.which('computeMatrix')),
         'reference-point',
@@ -583,21 +650,48 @@ def qc_genebody_enrich(x, hiseq_type='r1', bw_type='r1'):
     $ plotProfile -m mat.gz -o gene_body.png
     """
     a = read_hiseq(x, hiseq_type) # for general usage
+    if not a.is_hiseq:
+        log.error('qc_tss_enrich() failed, not a hiseq dir: {}'.format(x))
+        return None
     # r1
+    arg_bw = ''
+    arg_label = ''
+    per_group = ''
     if a.is_hiseq_r1:
         arg_bw = a.bw
         arg_label = '--samplesLabel {}'.format(a.smp_name)
         per_group = '' # plotProfile
     elif a.is_hiseq_rn:
         bw_list = list_hiseq_file(x, 'bw', 'r1')
-        arg_bw = ' '.join(bw_list)
         smp_name = list_hiseq_file(x, 'smp_name', 'r1') # multi
+        # shorter name
+        smp_name = [i.replace(a.smp_name+'_', '') for i in smp_name]
+        # add merge
+        bw_list.insert(0, a.bw)
+        smp_name.insert(0, a.smp_name)
+        # prepare args
+        arg_bw = ' '.join(bw_list)
         arg_label = '--samplesLabel {}'.format(' '.join(smp_name))
         per_group = '--perGroup' # plotProfile
+    elif a.is_hiseq_rx:
+        if a.hiseq_type in ['chipseq_rx', 'cnr_rx', 'cnt_rx']:
+            # ip, input
+            bw_list = [a.ip_bw, a.input_bw, a.bw]
+            arg_bw = ' '.join(bw_list)
+            # shorter name
+            s = find_longest_common_str(a.ip_name, a.input_name)
+            s1 = a.ip_name.replace(s, '')
+            s2 = a.input_name.replace(s, '')
+            ss = '{}.vs.{}'.format(s1, s2)
+            smp_name = [s1, s2, ss]
+            arg_label = '--samplesLabel {}'.format(' '.join(smp_name))
+            per_group = '--perGroup' # plotProfile
     else:
-        arg_bw = ''
-        arg_label = ''
-        per_group = ''
+        log.error('qc_tss_enrich() failed, unknown hiseq dir: {}'.format(x))
+    # check point
+    if arg_bw == '':
+        return None
+    # command
     cmd = ' '.join([
         '{}'.format(shutil.which('computeMatrix')),
         'scale-regions',
@@ -655,7 +749,27 @@ def qc_bam_cor(x, hiseq_type='rn', bam_type='r1'):
         --outRawCounts *counts.tab -b bam
     """
     a = read_hiseq(x, hiseq_type) # for general usage
-    bam_list = list_hiseq_file(x, 'bam_rmdup', bam_type)
+    if not a.is_hiseq:
+        log.error('qc_bam_cor() failed, not a hiseq dir: {}'.format(x))
+        return None
+    # r1
+    bam_list = None
+    if a.is_hiseq_r1: 
+        pass # require > 1 bam
+#         bam_list = list_hiseq_file(x, 'bam_rmdup', 'r1')
+    elif a.is_hiseq_rn:
+        bam_list = list_hiseq_file(x, 'bam_rmdup', bam_type)
+    elif a.is_hiseq_rx:
+        if a.hiseq_type in ['chipseq_rx', 'cnr_rx', 'cnt_rx']:
+            # ip, input
+            bam_list = [a.ip_bam, a.input_bam]
+    else:
+        log.error('qc_bam_cor() failed, unknown hiseq dir: {}'.format(x))
+    # check point
+    if bam_list is None:
+        log.error('qc_bam_cor() failed, require >= 2 bam files: {}'.format(x))
+        return None
+    # bam_list = list_hiseq_file(x, 'bam_rmdup', bam_type)
     args = {
         'bam_list': bam_list,
         'outdir': a.qc_dir,
@@ -753,7 +867,25 @@ def qc_bam_fingerprint(x, hiseq_type='rn', bam_type='r1'):
         default: ['r1']
     """
     a = read_hiseq(x, hiseq_type) # for general usage
-    bam_list = list_hiseq_file(x, 'bam_rmdup', bam_type)
+    if not a.is_hiseq:
+        log.error('qc_bam_fingerprint() failed, not a hiseq dir: {}'.format(x))
+        return None
+    # r1
+    bam_list = None
+    if a.is_hiseq_r1:        
+        bam_list = list_hiseq_file(x, 'bam_rmdup', 'r1')
+    elif a.is_hiseq_rn:
+        bam_list = list_hiseq_file(x, 'bam_rmdup', bam_type)
+    elif a.is_hiseq_rx:
+        if a.hiseq_type in ['chipseq_rx', 'cnr_rx', 'cnt_rx']:
+            # ip, input
+            bam_list = [a.ip_bam, a.input_bam]
+    else:
+        log.error('qc_tss_enrich() failed, unknown hiseq dir: {}'.format(x))
+    # check point
+    if bam_list is None:
+        return None
+    # command
     args = {
         'bam_list': bam_list,
         'outdir': a.qc_dir,
@@ -767,4 +899,4 @@ def qc_bam_fingerprint(x, hiseq_type='rn', bam_type='r1'):
         if all(file_exists(bam_list)):
             Bam2fingerprint(**args).run()
         else:
-            log.error('qc_bam_fingerprint() failed, peak files not exists')
+            log.error('qc_bam_fingerprint() failed, bam not exists')

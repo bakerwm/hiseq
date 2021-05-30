@@ -8,7 +8,8 @@ Call peaks using MACS2 or SEACR
 import os
 import re
 import shutil
-from hiseq.utils.file import check_path, file_exists, file_abspath, file_prefix, Genome, remove_file
+from hiseq.utils.file import check_path, file_exists, file_abspath, \
+    file_prefix, Genome, remove_file
 from hiseq.utils.utils import log, update_obj, Config, get_date, run_shell_cmd
 from hiseq.utils.bam import Bam
 
@@ -244,8 +245,10 @@ class CallPeak(object):
                     self.seacr_peak))
             else:
                 try:
+                    self.bampe_to_bg(self.ip, self.ip_bg)
                     self.bampe_to_bg(self.input, self.input_bg)
                     run_shell_cmd(cmd2)
+                    remove_file(self.ip_bg, ask=False)
                     remove_file(self.input_bg, ask=False)
                 except:
                     log.error('run_seacr() failed, check {}'.format(
