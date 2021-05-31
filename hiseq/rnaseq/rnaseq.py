@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-
 1. RNAseq for 1 index, and 1 transcript (gene, TE, piRNA cluster, reporter, ...)
 # attention, norm_scale!?
 
