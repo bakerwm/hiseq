@@ -26,22 +26,13 @@ import subprocess
 import pathlib
 import urllib
 from .parallel_download import Downloader
+from hiseq.utils.utils import run_shell_cmd, update_obj, log
 # from hiseq.utils.helper import run_shell_cmd
-
-
-logging.basicConfig(
-    format='[%(asctime)s %(levelname)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    stream=sys.stdout)
-log = logging.getLogger(__name__)
-
-log.setLevel('INFO')
 
 
 def run_shell_cmd(cmd):
     """This command is from 'ENCODE-DCC/atac-seq-pipeline'
     https://github.com/ENCODE-DCC/atac-seq-pipeline/blob/master/src/encode_common.py
-
     save log to file
     """
     p = subprocess.Popen(['/bin/bash','-o','pipefail'], # to catch error in pipe
@@ -435,3 +426,5 @@ def main(argv):
 
 if __name__ == '__main__':
     main(sys.argv)
+    
+#

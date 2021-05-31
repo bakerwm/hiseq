@@ -45,6 +45,7 @@ import sys
 import re
 import hiseq
 import pathlib
+import argparse
 import pandas as pd
 from hiseq.utils.helper import update_obj
 
@@ -339,16 +340,48 @@ class SampleSheet(object):
         print(msg)
 
 
+
+def get_args():
+    """
+    Prepare sample sheet for Demx
+    output:
+    1. sample_name,i7,i5,barcode
+    2. i7_name,i7,reads
+    3. sample_name,NULL,NULL,barcode (bc only)
+    """
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description='Prepare sample sheet for demx/demx2',
+        epilog='''Description:
+YY00.xlsx : required columns, ['Sample_name*', 'P7_index_id*', 'Barcode_id*', 'Reads, M']
+
+Output:
+1. sample_name,i7,i5,barcode
+2. i7_name,i7,reads
+3. sample_name,NULL,NULL,barcode
+
+Example:
+hiseq sheet -s YY00.xlsx -o data'''
+    )
+    parser.add_argument('-s', '--xlsx-table', dest='x', required=True,
+        help='sample table in xlsx format, eg: YY00.xlsx')
+    parser.add_argument('-o', '--outdir', dest='outdir',
+        help='directory to save the reulsts')
+    return parser
+        
+        
 def main():
-    if len(sys.argv) < 3:
-        msg = '\n'.join([
-            'Usage: ',
-            'sample_sheet.py <table.xlsx> <outdir>',
-        ])
-        print(msg)
-        sys.exit(1)
-    x_table, outdir = sys.argv[1:3]
-    SampleSheet(x=x_table, outdir=outdir).run()
+    args = vars(get_args().parse_args())
+    SampleSheet(**args).run()
+#     if len(sys.argv) < 3:
+#         msg = '\n'.join([
+#             'Usage: ',
+#             'sample_sheet.py <table.xlsx> <outdir>',
+#         ])
+#         print(msg)
+#         sys.exit(1)
+#     x_table, outdir = sys.argv[1:3]
+#     SampleSheet(x=x_table, outdir=outdir).run()
 
 
 if __name__ == '__main__':

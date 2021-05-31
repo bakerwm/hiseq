@@ -12,20 +12,20 @@ optional
 
 """
 
-
 import os
 import sys
 import re
 import shutil
 import pathlib
 import logging
+import argparse
 import pandas as pd
 from multiprocessing import Pool
 from Levenshtein import distance
-# from hiseq.utils.args import args_init, ArgumentsInit, Adapter
 from hiseq.utils.seq import Fastx
 from hiseq.utils.helper import * # all help functions
-from hiseq.utils.file import check_file, check_path, file_exists, file_abspath, check_fx, check_fx_paired, copy_file, symlink_file, remove_file, gzip_file
+from hiseq.utils.file import check_file, check_path, file_exists, file_abspath, \
+    check_fx, check_fx_paired, copy_file, symlink_file, remove_file, gzip_file
 from hiseq.utils.utils import log, update_obj, Config
 from hiseq.align.utils import check_fx_args
 
@@ -761,6 +761,101 @@ class Cutadapt(object):
             except:
                 log.error('cutadapt() failed, see: {}'.format(self.log))
 
+
+
+def get_args():
+    """
+    - remove 3' adapter(s) (default: TruSeq RNA-Seq)
+    - trim low-quality bases on both 5 and 3 end
+    - trim N reads
+    - cut N-bases at either end of read
+    """
+    parser = argparse.ArgumentParser(
+        description='hiseq qc, trim adapters and qc')
+    parser.add_argument('-1', '--fq1', nargs='+', required=True,
+        help='reads in FASTQ files, support (*.gz), 1-4 files.')
+    parser.add_argument('-2', '--fq2', nargs='+', default=None,
+        help='The read2 of pair-end reads')
+    parser.add_argument('-o', '--outdir', default=None,
+        help='The directory to save results.')
+
+    parser.add_argument('--library-type', dest='library_type', default=None,
+        type=str, choices=['TruSeq', 'Nextera', 'smallRNA'],
+        help='Type of the library structure, \
+        TruSeq, TruSeq standard library \
+        Nextera, Tn5 standard library, \
+        smallRNA, small RNA library')
+    parser.add_argument('-m', '--len_min', default=15, metavar='len_min',
+        type=int, help='Minimum length of reads after trimming, defualt [15]')
+
+    parser.add_argument('--cut-to-length', default=0, dest='cut_to_length',
+        type=int,
+        help='cut reads to from right, default: [0], full length')
+    parser.add_argument('--recursive', action='store_true',
+        help='trim adapter recursively')
+
+    parser.add_argument('-p', '--threads', default=1, type=int,
+        help='Number of threads to launch, default [1]')
+    parser.add_argument('-j', '--parallel-jobs', dest='parallel_jobs',
+        default=1,
+        type=int, help='Number of jobs to run in parallel, default [1]')
+    parser.add_argument('--overwrite', action='store_true',
+        help='if spcified, overwrite exists file')
+
+    ## global arguments
+    parser.add_argument('-q', '--qual-min', default=20, type=int,
+        dest='qual_min',
+        help='The cutoff of base quality, default [20]')
+    parser.add_argument('-e', '--error-rate', default=0.1, type=float,
+        dest='error_rate',
+        help='Maximum allowed error rate, default [0.1]')
+
+    ## specific
+    parser.add_argument('--rm-untrim', action='store_true',
+        dest='rm_untrim',
+        help='discard reads without adapter')
+    parser.add_argument('--save-untrim', action='store_true',
+        dest='save_untrim',
+        help='Save untrim reads to file')
+    parser.add_argument('--save-too-short', action='store_true',
+        dest='save_too_short',
+        help='Save too short reads to file')
+    parser.add_argument('--save-too-long', action='store_true',
+        dest='save_too_long',
+        help='Save too short reads to file')
+    parser.add_argument('--cut-before-trim', default='0',
+        dest='cut_before_trim',
+        help='cut n-bases before trimming adapter; positive value, \
+        cut from left; minus value, cut from right, eg: 3 or -4 or 3,-4, \
+        default [0]')
+    parser.add_argument('--cut-after-trim', default='0',
+        dest='cut_after_trim',
+        help='cut n-bases after trimming adapter; positive value, \
+        cut from left; minus value, cut from right, eg: 3 or -4 or 3,-4, \
+        default [0]')
+
+    parser.add_argument('-a', '--adapter3', default=None,
+        help='3-Adapter sequence, default [].')
+    parser.add_argument('-g', '--adapter5', default='',
+        help='5-Adapter, default: None')
+
+    ## PE arguments
+    parser.add_argument('-A', '--Adapter3', default=None,
+        help='The 3 adapter of read2, default []')
+    parser.add_argument('-G', '--Adapter5', default=None,
+        help='The 5 adapter of read1, default: None')
+    return parser
+
+
+def main():
+    args = vars(get_args().parse_args())
+    Trim(**args).run()
+
+
+if __name__ == '__main__':
+    main()
+    
+# 
 
 
 ## deprecated, re-write

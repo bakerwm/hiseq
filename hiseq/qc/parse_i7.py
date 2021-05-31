@@ -25,8 +25,6 @@ output format:
 seq  i7_rc   i7_name   demx  demx_pct group total i7 i7_pct sample
 >CAACTA CAACTA  TruSeq_Index29  16210525         99.4   i7      17107874        16313570        95.4    RNAseq_shWhite_0-2h_rep1_1
 
-
-
 ## ChangeLog
 
 ## Version-2 - 2021-05-11
@@ -42,16 +40,24 @@ seq  i7_rc   i7_name   demx  demx_pct group total i7 i7_pct sample
 import os
 import sys
 import re
+import argparse
 import pathlib
 import shutil
 import pyfastx
 import hiseq
 from multiprocessing import Pool
-from hiseq.utils.helper import update_obj, log, check_path, listfile, fq_name, run_shell_cmd
+from hiseq.utils.utils import update_obj, log, run_shell_cmd
+from hiseq.utils.file import fx_name, check_path, list_file, list_fx
+# from hiseq.utils.helper import update_obj, log, check_path, listfile, fq_name, run_shell_cmd
 from hiseq.demx.sample_sheet import HiSeqIndex # check index name/seq
 from collections import Counter
 
+
+
 def top_seq(x, n=3, revcmp=False):
+    """
+    Top N seq in list
+    """
     t = len(x)
     a = Counter(x).most_common(n)
     out = []
@@ -80,14 +86,10 @@ def rev_comp(x):
     return ''.join([t.get(i, i) for i in s]) # complement
 
 
-
-
-
 ## guess adapter
 def guess_adapter(fx):
     """
     Guess the adapters:
-    
     TruSeq    AGATCGGAAGAGC
     Nextera   CTGTCTCTTATACACATCT
     smallRNA  TGGAATTCTCGG
@@ -141,9 +143,7 @@ def get_p7_seq(x):
 
 ## patterns
 def parse_i7(fx, outdir, save_seq=False):
-    fname = fq_name(fx, pe_fix=False)
-#     fname = os.path.basename(fx)
-#     fname = fname.replace('.fq.gz', '')
+    fname = fx_name(fx, fix_pe=False)
     if not os.path.isdir(outdir):
         os.makedirs(outdir)
     out_bc = os.path.join(outdir, fname + '.barcode.txt')
@@ -156,8 +156,6 @@ def parse_i7(fx, outdir, save_seq=False):
     p7a, i7_size, p7b = get_p7_seq(lib_type) 
     ## patterns
     p1 = re.compile('([ACGTN]{6})'+p7a[:6]) # p7a; gather barcode
-    # p2 = re.compile(p7a[:3]+'[ACGTN]{28}'+p7a[-3:]+'([ACGTN]{'+str(i7_size)+'})'+p7b[:3])  # p7a+i7+p7b gather i7
-    # p2 = re.compile(p7a[-6:]+'([ACGTN]{'+str(i7_size)+'})'+p7b[:6]) # p7a_i7_p7b
     p2 = re.compile(p7a[-6:]+'([ACGTN]{5,10})'+p7b[:6]) # p7a_i7_p7b
     p3 = re.compile(p7b[:6]) # p7b;
     ## parse file
@@ -231,6 +229,131 @@ def parse_i7(fx, outdir, save_seq=False):
         w.write(msg+'\n')
 
 
+
+class HiSeqP7(object):
+    """"
+    Check the P7 of HiSeq library
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args() # update
+
+
+    def init_args(self):
+        args_init = {
+            'fq': None,
+            'outdir': None,
+            'parallel_jobs': 1,
+            'overwrite': False,
+            'save_seq': False,
+            }
+        self = update_obj(self, args_init, force=False)
+        if not isinstance(self.outdir, str):
+            self.outdir = str(pathlib.Path.cwd())
+        self.fq_list = self.init_fq(self.fq)
+
+
+    def init_fq(self, fq):
+        """
+        Make sure fq is read1 of PE reads
+        """
+        out = []
+        if isinstance(fq, str):
+            fq = os.path.abspath(fq)
+            if os.path.isdir(fq):
+                out = list_fx(fq)
+                out = [i for i in out if '_1.' in i] # rep1
+            elif os.path.isfile(fq):
+                fname = fx_name(fq, fix_pe=False)
+                if fname.endswith('_1') and os.path.exists(fq):
+                    out = [fq]
+            else:
+                log.warning('illegal fq, str expect, got {}'.format(
+                    type(fq).__name__))
+        elif isinstance(fq, list):
+            out = [i for k in fq for i in self.init_fq(k)]
+        else:
+            log.warning('illegal fq, str or list expect, got {}'.format(
+                    type(fq).__name__))
+        return out
+
+
+    def run_single(self, x):
+        # check target
+        xname = fx_name(x, fix_pe=False)
+        x_stat = os.path.join(self.outdir, xname+'.stat.log')
+        if os.path.isfile(x_stat) and not self.overwrite:
+            log.info('parse_i7 skipped, file exists: {}'.format(x_stat))
+            with open(x_stat) as r:
+                msg = r.readlines()
+            print(msg)
+        else:
+            parse_i7(x, self.outdir, self.save_seq)
+
+
+    def run_multi(self, x):
+        if self.parallel_jobs > 1 and len(x) > 1:
+            with Pool(processes=self.parallel_jobs) as pool:
+                pool.map(self.run_single, x)
+        else:
+            for i in x:
+                self.run_single(i)
+
+    
+    def report(self):
+        pkg_dir = os.path.dirname(hiseq.__file__)
+        qc_reportR = os.path.join(pkg_dir, 'bin', 'hiseq_p7_report.R')
+        report_html = os.path.join(self.outdir, 'HiSeq_P7_report.html')
+        cmd_file = os.path.join(self.outdir, 'cmd.sh')
+        cmd = ' '.join([
+            shutil.which('Rscript'),
+            qc_reportR,
+            self.outdir,
+            self.outdir])
+        with open(cmd_file, 'wt') as w:
+            w.write(cmd + '\n')
+        if os.path.exists(report_html) and self.overwrite is False:
+            log.info('file exists, skip generating html.')
+        else:
+            run_shell_cmd(cmd)
+        if not os.path.exists(report_html):
+            log.error('failed, generating html file')
+
+
+    def run(self):
+        check_path(self.outdir)
+        self.run_multi(self.fq_list)
+        self.report()
+
+        
+def get_args():
+    parser = argparse.ArgumentParser(
+        description='hiseq i7')
+    parser.add_argument('-i', '--fq', nargs='+', required=True,
+        help='FASTQ files, or directory contains fastq files')
+    parser.add_argument('-o', '--outdir', default=None, required=True,
+        help='The directory to save results.')
+    parser.add_argument('-s', '--save-seq', dest='save_seq', 
+        action='store_true',
+        help='Saving the barcode and index sequences')
+    parser.add_argument('-j', '--parallel-jobs', default=1, type=int,
+        dest='parallel_jobs',
+        help='Number of jobs run in parallel, default: [1]')
+    return parser
+        
+
+def main():
+    args = vars(get_args().parse_args())
+    HiSeqP7(**args).run()
+
+    
+if __name__ == '__main__':
+    main()
+        
+# 
+
+
+
 # ## patterns
 # def parse_i7(fx, outdir, save_seq=False):
 #     fname = os.path.basename(fx)
@@ -298,117 +421,3 @@ def parse_i7(fx, outdir, save_seq=False):
 #     with open(out_msg, 'wt') as w:
 #         w.write(msg+'\n')
 
-
-
-class HiSeqP7(object):
-    """"
-    Check the P7 of HiSeq library
-    """
-    def __init__(self, **kwargs):
-        self = update_obj(self, kwargs, force=True)
-        self.init_args() # update
-
-
-    def init_args(self):
-        args_init = {
-            'fq': None,
-            'outdir': None,
-            'parallel_jobs': 1,
-            'overwrite': False,
-            'save_seq': False,
-            }
-        self = update_obj(self, args_init, force=False)
-        if not isinstance(self.outdir, str):
-            self.outdir = str(pathlib.Path.cwd())
-        self.fq_list = self.init_fq(self.fq)
-
-
-    def init_fq(self, fq):
-        """
-        Make sure fq is read1 of PE reads
-        """
-        out = []
-        if isinstance(fq, str):
-            fq = os.path.abspath(fq)
-            if os.path.isdir(fq):
-                fx1 = listfile(fq, "*_1.fastq")
-                fx2 = listfile(fq, "*_1.fastq.gz")
-                fx3 = listfile(fq, "*_1.fq")
-                fx4 = listfile(fq, "*_1.fq.gz")
-                out = fx1 + fx2 + fx3 + fx4
-            elif os.path.isfile(fq):
-                fname = fq_name(fq, pe_fix=False)
-                if fname.endswith('_1') and os.path.exists(fq):
-                    out = [fq]
-            else:
-                log.warning('illegal fq, str expect, got {}'.format(
-                    type(fq).__name__))
-        elif isinstance(fq, list):
-            out = [i for k in fq for i in self.init_fq(k)]
-        else:
-            log.warning('illegal fq, str or list expect, got {}'.format(
-                    type(fq).__name__))
-        return out
-
-
-    def run_single(self, x):
-        # check target
-        xname = fq_name(x, pe_fix=False)
-        x_stat = os.path.join(self.outdir, xname+'.stat.log')
-        if os.path.isfile(x_stat) and not self.overwrite:
-            log.info('parse_i7 skipped, file exists: {}'.format(x_stat))
-            with open(x_stat) as r:
-                msg = r.readlines()
-            print(msg)
-        else:
-            parse_i7(x, self.outdir, self.save_seq)
-
-
-    def run_multi(self, x):
-        if self.parallel_jobs > 1 and len(x) > 1:
-            with Pool(processes=self.parallel_jobs) as pool:
-                pool.map(self.run_single, x)
-        else:
-            for i in x:
-                self.run_single(i)
-
-    
-    def report(self):
-        pkg_dir = os.path.dirname(hiseq.__file__)
-        qc_reportR = os.path.join(pkg_dir, 'bin', 'hiseq_p7_report.R')
-        report_html = os.path.join(self.outdir, 'HiSeq_P7_report.html')
-        cmd_file = os.path.join(self.outdir, 'cmd.sh')
-        cmd = ' '.join([
-            shutil.which('Rscript'),
-            qc_reportR,
-            self.outdir,
-            self.outdir])
-        with open(cmd_file, 'wt') as w:
-            w.write(cmd + '\n')
-        if os.path.exists(report_html) and self.overwrite is False:
-            log.info('file exists, skip generating html.')
-        else:
-            run_shell_cmd(cmd)
-        if not os.path.exists(report_html):
-            log.error('failed, generating html file')
-
-
-    def run(self):
-        check_path(self.outdir)
-        self.run_multi(self.fq_list)
-        self.report()
-
-
-def main():
-    if len(sys.argv) < 3:
-        print('Usage: python parse_i7.py <outdir*> <in.fq*> <write_seq: 1|0>')
-        sys.exit(1)
-    outdir, fx = sys.argv[1:3]
-    save_seq = len(sys.argv) == 4
-    parse_i7(fx, outdir, save_seq)
-    
-    
-if __name__ == '__main__':
-    main()
-        
-# 

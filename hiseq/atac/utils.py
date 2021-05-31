@@ -17,7 +17,7 @@ from hiseq.trim.trimmer import TrimR1
 from hiseq.align.align import Align
 from hiseq.bam2bw.bam2bw import Bam2bw
 from hiseq.atac.callpeak import CallPeak
-from hiseq.fragsize.fragsize import BamPEFragSize
+from hiseq.fragsize.fragsize import BamFragSize
 from hiseq.utils.file import list_file, list_dir, check_file, \
     check_path, copy_file, symlink_file, remove_file, fx_name, \
     file_exists, file_abspath, file_prefix, file_nrows

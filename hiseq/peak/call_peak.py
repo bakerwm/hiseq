@@ -1,327 +1,287 @@
+#!/usr/bin/env python3
+# -*- coding:utf-8 -*-
 
 """
-Call peaks using macs2
-
-Install macs2 for python3
-
+Call peaks using MACS2 or SEACR
 """
 
 import os
-from hiseq.utils.helper import * # all help functions
+import re
+import shutil
+from hiseq.utils.file import check_path, file_exists, file_abspath, \
+    file_prefix, Genome, remove_file
+from hiseq.utils.utils import log, update_obj, Config, get_date, run_shell_cmd
+from hiseq.utils.bam import Bam
 
-class Macs2(object):
+
+class CallPeak(object):
     """
-    Run macs2 for BAM files
-    1. macs2 callpeak -f BAM -t {IP.bam} -c {input.bam} -g {gsize} --outdir {out_dir} 
-        -n {prefix} -B --SPMR {--broad} {--keep-dup auto}
-    2. macs2 bdgcmp -t {prefix}_treat_pileup.bdg -c {prefix}_control_lambda.bdg -o {prefix}.ppois.bdg -m ppois
-    3. macs2 bdgcmp -t {prefix}_treat_pileup.bdg -c {prefix}_control_lambda.bdg -o {prefix}.FE.bdg -m FE
-    4. macs2 bdgcmp -t {prefix}_treat_pileup.bdg -c {prefix}_control_lambda.bdg -o {prefix}.logLR.bdg -m logLR -p 0.00001
+    Call peaks using MACS2 or SEACR
+
+    MACS2: 
+    macs2 callpeak -t ip.bam -c input.bam \
+      -g hs -f BAMPE -n macs2_peak_q0.1 \
+      --outdir outdir -q 0.1 
+      --keep-dup all 
+      2>log.txt
     """
-    def __init__(self, ip, genome, output, prefix=None, control=None, 
-        atac=False, overwrite=False, genome_size=0, gsize_file=None, **kwargs):
-        """Parse the parameters
-        venv, the virtualenv created for macs2, running in Python2
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+
+
+    def init_args(self):
+        default_args = {
+            'method': 'macs2',
+            'ip': None,
+            'input': None,
+            'genome': None,
+            'genome_size': None,
+            'genome_size_file': None,
+            'prefix': None,
+            'outdir': None,
+            'overwrite': False,
+            'hiseq_type': 'callpeak_r1',
+            'keep_tmp': False
+            }
+        self = update_obj(self, default_args, force=False)
+        if not isinstance(self.outdir, str):
+            self.outdir = str(pathlib.Path.cwd())
+            log.warning('set pwd as outdir: {}'.format(self.outdir))
+        self.outdir = file_abspath(self.outdir)
+        if not file_exists(self.ip):
+            raise ValueError('ip, required')
+        self.ip = file_abspath(self.ip)
+        self.input = file_abspath(self.input)
+        # file name
+        self.ip_name = file_prefix(self.ip)
+        if self.input is None:
+            self.input_name = ''
+        else:
+            self.input_name = file_prefix(self.input) 
+        if not isinstance(self.prefix, str):
+            self.prefix = self.ip_name
+        self.prefix_top001 = self.prefix + '.top0.01'
+        # genome and size
+        self.init_genome()
+        self.init_files()
+        check_path(self.outdir, create_dirs=True)
+
+
+    def init_genome(self):
         """
-        self.ip = ip
-        self.genome = genome
-        self.output = output
-        self.control = control
-        self.overwrite = overwrite
-        self.genome_size = genome_size
-        self.gsize_file = gsize_file
-        self.prefix = prefix
-        self.atac = atac
-
-        if prefix is None:
-            prefix = file_prefix(ip)[0]
-            # prefix = os.path.splitext(os.path.basename(ip))[0]
-
-        self.gsize = self.get_gsize()
-        if self.gsize is None:
-            raise ValueError('unknown genome: {}'.format(genome))
-
-        # get gsize_file, only for genome=None
-        if not isinstance(genome, str):
-            if genome_size == 0 or gsize_file is None:
-                raise ValueError('genome_size and gsize_file required, if genome=None')
-
-        is_path(self.output)
-
-
-    def get_gsize(self):
+        update:
+        genome_size
+        genome_size_file
         """
-        Genome size for macs2 -g option
-        """
-        d = {
+        g = {
           'dm6': 'dm',
           'dm3': 'dm',
           'mm9': 'mm',
           'mm10': 'mm',
           'hg19': 'hs',
-          'hg38': 'hs',
-          'GRCh38': 'hs'}
-
-        # prefer: if input genome_size is int
-        if isinstance(self.genome_size, int) and self.genome_size > 0:
-            gsize = self.genome_size # from args
-        else:
-            gsize = d.get(self.genome, None) # from macs2
-
-        return gsize
-
-
-    def _tmp(self):
-        """Create a temp file"""
-        tmpfn = tempfile.NamedTemporaryFile(prefix='tmp',
-                                            suffix='.out',
-                                            delete=False)
-        return tmpfn.name
-
-
-    def callpeak(self):
-        """Call peaks using MACS"""
-        callpeak_log = os.path.join(self.output, self.prefix + '.macs2.callpeak.out')
-        if self.atac is True:
-            # ATAC-seq
-            macs2_cmd = 'macs2 callpeak --nomodel --shift -100 --extsize 200 \
-                -t {} -g {} --outdir {} -n {} 2> {}'.format(
-                    self.ip,
-                    self.gsize,
-                    self.output,
-                    self.prefix,
-                    callpeak_log)
-            peak = os.path.join(self.output, self.prefix + '_peaks.narrowPeak')
-        else:
-            # ChIP-seq
-            macs2_cmd = 'macs2 callpeak --nomodel --extsize 150 -t {} -g {} --outdir {} -n {} \
-                --keep-dup auto -B --SPMR'.format(
-                    self.ip, 
-                    self.gsize,
-                    self.output,
-                    self.prefix)
-            if not self.control is None:
-                macs2_cmd += ' -c {}'.format(self.control)
-
-            macs2_cmd += ' 2> {}'.format(callpeak_log)
-            # peak file
-            peak = os.path.join(self.output, self.prefix + '_peaks.narrowPeak')
-            # save cmd
-            cmd_txt = os.path.join(self.output, 'cmd.sh')
-            with open(cmd_txt, 'wt') as w:
-                w.write(macs2_cmd + '\n')
-
-       # output file
-        # macs2_out = os.path.join(self.output, self.prefix + '_peaks.xls')
-        try:
-            if os.path.exists(peak) and self.overwrite is False:
-                logging.info('file exists, skip macs2 callpeak')
+          'hg38': 'hs'
+        }
+        if isinstance(self.genome, str):
+            self.genome_size = g.get(self.genome, 0)
+            self.genome_size_file = Genome(genome=self.genome).get_fasize()
+            if self.genome_size is None:
+                raise ValueError('unknown genome: {}'.format(self.genome))
+        elif isinstance(self.genome_size, int):
+            if self.genome_size < 1:
+                raise ValueError('genome_size, failed, {}'.format(
+                    self.genome_size))
+            elif not isinstance(self.genome_size_file, str):
+                raise ValueError('genome_size_file, failed, {}'.format(
+                    self.genome_size_file))
             else:
-                logging.info('run macs2 callpeak')
-                run_shell_cmd(macs2_cmd)
-        except:
-            logging.error('callpeak() failed')
-
-        return peak
-
-
-    def bdgcmp(self, opt='ppois'):
-        """Options for -m:
-        {ppois,qpois,subtract,logFE,FE,logLR,slogLR,max}
-        """
-        # use output of callpeak
-        ip_bdg = os.path.join(self.output, self.prefix + '_treat_pileup.bdg')
-        input_bdg = os.path.join(self.output, self.prefix + '_control_lambda.bdg')
-
-        if not os.path.exists(ip_bdg) or not os.path.exists(input_bdg):
-            raise ValueError('*.bdg file not found, need to run .callpeak() first')
-        if not opt in ['ppois', 'qpois', 'subtract', 'logFE', 'FE', 'logLR', 'slogLR', 'max']:
-            raise ValueError('unknown option: opt={}'.format(opt))
-
-        if opt == 'logLR':
-            opt_ext = '-p 0.00001'
+                pass
         else:
-            opt_ext = ''
+            raise ValueError('--genome, --genome-size, required')
 
-        out_bdg = os.path.join(self.output, self.prefix + '.' + opt + '.bdg')
-        log = os.path.join(self.output, self.prefix + '.macs2.bdgcmp.out')
-        cmd1 = 'macs2 bdgcmp -t {} -c {} -o {} -m {} {}'.format(
-            ip_bdg, input_bdg, out_bdg, opt, opt_ext)
+
+    def init_files(self):
+        default_files = {
+            'config_toml': self.outdir + '/config.toml',
+            'macs2_peak': self.outdir + '/' + self.prefix + '_peaks.narrowPeak',
+            'macs2_stdout': self.outdir + '/' + self.prefix + '.macs2.stdout',
+            'macs2_stderr': self.outdir + '/' + self.prefix + '.macs2.stderr',
+            'macs2_peak_xls': self.outdir + '/' + self.prefix + '_peaks.xls',
+            'ip_bed': self.outdir + '/' + self.ip_name + '.frag.bed',
+            'ip_bg': self.outdir + '/' + self.ip_name + '.frag.bg',
+            'input_bed': self.outdir + '/' + self.input_name + '.frag.bed',
+            'input_bg': self.outdir + '/' + self.input_name + '.frag.bg',
+            'seacr_peak': self.outdir + '/' + self.prefix + '.stringent.bed',
+            'seacr_peak_top': self.outdir + '/' + self.prefix_top001 + '.stringent.bed',
+            'seacr_stdout': self.outdir + '/' + self.prefix + '.seacr.stdout',
+            'seacr_stderr': self.outdir + '/' + self.prefix + '.seacr.stderr',
+        }
+        self = update_obj(self, default_files, force=True) # key
+        ## genome_size
+        # self.genome_size_file = Genome(genome=self.genome).get_fasize()
         
-        if os.path.exists(out_bdg) and self.overwrite is False:
-            logging.info('file exists, skip macs2 bdgcmp')
-        else:
-            run_shell_cmd(cmd1)
 
-        # sort output *.bdg
-        cmd2 = 'sort -k1,1 -k2,2n -o {} {}'.format(out_bdg, out_bdg)
-
-        # cnvert *.bdg to *.bigWig
-        gsize_file = self.gsize_file
-        out_bw  = os.path.join(self.output, self.prefix + '.' + opt + '.bigWig')
-        cmd3 = 'bedGraphToBigWig {} {} {}'.format(out_bdg, gsize_file, out_bw)
-
-        try:
-            if os.path.exists(out_bw) and self.overwrite is False:
-                logging.info('file exists, skip bg2bw')
-            else:
-                run_shell_cmd(cmd2)
-                run_shell_cmd(cmd3)
-        except:
-            logging.error('bdgcmp() failed')
-
-
-    def bdgpeakcall(self):
-        pass
-
-
-    def bdgopt(self):
-        pass
-
-
-    def cmbreps(self):
-        pass
-
-
-    def bdgdiff(self):
-        pass
-
-
-    def filterdup(self):
-        pass
-
-
-    def predicted(self):
-        pass
-
-
-    def pileup(self):
-        pass
-
-
-    def randsample(self):
-        pass
-
-
-    def refinepeak(self):
-        pass
-
-
-    def annotation(self):
-        """Annotate narrowpeak using HOMER annotatePeaks.pl script
-        BED foramt
-        """
-        anno_exe = shutil.which('annotatePeaks.pl')
-        if not os.path.exists(anno_exe):
-            logging.error('command not exists, skip annotation - {}'.format(anno_exe))
-            return None
-
-        # # narrow peak file
-        # peak_listA = listfiles2('*_peaks.narrowPeak', self.output)
-        # peak_listB = listfiles2('*_peaks.broadPeak', self.output)
-        peak_listA = listfille(self.output, '*_peaks.narrowPeak')
-        peak_listB = listfille(self.output, '*_peaks.broadPeak')
-        peak_list = peak_listA + peak_listB
-
-        anno_list = []
-        for peak_file in peak_list:
-            peak_anno = peak_file + '.annotation'
-            peak_log = peak_anno + '.log'
-            cmd = 'perl {} {} {} 1> {} 2> {}'.format(
-                anno_exe, peak_file, self.genome, peak_anno, peak_log)
-            
-            try:
-                # check existence
-                if os.path.exists(peak_anno) and self.overwrite is False:
-                    log.info('file exists, skip annotation: {}'.format(peak_anno))
-                else:
-                    run_shell_cmd(cmd)
-
-                anno_list.append(peak_anno)
-            except:
-                logging.error('annotation() failed')
-
-        return anno_list
-
-
-    def broadpeak_annotation(self):
-        """Annotate broadpeak using HOMER annotatePeaks.pl script
-        BED foramt
-        """
-        anno_exe = shutil.which('annotatePeaks.pl')
-        if not os.path.exists(anno_exe):
-            logging.error('command not exists, skip annotation - {}'.format(anno_exe))
-            return None
-
-        # broad peak file
-        broadpeak = os.path.join(self.output, self.prefix + '_peaks.broadPeak')
-        if not os.path.exists(broadpeak):
-            raise ValueError('require .callpeak() first - {}'.format(broadpeak))
-
+    def run_macs2(self):
+        input_arg = '' if self.input is None else '-c {}'.format(self.input)
+        cmd = ' '.join([
+            '{} callpeak'.format(shutil.which('macs2')),
+            '-t {} {}'.format(self.ip, input_arg),
+            '-g {} -f BAMPE'.format(self.genome_size),
+            '-n {}'.format(self.outdir + '/' + self.prefix),
+            '-q 0.1 --keep-dup all',
+            '--nomodel --shift -100 --extsize 200',
+            '1> {}'.format(self.macs2_stdout),
+            '2> {}'.format(self.macs2_stderr),
+            ])
+        # save cmd
+        cmd_txt = self.outdir + '/' + self.prefix + '.macs2.cmd.sh'
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
         # run
-        anno_peak = os.path.join(self.output, self.prefix + '_peaks.broadPeak.annotation')
-        anno_log = os.path.join(self.output, self.prefix + '_peaks.broadPeak.annotation.log')
-        cmd = 'perl {} {} {} 1> {} 2> {}'.format(
-            anno_exe, broadpeak, self.genome, anno_peak, anno_log)
+        if file_exists(self.macs2_peak) and not self.overwrite:
+            log.info('run_macs2() skipped, file exists:{}'.format(
+                self.macs2_peak))
+        else:
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.error('run_macs2() failed, check {}'.format(
+                    self.macs2_log))
 
-        try:
-            run_shell_cmd(cmd)
-        except:
-            logging.error('broadpeak_annotation() failed')
+
+    def bampe_to_bg(self, bam, bg):
+        """
+        Convert bam to bed
+        bedpe, sort -n (by name)
+        """
+        bam_sorted = os.path.splitext(bg)[0] + '.sorted_by_name.bam'
+        bed = os.path.splitext(bg)[0] + '.bed'
+        cmd = ' '.join([
+            'samtools sort -@ 4 -n -o {} {}'.format(bam_sorted, bam),
+            '&& bedtools bamtobed -bedpe -i {}'.format(bam_sorted),
+            "| awk '$1==$4 && $6-$2 < 1000 {print $0}'",
+            '| cut -f 1,2,6',
+            '| sort -k1,1 -k2,2n > {}'.format(bed),
+            '&& bedtools genomecov -bg -i {}'.format(bed),
+            '-g {}'.format(self.genome_size_file),
+            '> {}'.format(bg)
+        ])
+        # save cmd
+        cmd_txt = self.outdir + '/' + self.prefix + '.bam2bg.cmd.sh'
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+        # run
+        if file_exists(bg) and not self.overwrite:
+            log.info('bampe_to_bg() skipped, file exists:{}'.format(bg))
+        else:
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.error('bampe_to_bg() failed, check {}'.format(bg))
+        # temp files
+        del_list = [bam_sorted, bed]
+        if not self.keep_tmp:
+            remove_file(del_list, ask=False)
+
+
+    def run_seacr(self):
+        """
+        bash $seacr ip.bedgraph input.bedgraph \
+        non stringent output
+    
+        see: https://github.com/FredHutch/SEACR
+        1. bam-to-bed
+        bedtools bamtobed -bedpe -i in.bam > out.bed
+        awk '$1==$4 && $6-$2 < 1000 {print $0}' out.bed > out.clean.bed
+        cut -f1,2,6 out.clean.bed | sort -k1,1 -k2,2n -k3,3n > out.fragments.bed
+        bedtools genomecov -bg -i out.fragments.bed -g genome > out.fragments.bg
         
-        return anno_peak
-
-
-    def get_effect_size(self):
+        2. call peak
+        # ip-only
+        bash seacr out.fragments.bg 0.01 non stringent top0.01.peaks
+        # ip-vs-input
+        bash seacr out.fragments.bg IgG.bg non stringent output
         """
-        Extract the effective depth of macs2 files
-        parse the file: output/*_peaks.xls
-        tags after filtering in treatment
-        tags in treatment
-        tags after filtering in control
-        tags in control
-            tag size is determined as 100 bps
-            total tags in treatment: 7978071
-            tags after filtering in treatment: 2384854
-            maximum duplicate tags at the same position in treatment = 1
-            Redundant rate in treatment: 0.70
-            total tags in control: 10555283
-            tags after filtering in control: 6639591
-            maximum duplicate tags at the same position in control = 1
-            Redundant rate in control: 0.37
-            d = 122
-            alternative fragment length(s) may be 122 bps
-        """
-        # search the xls file
-        f = listfile(self.output, '*peaks.xls')
-        if not os.path.exists(f[0]):
-            raise ValueError('file missing in macs2 callpeak output: {}'.format(f))
+        # ip-only
+        if file_exists(self.ip):
+            cmd1 = ' '.join([
+                'bash {}'.format(shutil.which('SEACR_1.3.sh')),
+                '{} 0.01'.format(self.ip_bg),
+                'non stringent {}'.format(self.outdir + '/' + self.prefix_top001),
+                '1> {}'.format(self.seacr_stdout),
+                '2> {}'.format(self.seacr_stderr),
+            ])
+            # save cmd
+            cmd1_txt = self.outdir + '/' + self.prefix + '.SEACR.top0.01.sh'
+            with open(cmd1_txt, 'wt') as w:
+                w.write(cmd1 + '\n')
+            if file_exists(self.seacr_peak_top) and not self.overwrite:
+                log.info('run_seacr() skipped, file exists:{}'.format(
+                    self.seacr_peak_top))
+            else:
+                try:
+                    self.bampe_to_bg(self.ip, self.ip_bg)
+                    run_shell_cmd(cmd1)
+                    remove_file(self.ip_bg, ask=False)
+                except:
+                    log.error('run_seacr() failed, check {}'.format(
+                        self.seacr_peak_top))
+        # ip-vs-input
+        if file_exists(self.input):
+            cmd2 = ' '.join([
+                'bash {}'.format(shutil.which('SEACR_1.3.sh')),
+                '{} {}'.format(self.ip_bg, self.input_bg),
+                'non stringent {}'.format(self.outdir + '/' + self.prefix),
+                '1> {}'.format(self.seacr_stdout),
+                '2> {}'.format(self.seacr_stderr),
+            ])
+            # save cmd
+            cmd2_txt = self.outdir + '/' + self.prefix + '.SEACR.ip_vs_input.sh'
+            with open(cmd2_txt, 'wt') as w:
+                w.write(cmd2 + '\n')
+            # run
+            if file_exists(self.seacr_peak) and not self.overwrite:
+                log.info('run_seacr() skipped, file exists:{}'.format(
+                    self.seacr_peak))
+            else:
+                try:
+                    self.bampe_to_bg(self.ip, self.ip_bg)
+                    self.bampe_to_bg(self.input, self.input_bg)
+                    run_shell_cmd(cmd2)
+                    remove_file(self.ip_bg, ask=False)
+                    remove_file(self.input_bg, ask=False)
+                except:
+                    log.error('run_seacr() failed, check {}'.format(
+                        self.seacr_peak))
 
-        # top
-        topN = 100
-        counter = 0
-        dep = {}
-        # ip_depth = ip_scale = input_depth = input_scale = 0
-        with open(f[0], 'rt') as fi:
-            for line in fi:
-                if not line.startswith('#'): 
-                    continue
-                if counter > 100: # nrows
-                    break # stop
-                num = line.strip().split()[-1]
-                if 'tags after filtering in treatment' in line:
-                    dep['ip_depth'] = num
-                if 'tags in treatment' in line:
-                    s = 1e6 / int(num)
-                    dep['ip_scale'] = '{:.6f}'.format(s)
-                if 'tags after filtering in control' in line:
-                    dep['input_depth'] = num
-                if 'tags in control' in line:
-                    s = 1e6 / int(num)
-                    dep['input_scale'] = '{:.6f}'.format(s)
-                counter += 1
 
-        return dep
-
-
-
+    def run(self):
+        Config().dump(self.__dict__, self.config_toml)
+        msg = '\n'.join([
+            '-'*80,
+            '{:>14s} : {}'.format('Date', get_date()),
+            '{:>14s} : {}'.format('program', 'hiseq.cnr.CallPeak'),
+            '{:>14s} : {}'.format('config', self.config_toml),
+            '{:>14s} : {}'.format('peakcaller', self.method),
+            '{:>14s} : {}'.format('genome', self.genome),
+            '{:>14s} : {}'.format('outdir', self.outdir),
+            '{:>14s} : {}'.format('ip', self.ip),
+            '{:>14s} : {}'.format('input', self.input),
+            '{:>14s} : {}'.format('genome_size', self.genome_size),
+            '{:>14s} : {}'.format('genome_size_file', self.genome_size_file),
+            '{:>14s} : {}'.format('keep_tmp', self.keep_tmp),
+            '{:>14s} : {}'.format('overwrite', self.overwrite),
+            '{:>14s} : {}'.format('hiseq_type', self.hiseq_type),
+            '-'*80,
+        ])
+        print(msg)
+        # generate cmd
+        if self.method.lower() == 'macs2':
+            self.run_macs2()
+        elif self.method.lower() == 'seacr':
+            self.run_seacr()
+        else:
+            raise ValueError('unknown method: {macs2|seacr}, got {}'.format(
+                self.method))
+        # remove files
+        del_list = []

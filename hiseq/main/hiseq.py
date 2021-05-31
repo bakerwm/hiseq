@@ -20,40 +20,84 @@ from multiprocessing import Pool
 # main args module modules
 from hiseq.atac.atac import Atac
 from hiseq.atac.atac import get_args as add_atac_args
+
 from hiseq.cnr.cnr import Cnr
 from hiseq.cnr.cnr import get_args as add_cnr_args
 
+from hiseq.trim.trimmer import Trim
+from hiseq.trim.trimmer import get_args as add_trim_args
+
+from hiseq.align.align import Align
+from hiseq.align.align import get_args as add_align_args
+
+
+# sub-modules-1
+from hiseq.bam2bw.bam2bw import Bam2bw
+from hiseq.bam2bw.bam2bw import get_args as add_bam2bw_args
+
+from hiseq.utils.bam import Bam2cor
+from hiseq.bam2cor.bam2cor import get_args as add_bam2cor_args
+
+from hiseq.fragsize.fragsize import BamFragSize
+from hiseq.fragsize.fragsize import get_args as add_fragsize_args
+
+
+
+
+# sub-modules-2
+from hiseq.demx.sample_sheet import SampleSheet
+from hiseq.demx.sample_sheet import get_args as add_sheet_args
+
+from hiseq.demx.demx import Demx
+from hiseq.demx.demx import get_args as add_demx_args
+
+from hiseq.demx.demx2 import Demx2
+from hiseq.demx.demx2 import get_args as add_demx2_args
+
+from hiseq.qc.fastqc import Fastqc
+from hiseq.qc.fastqc import get_args as add_fastqc_args
+
+from hiseq.qc.parse_i7 import HiSeqP7
+from hiseq.qc.parse_i7 import get_args as add_p7_args
+
+from hiseq.qc.bacteria import Kraken2
+from hiseq.qc.bacteria import get_args as add_bacteria_args
+
 
 # to-be-deprecated: replaced by specific get_args() in each command
-from hiseq.utils.argsParser import add_sheet_args, add_demx_args, \
-    add_demx2_args, add_qc_args, add_p7_args, add_trim_args, add_align_args, \
-    add_quant_args, add_peak_args, add_motif_args, add_rnaseq_args, \
+from hiseq.utils.argsParser import add_quant_args, add_peak_args, add_motif_args, add_rnaseq_args, \
     add_rnaseq_args2, add_chipseq_args, \
-    add_trackhub_args, add_deseq_pair_args, add_go_args, add_fragsize_args, \
-    add_bam2bw_args, add_bam2cor_args, add_peak2idr_args, add_bed2overlap_args, \
+    add_trackhub_args, add_deseq_pair_args, add_go_args,\
+    add_peak2idr_args, add_bed2overlap_args, \
     add_sample_args
 
-from hiseq.demx.sample_sheet import SampleSheet
-from hiseq.demx.demx import Demx, Demx2
-from hiseq.qc.fastqc import Fastqc
-from hiseq.qc.parse_i7 import HiSeqP7
-from hiseq.trim.trimmer import Trim
-from hiseq.align.align import Align
+# add_sheet_args, add_qc_args, add_p7_args, add_demx_args, add_demx2_args, 
+# add_align_args, add_trim_args, add_bam2bw_args, add_bam2cor_args,
+# add_fragsize_args, 
+
+
+# from hiseq.demx.sample_sheet import SampleSheet
+# from hiseq.demx.demx import Demx, Demx2
+# from hiseq.qc.fastqc import Fastqc
+# from hiseq.qc.parse_i7 import HiSeqP7
+
+# from hiseq.bam2bw.bam2bw import Bam2bw
+# from hiseq.utils.bam import Bam2cor
+# from hiseq.trim.trimmer import Trim
+# from hiseq.align.align import Align
 from hiseq.rnaseq.rnaseq import RNAseq
 from hiseq.rnaseq.deseq_pair import DeseqPair
 from hiseq.chipseq.chipseq import ChIPseq
 from hiseq.go.go import Go
-from hiseq.utils import download as dl # download.main()
 from hiseq.utils.fastx import Fastx
-from hiseq.bam2bw.bam2bw import Bam2bw
-from hiseq.utils.bam import Bam2cor
-from hiseq.bam2bw.bam2bw import Bam2bw
 from hiseq.utils.bed import PeakIDR, BedOverlap
-from hiseq.fragsize.fragsize import BamPEFragSize2
 from hiseq.get_trackhub.get_trackhub import TrackHub
-from hiseq.peak.call_peak import Macs2
+from hiseq.peak.call_peak import CallPeak
 from hiseq.sample.sample import FxSample
-from hiseq.utils.utils import log, get_date
+from hiseq.utils.utils import log, get_date, print_dict
+
+
+from hiseq.utils import download as dl # download.main()
 
 
 class Hiseq(object):
@@ -67,16 +111,17 @@ class Hiseq(object):
     subcommands:
 
         atac         ATACseq pipeline
+        cnr          CUN&RUN pipeline
         rnaseq       RNAseq pipeline
         rnaseq2      RNAseq pipeline, simplify version
         chipseq      ChIPseq pipeline
-        cnr          CUN&RUN pipeline
 
         sheet        Preparing sample_sheet.csv for demx/demx2
         demx         Demultiplexing reads (P7, barcode) from single Lane
         demx2        Demultiplexing multi barcode files
         qc           quality control, fastqc
         p7           Check the P7 of HiSeq library
+        bacteria     Check bacteria content
         
         trim         trim adapters, low-quality bases, ...
         align        Align fastq/a files to reference genome
@@ -124,6 +169,7 @@ class Hiseq(object):
             out = None
         return out
 
+## pipelines
 
     def atac(self):
         """
@@ -132,12 +178,67 @@ class Hiseq(object):
         args = self.init_args(add_atac_args())
         Atac(**args).run()
 
-    
-################################################################################
-## to-be-updated
-## 2021-05-20
-    
-    
+
+    def cnr(self):
+        """
+        CUN&RUN pipeline
+        """
+        args = self.init_args(add_cnr_args())
+        Cnr(**args).run()
+
+        
+    def trim(self):
+        """
+        Trim adapters
+        """
+        args = self.init_args(add_trim_args())
+        Trim(**args).run()
+
+
+    def align(self):
+        """
+        Align reads
+        """
+        args = self.init_args(add_align_args())
+        Align(**args).run()
+        
+
+    def bam2bw(self):
+        """
+        Convert bam to bw files
+        """
+        args = self.init_args(add_bam2bw_args())
+        Bam2bw(**args_local).run()
+
+
+    def bam2cor(self):
+        """
+        Calculate bam correlation
+        using deeptools
+        """
+        args = self.init_args(add_bam2cor_args())
+        # args['make_plot'] = not args.get('no_plot', False)
+        Bam2cor(**args).run()
+
+
+    def bed2overlap(self):
+        """
+        Calculate IDR for peak files
+        using: idr
+        """
+        args = self.init_args(add_bed2overlap_args())
+        BedOverlap(**args).run()
+
+
+    def fragsize(self):
+        """
+        Calculate the fragment size of PE alignment
+        """
+        args = self.init_args(add_fragsize_args())
+        BamFragSize(**args).run()
+        
+        
+## sub-modules
     def sheet(self):
         """
         Prepare the sample sheet for demx
@@ -146,7 +247,7 @@ class Hiseq(object):
         """
         args = self.init_args(add_sheet_args())
         SampleSheet(**args).run()
-
+        
 
     def demx(self):
         """
@@ -162,13 +263,13 @@ class Hiseq(object):
         """
         args = self.init_args(add_demx2_args())
         Demx2(**args).run()
-
+        
 
     def qc(self):
         """
         Fastq quality control
         """
-        args = self.init_args(add_qc_args())
+        args = self.init_args(add_fastqc_args())
         Fastqc(**args).run()
 
         
@@ -178,24 +279,19 @@ class Hiseq(object):
         """
         args = self.init_args(add_p7_args())
         HiSeqP7(**args).run()
+
+        
+    def bacteria(self):
+        """
+        Check bacteria content
+        """
+        args = self.init_args(add_bacteria_args())
+        Kraken2(**args).run()
         
 
-    def trim(self):
-        """
-        Trim adapters
-        """
-        args = self.init_args(add_trim_args())
-        TrimRn(**args).run()
-
-
-    def align(self):
-        """
-        Align reads
-        """
-        args = self.init_args(add_align_args())
-        Align(**args).run()
-
-
+################################################################################
+## to-be-updated
+## 2021-05-20
     def quant(self):
         """
         quantify hiseq reads
@@ -264,39 +360,6 @@ class Hiseq(object):
         ChIPseq(**args).run()
 
 
-    def cnr(self):
-        """
-        CUN&RUN pipeline
-        """
-        args = self.init_args(add_cnr_args())
-        Cnr(**args).run()
-
-
-    def fragsize(self):
-        """
-        Calculate the fragment size of PE alignment
-        """
-        args = self.init_args(add_fragsize_args())
-        BamPEFragSize2(**args).run()
-
-
-    def bam2bw(self):
-        """
-        Convert bam to bw files
-        """
-        args = self.init_args(add_bam2bw_args())
-        Bam2bw(**args_local).run()
-
-
-    def bam2cor(self):
-        """
-        Calculate bam correlation
-        using deeptools
-        """
-        args = self.init_args(add_bam2cor_args())
-        # args['make_plot'] = not args.get('no_plot', False)
-        Bam2cor(**args).run()
-
 
     def peak2idr(self):
         """
@@ -305,15 +368,6 @@ class Hiseq(object):
         """
         args = self.init_args(add_peak2idr_args())
         PeakIDR(**args).run()
-
-
-    def bed2overlap(self):
-        """
-        Calculate IDR for peak files
-        using: idr
-        """
-        args = self.init_args(add_bed2overlap_args())
-        BedOverlap(**args).run()
 
 
     def sample(self):

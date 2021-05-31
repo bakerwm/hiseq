@@ -17,8 +17,7 @@ import sys
 import logging
 import argparse
 import hiseq
-from hiseq.utils.helper import log
-from hiseq.utils.utils import Config, update_obj
+from hiseq.utils.utils import Config, update_obj, log
 from hiseq.utils.file import check_file, check_fx, check_fx_paired, file_exists
 
 

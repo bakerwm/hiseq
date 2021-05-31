@@ -46,9 +46,9 @@ from Levenshtein import distance
 from hiseq.utils.helper import *
 from hiseq.trim.trimmer import Trim
 from hiseq.align.alignment import Alignment, AlignIndex
-from hiseq.peak.call_peak import Macs2
+from hiseq.peak.call_peak import CallPeak
 from hiseq.atac.atac_utils import *
-from hiseq.fragsize.fragsize import BamPEFragSize
+from hiseq.fragsize.fragsize import BamFragSize
 import hiseq
 import collections
 
