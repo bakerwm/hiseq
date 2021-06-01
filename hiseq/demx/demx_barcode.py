@@ -153,7 +153,7 @@ class DemxBarcode(object):
         """
         log.info('Running demo with subsample: {} reads'.format(sample_size))
         # update args
-        self.outdir = os.path.join(self.outdir, smp)
+        # self.outdir = os.path.join(self.outdir, smp)
         self.data_dir = os.path.join(self.outdir, 'data')
         check_path(self.data_dir)
         # subset

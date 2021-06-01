@@ -118,6 +118,8 @@ class Demx(object):
         # outdir
         if not isinstance(self.outdir, str):
             self.outdir = str(pathlib.Path.cwd())
+        if self.demo:
+            self.outdir = os.path.join(self.outdir, 'demo') # update demo
         if not self.mismatch in range(4):
             raise ValueError('illegal mimatche: [{}], expect [0,1,2,3]'.format(
                 self.mismatch))
@@ -289,7 +291,6 @@ class Demx(object):
                 })
                 bc_args_list.append(bc_args2)
                 DemxBarcode(**bc_args2).run()
-
             # organize files and stat
             self.wrap_p7_bc()
 
