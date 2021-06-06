@@ -149,7 +149,7 @@ class AlignerConfig(object):
         prefix = os.path.join(subdir, self.smp_name)
         default_files = {
             'subdir': subdir,
-            'config_toml': os.path.join(subdir, 'config.toml'),
+            'config_yaml': os.path.join(subdir, 'config.yaml'),
             'cmd_shell': os.path.join(subdir, 'cmd.sh'),
             'bam': prefix + '.bam',
             'sam': prefix + '.sam',
@@ -158,7 +158,7 @@ class AlignerConfig(object):
             'unmap2': prefix + '.unmap.2.fastq',
             'align_log': prefix + '.align.log',
             'align_stat': prefix + '.align.stat',
-            'align_toml': prefix + '.align.toml',
+            'align_yaml': prefix + '.align.yaml',
             'align_flagstat': prefix + '.flagstat'
         }
         self = update_obj(self, default_files, force=True)

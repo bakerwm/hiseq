@@ -19,9 +19,10 @@ import argparse
 from Levenshtein import distance
 from hiseq.utils.seq import Fastx
 from hiseq.utils.utils import update_obj, Config, log, run_shell_cmd
-from hiseq.utils.file import check_fx, check_file, check_path, file_abspath, file_exists, fx_name, symlink_file, copy_file, remove_file
+from hiseq.utils.file import check_fx, check_file, check_path, file_abspath, \
+    file_exists, fx_name, symlink_file, copy_file, remove_file, check_fx_args
 from hiseq.align.align_index import AlignIndex
-from hiseq.align.utils import check_fx_args, AlignReader
+# from hiseq.align.utils import check_fx_args, AlignReader
 
 
 def parse_bowtie(x):
@@ -171,7 +172,7 @@ class BowtieConfig(object):
         prefix = os.path.join(self.project_dir, self.smp_name)
         default_files = {
 #             'project_dir': self.project_dir,
-            'config_toml': os.path.join(self.config_dir, 'config.toml'),
+            'config_yaml': os.path.join(self.config_dir, 'config.yaml'),
             'cmd_shell': os.path.join(self.project_dir, 'cmd.sh'),
             'bam': prefix + '.bam',
             'sam': prefix + '.sam',
@@ -183,7 +184,7 @@ class BowtieConfig(object):
             'align_log': prefix + '.align.log',
             'align_stat': prefix + '.align.stat',
             'align_json': prefix + '.align.json',
-            'align_flagstat': prefix + '.flagstat',
+            'align_flagstat': prefix + '.align.flagstat',
         }
         self = update_obj(self, default_files, force=True)
         check_path([self.project_dir, self.config_dir], create_dirs=True)
@@ -213,7 +214,7 @@ class Bowtie(object):
         self = update_obj(self, args_local.__dict__, force=True) # update
         self.aligner = 'bowtie' # force changed
         self.get_cmd()        
-        Config().dump(self.__dict__, self.config_toml)
+        Config().dump(self.__dict__, self.config_yaml)
 
 
     def get_cmd(self):

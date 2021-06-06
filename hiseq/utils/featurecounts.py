@@ -13,13 +13,9 @@ import pybedtools
 import pandas as pd
 from shutil import which
 from hiseq.utils.bam import Bam
-from hiseq.utils.file import file_exists, file_abspath, file_prefix, check_path
+from hiseq.utils.file import file_exists, file_abspath, file_prefix, \
+    check_path, remove_path
 from hiseq.utils.utils import log, update_obj, Config, run_shell_cmd
-
-# from hiseq.utils.helper import *
-# from .bed import *
-# from .bam import *
-
 
 
 def bed_to_gtf(file_in, file_out):
@@ -214,14 +210,14 @@ class FeatureCounts(object):
         self.init_gtf()
         # dirs
         check_path(self.config_dir, create_dirs=True)
-        Config().dump(self.__dict__, self.config_toml)
+        Config().dump(self.__dict__, self.config_yaml)
 
 
     def init_files(self):
         self.config_dir = os.path.join(self.outdir, 'config')
         prefix = os.path.join(self.outdir, self.prefix)
         default_files = {
-            'config_toml': self.config_dir + '/config.toml',
+            'config_yaml': self.config_dir + '/config.yaml',
             'count_txt': prefix,
             'summary': prefix + '.summary',
             'summary_json': prefix + '.summary.json',
@@ -238,11 +234,11 @@ class FeatureCounts(object):
         if isinstance(self.bam_list, str):
             self.bam_list = [self.bam_list]
         msg = '\n'.join([
-            '-'*80,
+            '='*80,
             'Check files for FeatureCounts',
             '{:>14s} : {}'.format('gtf', self.gtf),
             '{:>14s} : {}'.format('bam_list', self.bam_list),
-            '-'*80,
+            '='*80,
         ])
         print(msg)
         if not all([
@@ -347,7 +343,7 @@ class FeatureCounts(object):
 
     def wrap_summary(self):
         # !!! single or multiple bam files ?! multiple
-        df = read_fc_summary(self.summary)
+        df = read_fc_summary(self.summary) # pd.DataFrame
         df['filename'] = df.index # add filename to column
         d = df.transpose().to_dict('dict') # to dict
         # df2 = df.reset_index().to_dict('dict')
@@ -362,3 +358,176 @@ class FeatureCounts(object):
         self.run_featurecounts()
         return self.wrap_summary()
 
+    
+class LibStrand(object):
+    """
+    Run featureCounts for {BED|GTF} and BAM(s)
+    
+    Parameters
+    ----------
+    bam : str
+        Single bam file
+        
+    gtf : str
+        Path to the gene annotation, GTF/BED format
+    
+    outdir : str
+        The directory saving the results
+        
+    size : int
+        Number of reads subset from BAM file, default [200000]
+        
+    clean_up : bool
+        Remove the temp files, default [True]
+        
+    Guess the library type of the HiSeq data
+    Strandness
+    strandness: 1 ++, 1 --, / 2 +-, 2 -+ :
+    dUTP, NSR: 1 +-, 1 -+, / 2 ++, 2 -- :
+
+    see: infer_experiment.py from RSeQC package.
+    
+    Examples:
+    >>> s = LibStrand(bam='in.bam', gtf='gene.gtf')
+    >>> s.sense_strand # 
+    >>> s.is_strand_specific # 
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+        self.run()
+        
+ 
+    def init_args(self):
+        args_init = {
+            'bam': None,
+            'gtf': None,
+            'size': 200000,
+            'outdir': None,
+            'clean_up': True,
+        }
+        self = update_obj(self, args_init, force=False)
+        # output, tmp dir
+        if self.outdir is None:
+            self.outdir = self._tmp(is_dir=True)
+        check_path(self.outdir)
+        self.init_files()
+
+
+    def _tmp(self, is_dir=False, suffix='.txt'):
+        """
+        Create a tmp file to save json object
+        """
+        if is_dir:
+            tmp = tempfile.TemporaryDirectory(prefix='tmp')
+        else:
+            tmp = tempfile.NamedTemporaryFile(prefix='tmp', suffix=suffix,
+                delete=False)
+        return tmp.name
+
+    
+    def init_files(self):
+        c1 = isinstance(self.bam, str)
+        c1e = file_exists(self.bam)
+        c2 = isinstance(self.gtf, str)
+        c2e = file_exists(self.gtf)
+        self.file_is_ok = all([c1, c1e, c2, c2e])
+        if self.file_is_ok:
+            self.bam_sub = Bam(self.bam).subset(self.size, self.outdir)
+            self.bam_name = os.path.basename(self.bam)
+        else:
+            self.bam_sub = None
+            self.bam_name = None
+            log.error('bam, expect str, got {}'.format(self.bam))
+            log.error('gtf, expect str, got {}'.format(self.gtf))
+
+
+    def run_fc(self, strandness=1):
+        """
+        strandness; 1 or 2; for featureCounts
+        using -s 1, -s 2
+        and return the mapping reads
+        """
+        prefix = 'count.s_{}.txt'.format(strandness)
+        args = {
+            'gtf': self.gtf,
+            'bam_list': self.bam_sub,
+            'outdir': self.outdir,
+            'prefix': prefix,
+            'strandness': strandness
+        }
+        return FeatureCounts(**args).run()
+        
+
+    def guess_sense(self, with_status=False):
+        """
+        Return the sense strand, s=
+        """
+        msg = '\n'.join([
+            '='*80,
+            'Guess strandness of BAM file, by featureCounts',
+            'Library strandness: -s=1 or -s=2',
+            'bam: {}'.format(self.bam),
+            'gtf: {}'.format(self.gtf),
+            '='*80,
+        ])
+        print(msg)
+        
+        if not self.file_is_ok:
+            return None # skipped
+        # run fc: s=1
+        df1 = self.run_fc(strandness=1) # dict {}
+        df1b = df1.get(self.bam_name, {})
+        pct1 = df1b.get('pct', 0)
+        # run fc: s=2
+        df2 = self.run_fc(strandness=2) # dict
+        df2b = df2.get(self.bam_name, {})
+        pct2 = df2b.get('pct', 0)
+        # check strand:
+        if pct1 + pct2 < 0.2:
+            log.warning('Less than 20% reads assigned, {}'.format(self.gtf))
+            s = 0
+        elif pct1 == pct2:
+            log.info('Library type (s=0): non-stranded')
+            s = 0
+        elif pct1 > pct2:
+            log.info('Library type (s=1): 1 ++, 1 --, / 2 +-, 2 -+')
+            s = 1
+        else:
+            log.info('Library type (s=2): 1 +-, 1 -+, / 2 ++, 2 --')
+            s = 2
+        # clean up
+        if self.clean_up:
+            remove_path(self.outdir, ask=False)
+        # log
+        msg = '\n'.join([
+            '='*80,
+            'Status:',
+            'forward stranded, -s=1, {:>6.2f}%'.format(pct1*100),
+            'reverse stranded, -s=2, {:>6.2f}%'.format(pct2*100),
+            '='*80,
+        ])
+        print(msg)
+        return s # sense
+    
+
+    def run(self):
+        s = self.guess_sense() # 0, 1, 2, None
+        self.is_strand_specific = False
+        self.read1_is_sense = True # non-stranded
+        self.read2_is_sense = True # non-stranded
+        self.sense_strand = s #
+        if s == 1:
+            self.anti_strand = 2
+        elif s == 2:
+            self.anti_strand = 1
+        else:
+            self.anti_strand = s
+        if s is None:
+            log.error('LibStrand() failed, check bam/gtf')
+        elif s == 0:
+            log.info('non-stranded BAM file: {}'.format(self.bam))
+        elif s > 0:
+            self.is_strand_specific = True
+            self.read1_is_sense = s == 1
+            self.read2_is_sense = s == 2

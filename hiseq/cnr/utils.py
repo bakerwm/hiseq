@@ -148,7 +148,7 @@ def cnr_align_genome(x, hiseq_type='_r1'):
 
 
 # to-do: update required
-def cnr_align_spikein(x, hiseq_type='_r1'):
+def cnr_align_spikein(x, hiseq_type='r1'):
     """
     Parameters
     ---------
@@ -307,7 +307,7 @@ def cal_norm_scale(bam, norm=1000000): # to 1e6
     else:
         log.error('no mapped reads detected')
         n_scale = 1
-    return n_scale
+    return round(n_scale, 4)
 
 
 def cnr_bam_to_bw(x, hiseq_type='_r1'):

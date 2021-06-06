@@ -61,7 +61,7 @@ class Bam2bw(object):
         """
         self = update_obj(self, kwargs, force=True)
         self.init_args()
-        Config().dump(self.__dict__, self.config_toml)
+        Config().dump(self.__dict__, self.config_yaml)
 
 
     def init_args(self):
@@ -89,7 +89,7 @@ class Bam2bw(object):
             'normalizeUsing': 'RPKM',
             'threads': 4,
             'config_txt': os.path.join(self.outdir, 'config.txt'),
-            'config_toml': os.path.join(self.outdir, 'config.toml'),
+            'config_yaml': os.path.join(self.outdir, 'config.yaml'),
             'flag': True # whether run/not
         }
         self = update_obj(self, args_init, force=False)
@@ -327,7 +327,7 @@ if __name__ == '__main__':
 
 #         # update, defaults
 #         self.init_args()
-#         Config().dump(self.__dict__, self.config_toml)
+#         Config().dump(self.__dict__, self.config_yaml)
 
 
 #     def init_args(self):
@@ -344,7 +344,7 @@ if __name__ == '__main__':
 #             'fragment': True,
 #             'threads': 4,
 #             'config_txt': os.path.join(self.outdir, 'config.txt'),
-#             'config_toml': os.path.join(self.outdir, 'config.toml'),
+#             'config_yaml': os.path.join(self.outdir, 'config.yaml'),
 #             'flag': True # whether run/not
 #         }
 #         self = update_obj(self, args_init, force=False)

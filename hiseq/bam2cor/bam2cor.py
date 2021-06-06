@@ -17,7 +17,7 @@ from hiseq.utils.bam import Bam2cor
 
 def get_args():
     parser = argparse.ArgumentParser(description='hiseq bam2cor -i bam -o outdir')
-    parser.add_argument('-i', '--bam', nargs='+', required=True,
+    parser.add_argument('-i', '--bam-list', dest='bam_list', nargs='+', required=True,
         help='BAM files')
     parser.add_argument('-o', '--outdir', default=None,
         help='output directory to save results')

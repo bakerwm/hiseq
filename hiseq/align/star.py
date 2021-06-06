@@ -24,9 +24,10 @@ import argparse
 from Levenshtein import distance
 from hiseq.utils.seq import Fastx
 from hiseq.utils.utils import log, update_obj, Config, run_shell_cmd
-from hiseq.utils.file import check_fx, check_file, check_path, file_abspath, file_exists, fx_name, symlink_file, remove_file
+from hiseq.utils.file import check_fx, check_file, check_path, file_abspath, \
+    file_exists, fx_name, symlink_file, remove_file, check_fx_args
 from hiseq.align.align_index import AlignIndex
-from hiseq.align.utils import check_fx_args, AlignReader
+# from hiseq.align.utils import check_fx_args, AlignReader
 
 
 def parse_star(x):
@@ -197,22 +198,22 @@ class StarConfig(object):
         prefix = os.path.join(self.project_dir, self.smp_name)
         default_files = {
 #             'project_dir': self.project_dir,
-            'config_toml': os.path.join(self.config_dir, 'config.toml'),
+            'config_yaml': os.path.join(self.config_dir, 'config.yaml'),
             'cmd_shell': os.path.join(self.project_dir, 'cmd.sh'),
             'bam': prefix + '.bam',
             'sam': prefix + '.sam',
             'unmap': prefix + '.unmap.' + self.fx_format,
             'unmap1': prefix + '.unmap.1.' + self.fx_format, # 
             'unmap2': prefix + '.unmap.2.' + self.fx_format, #
-            'align_log': prefix + '.align.log',
-            'align_stat': prefix + '.align.stat',
-            'align_json': prefix + '.align.json',
-            'align_flagstat': prefix + '.flagstat',
             'bam_raw': prefix + 'Aligned.sortedByCoord.out.bam',
             'log_raw': prefix + 'Log.final.out',
             'unmap_raw': prefix + 'Unmapped.out',
             'unmap1_raw': prefix + 'Unmapped.out.mate1',
             'unmap2_raw': prefix + 'Unmapped.out.mate2',
+            'align_log': prefix + '.align.log',
+            'align_stat': prefix + '.align.stat',
+            'align_json': prefix + '.align.json',
+            'align_flagstat': prefix + '.align.flagstat',
         }
         self = update_obj(self, default_files, force=True)
         self.align_prefix = prefix
@@ -233,7 +234,7 @@ class Star(object):
         self = update_obj(self, args_local.__dict__, force=True) # update
         self.aligner = 'STAR' # force changed
         self.get_cmd()        
-        Config().dump(self.__dict__, self.config_toml)
+        Config().dump(self.__dict__, self.config_yaml)
 
 
     def get_cmd(self):
@@ -292,8 +293,12 @@ class Star(object):
             '--seedPerWindowNmax {}'.format(self.seed_max),
             args_extra,
             ])
-        # fix file names
-        self.cmd = cmd_main
+        # add: flagstat
+        self.cmd = ' '.join([
+            cmd_main,
+            '&& samtools index {}'.format(self.bam_raw),
+            '&& samtools flagstat {} > {}'.format(self.bam_raw, self.align_flagstat)
+        ])
 
 
     def fix_out_files(self):

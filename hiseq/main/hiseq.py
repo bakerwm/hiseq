@@ -24,8 +24,8 @@ from hiseq.atac.atac import get_args as add_atac_args
 from hiseq.cnr.cnr import Cnr
 from hiseq.cnr.cnr import get_args as add_cnr_args
 
-from hiseq.trim.trimmer import Trim
-from hiseq.trim.trimmer import get_args as add_trim_args
+from hiseq.trim.trim import Trim
+from hiseq.trim.trim import get_args as add_trim_args
 
 from hiseq.align.align import Align
 from hiseq.align.align import get_args as add_align_args
@@ -217,7 +217,6 @@ class Hiseq(object):
         using deeptools
         """
         args = self.init_args(add_bam2cor_args())
-        # args['make_plot'] = not args.get('no_plot', False)
         Bam2cor(**args).run()
 
 

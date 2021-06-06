@@ -23,6 +23,7 @@ from PIL import Image # pillow
 from datetime import datetime
 from dateutil import tz
 from itertools import combinations
+import hiseq
 from hiseq.utils.file import file_exists, list_dir
 # from .helper import log
 # from .file import file_exists, file_abspath
@@ -55,6 +56,72 @@ def find_longest_common_str(s1, s2):
 
 ################################################################################
 ## functions for hiseq-global
+def is_supported(x=True, key=True, return_values=False):
+    """
+    Parameters
+    ----------
+    x:  str, bool
+        A str, to check whether exists in config,
+        if True, match all values
+        
+    key:  str, bool
+        A str, specify the key (group), ['supported_aligner', 'supported_genome']
+        default: [True]
+        
+    return_values:  bool
+        Return the specific value, by 'key', ignore 'x'
+    
+    Check args(x) is supported: 
+      - supported_aligner
+      - supported_genomes
+      
+    Examples:
+    >>> is_supported(key='supported_aligner', return_values=True) # [...]
+    >>> is_supported(key='supported_genome', return_values=True) # [...]
+    >>> is_supported('dm6') # True
+    >>> is_supported('dm6', 'supported_aligner') # False
+    >>> is_supported('bowtie2', 'supported_aligner') # True
+    >>> is_supported('bowtie2', 'supported_genome') # False
+    >>> is_supported('abc') # False      
+    """
+    pkg_dir = os.path.dirname(hiseq.__file__)
+    hiseq_global_config = os.path.join(pkg_dir, 'bin', 'config.yaml')
+    d = Config().load(hiseq_global_config)
+    if not isinstance(d, dict):
+        log.error('global config.yaml missing: {}'.format(hiseq_global_config))
+        return None
+    if return_values is True:
+        if key is True:
+            out = list(d.values())
+        elif key in d:
+            out = d[key]
+        else:
+            log.error('unkonwn key: {}'.format(key))
+            out = None
+        # check x
+        if x is True:
+            pass
+        elif x in out:
+            out = x
+        else:
+            out = None
+    elif x is True and isinstance(key, str):
+        out = key in d
+    elif isinstance(x, str):
+        for k,v in d.items():
+            if key is True or key == k:
+                if x in v:
+                    log.info('{} is: {}'.format(x, k))
+                    out = True
+                    break
+                else:
+                    out = False                
+    else:
+        log.warning('is_supported() skipped, expect str, got {}'.format(
+        type(x).__name__))
+        out = False
+    return out
+
 
 def list_hiseq_file(x, keys='bam', hiseq_type='r1'):
     """
@@ -103,23 +170,40 @@ def list_hiseq_dir(x, hiseq_type='r1'):
                 out.append(x)
             elif a.is_hiseq_rn:
                 # ATACseq; CnR, ChIPseq, ... !!!!to-do
-                for i in a.rep_list:
-                    out.extend(list_hiseq_dir(i, 'r1'))
+                out = a.rep_list
             elif a.is_hiseq_rx:
-                # list all directories in project
-                dir_list = list_dir(a.project_dir, include_dir=True)
-                for i in dir_list:
-                    out.extend(list_hiseq_dir(i, 'r1'))
+                if a.hiseq_type in ['atacseq_rx']:
+                    dir_list = list_dir(a.project_dir, include_dir=True)
+                    for i in dir_list:
+                        out.extend(list_hiseq_dir(i, 'r1'))
+                else:
+                    if a.hiseq_type in ['cnr_rx', 'chipseq_rx']:
+                        d1, d2 = (a.ip_dir, a.input_dir)
+                    elif a.hiseq_type in ['rnaseq_rx']:
+                        d1, d2 = (a.mut_dir, a.wt_dir)
+                    else:
+                        d1 = d2 = None
+                    r1a = list_hiseq_dir(d1, 'r1')
+                    r1b = list_hiseq_dir(d2, 'r1')
+                    out = r1a + r1b
             else:
                 pass
         elif hiseq_type == 'rn':
             if a.is_hiseq_rn:
                 out.append(x)
             elif a.is_hiseq_rx:
-                # list all directories in project
-                dir_list = list_dir(a.project_dir, include_dir=True)
-                for i in dir_list:
-                    out.extend(list_hiseq_dir(i, 'rn'))
+                if a.hiseq_type in ['atacseq_rx']:
+                    # list all directories in project
+                    dir_list = list_dir(a.project_dir, include_dir=True)
+                    for i in dir_list:
+                        out.extend(list_hiseq_dir(i, 'rn'))
+                else:
+                    if a.hiseq_type in ['cnr_rx', 'chipseq_rx']:
+                        out = (a.ip_dir, a.input_dir)
+                    elif a.hiseq_type in ['rnaseq_rx']:
+                        out = (a.mut_dir, a.wt_dir)
+                    else:
+                        pass
             else:
                 pass
         elif hiseq_type == 'rx':
@@ -222,12 +306,12 @@ class HiseqReader(object):
     def list_config(self):
         """
         List the config files
-        Support: toml, pickle, yaml, json, ... [priority]
+        Support: yaml, pickle, toml, json, ... [priority]
         return file list
         # hiseq
         hiseq
           |-config
-          |   |-config.toml
+          |   |-config.yaml
 
         # alignment
         align_dir
@@ -235,7 +319,7 @@ class HiseqReader(object):
           |    |- index
           |    |    |- config.pickle
         """
-        c_files = ['config.' + i for i in ['toml', 'pickle', 'yaml', 'json']]
+        c_files = ['config.' + i for i in ['yaml', 'pickle', 'toml', 'json']]
         # search config files
         out = None
         for f in c_files:
@@ -486,7 +570,7 @@ def combination(x, n=2, return_index=True):
 
 
 class Config(object):
-    """Working with config, in dict/yaml/toml/pickle formats
+    """Working with config, in dict/yaml/yaml/pickle formats
     load/dump
     
     Example:
@@ -507,6 +591,7 @@ class Config(object):
 
     def load(self, x=None):
         """Read data from x, auto-recognize the file-type
+        yaml
         toml
         json
         pickle
@@ -540,6 +625,7 @@ class Config(object):
         d str or dict, data
         x str file to save data(dict)
 
+        yaml
         toml
         json
         pickle
@@ -564,8 +650,8 @@ class Config(object):
         """Guess the file format, by file extension
     
         file format:
-        - toml
         - yaml
+        - toml
         - json
         - pickle
 

@@ -2,6 +2,8 @@
 # -*- coding:utf-8 -*-
 
 """
+!!! switch from TOML to YAML, because of None type in python not saved in TOML format !!!
+
 The structure of the classes:
 
 Align()
@@ -40,14 +42,15 @@ import pandas as pd
 from multiprocessing import Pool
 from Levenshtein import distance
 from hiseq.utils.seq import Fastx
-from hiseq.utils.utils import update_obj, Config, get_date, read_hiseq
+from hiseq.utils.utils import update_obj, Config, get_date, read_hiseq, \
+    is_supported
 from hiseq.utils.file import check_path, file_abspath, file_prefix, \
-    symlink_file, list_dir
+    symlink_file, list_dir, check_fx_args
 from hiseq.align.bowtie import Bowtie
 from hiseq.align.bowtie2 import Bowtie2
 from hiseq.align.star import Star
 from hiseq.align.salmon import Salmon
-from hiseq.align.utils import check_fx_args
+# from hiseq.align.utils import check_fx_args
 from hiseq.align.align_index import AlignIndex, check_index_args
 
 
@@ -64,7 +67,7 @@ class Align(object):
         self = update_obj(self, kwargs, force=True)
         args_local = AlignConfig(**self.__dict__)
         self = update_obj(self, args_local.__dict__, force=True) # update
-        Config().dump(self.__dict__, self.config_toml)
+        Config().dump(self.__dict__, self.config_yaml)
 
 
     def run(self):
@@ -72,7 +75,7 @@ class Align(object):
             '-'*80,
             '{:>14s} : {}'.format('Date', get_date()),
             '{:>14s} : {}'.format('program', 'Align'),
-            '{:>14s} : {}'.format('config', self.config_toml),
+            '{:>14s} : {}'.format('config', self.config_yaml),
             '{:>14s} : {}'.format('aligner', self.aligner),
             '{:>14s} : {}'.format('genome', self.genome),
             '{:>14s} : {}'.format('index_list', self.index_list),
@@ -80,13 +83,13 @@ class Align(object):
             '{:>14s} : {}'.format('fq1', self.fq1),
             '{:>14s} : {}'.format('fq2', self.fq2),
             '{:>14s} : {}'.format('outdir', self.outdir),
+            '{:>14s} : {}'.format('unique_only', self.unique_only),
             '{:>14s} : {}'.format('extra_para', self.extra_para),
             '{:>14s} : {}'.format('threads', self.threads),
             '{:>14s} : {}'.format('parallel_jobs', self.parallel_jobs),
             '{:>14s} : {}'.format('to_rRNA', self.to_rRNA),
             '{:>14s} : {}'.format('to_chrM', self.to_chrM),
             '{:>14s} : {}'.format('to_MT_trRNA', self.to_MT_trRNA),
-            '{:>14s} : {}'.format('to_chrM', self.to_chrM),
             '-'*80,
         ])
         print(msg)
@@ -142,7 +145,7 @@ class AlignRn(object):
         """
         args_local = AlignRnConfig(**self.__dict__) # update
         self = update_obj(self, args_local.__dict__, force=True)
-        Config().dump(self.__dict__, self.config_toml)
+        Config().dump(self.__dict__, self.config_yaml)
 
 
     def wrap_stat(self):
@@ -150,7 +153,6 @@ class AlignRn(object):
         Save alignment to one file
         all files in project_dir
         """
-        print('!A-1', self.bam)
         # save the last index-bam as output
         last_bam = None
         last_stat = None
@@ -164,11 +166,19 @@ class AlignRn(object):
                 df.update(s1)
                 last_bam = a.bam
                 last_stat = a.align_stat
+                last_json = a.align_json
                 last_flagstat = a.align_flagstat
+                last_unmap = a.unmap
+                last_unmap1 = a.unmap1
+                last_unmap2 = a.unmap2
         symlink_file(last_bam, self.bam) # save bam
         symlink_file(last_stat, self.align_stat) # save flagstat
+        symlink_file(last_json, self.align_json) # save flagstat
         symlink_file(last_flagstat, self.align_flagstat) # save flagstat
-        Config().dump(df, self.align_json) # save stat
+        symlink_file(last_unmap, self.unmap)
+        symlink_file(last_unmap1, self.unmap1)
+        symlink_file(last_unmap2, self.unmap2)
+#         Config().dump(df, self.align_json) # save stat
 
 
     def run(self):
@@ -235,10 +245,7 @@ class AlignConfig(object):
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
-        self.supported_aligner = [
-            'bowtie', 'bowtie2', 'hisat2', 'bwa', 'star', 'salmon'
-            ]
-        if self.aligner.lower() not in self.supported_aligner:
+        if not is_supported(self.aligner, key='supported_aligner'):
             raise ValueError('aligner={}, unknown'.format(self.aligner))
 
 
@@ -254,11 +261,11 @@ class AlignConfig(object):
             'outdir': None,
             'smp_name': None,
             'index_list': None,
-            'genome': None,
-            'spikein': None,
-            'genome_index': None,
-            'spikein_index': None,
             'extra_index': None,
+            'genome': None,
+            'genome_index': None,
+            'spikein': None,
+            'spikein_index': None,
             'to_rRNA': False,
             'to_chrM': False,
             'to_MT_trRNA': False,
@@ -312,12 +319,6 @@ class AlignConfig(object):
         self.index_list = check_index_args(**self.__dict__)
         if len(self.index_list) == 0:
             raise ValueError('no index found')
-#         inames = [AlignIndex(i).index_name() for i in self.index_list]
-#         if isinstance(self.index_name, list):
-#             if len(self.index_name) == len(self.index_list):
-#                 if all([isinstance(i, str) for i in self.index_name]):
-#                     inames = self.index_name
-#         self.index_name = inames #update
         self.index_name = [AlignIndex(i).index_name() for i in self.index_list]
         # auto index_name, 01, 02, ...
         self.index_name = ['{:02d}_{}'.format(i, n) for i,n in zip(
@@ -327,10 +328,10 @@ class AlignConfig(object):
     def init_files(self):
         """
         Config only
-        config_toml
+        config_yaml
         """
         self.config_dir = os.path.join(self.outdir, 'config')
-        self.config_toml = os.path.join(self.config_dir, 'config.toml')
+        self.config_yaml = os.path.join(self.config_dir, 'config.yaml')
         check_path(self.config_dir, create_dirs=True)
 
 
@@ -410,20 +411,20 @@ class AlignRnConfig(object):
 
     def init_files(self):
         """Config only
-        config_toml
+        config_yaml
         """
         self.project_dir = os.path.join(self.outdir, self.smp_name)
         self.config_dir = os.path.join(self.project_dir, 'config')
         prefix = os.path.join(self.project_dir, self.smp_name)
         default_args = {
-            'config_toml': os.path.join(self.config_dir, 'config.toml'),
+            'config_yaml': os.path.join(self.config_dir, 'config.yaml'),
             'bam': prefix + '.bam',
             'unmap': prefix + '.unmap.' + self.fx_format,
             'unmap1': prefix + '.unmap.1.' + self.fx_format, # 
             'unmap2': prefix + '.unmap.2.' + self.fx_format, # 
             'align_stat': prefix + '.align.stat',
             'align_json': prefix + '.align.json',
-            'align_flagstat': prefix + '.flagstat',
+            'align_flagstat': prefix + '.align.flagstat',
         }
         self = update_obj(self, default_args, force=True)
         check_path(self.config_dir, create_dirs=True)
@@ -492,26 +493,6 @@ class AlignR1Config(object):
                 self.index_name = AlignIndex(self.index).index_name()
         else:
             raise ValueError('index, not valid: {}'.format(self.index))
-            
-            
-#     def init_index(self):
-#         """Force: 
-#         index_list: str
-#         index_name: str
-#         """
-#         if not isinstance(self.index, str) or \
-#             not isinstance(self.index_name, str):
-#             raise ValueError('index_list, index_name, not valid: {}, {}'.format(
-#                 self.index_list, self.index_name))
-#         flag_err = True
-#         # update index_name
-#         if isinstance(self.index, str):
-#             flag_err = not AlignIndex(self.index, self.aligner).is_valid()
-#             if self.index_name is None:
-#                 self.index_name = AlignIndex(self.index).index_name()
-#         if flag_err:
-#             raise ValueError('index_list, index_name, not valid')
-
 
 
 def get_args():
@@ -619,7 +600,7 @@ AlignR1()
 ## requirements
 - unique mapper
 - multiple mapper
-- config (toml)
+- config (yaml)
 - saving unmapped ?!
 
 ## index

@@ -1,4 +1,4 @@
-
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 """Quality control for fastq files
@@ -26,9 +26,9 @@ from hiseq.utils.seq import Fastx
 from hiseq.utils.helper import * # all help functions
 from hiseq.utils.file import check_file, check_path, file_exists, \
     file_abspath, check_fx, check_fx_paired, copy_file, symlink_file, \
-    remove_file, gzip_file
+    remove_file, gzip_file, check_fx_args
 from hiseq.utils.utils import log, update_obj, Config
-from hiseq.align.utils import check_fx_args
+# from hiseq.align.utils import check_fx_args
 
 
 class Trim(object):

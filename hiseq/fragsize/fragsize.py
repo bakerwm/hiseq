@@ -406,8 +406,11 @@ class BamFragSizeR1(object):
 
 
 
-def frag_size_picard(bam, out):
+def frag_size_picard(bam, outdir=None, smp_name=None):
     """Calculate PE fragment size, insertion size using Picard
+    
+    see: https://gatk.broadinstitute.org/hc/en-us/articles/360056968712-CollectInsertSizeMetrics-Picard-
+    
     Example:
 
     java -jar picard.jar CollectInsertSizeMetrics \
@@ -415,9 +418,55 @@ def frag_size_picard(bam, out):
       O=insert_size_metrics.txt \
       H=insert_size_histogram.pdf \
       M=0.5
-    """
-    pass
+      
+    Output: 
+    ## htsjdk.samtools.metrics.StringHeader
+    # CollectInsertSizeMetrics HISTOGRAM_FILE=insert_histogram.pdf MINIMUM_PCT=0.5 INPUT=rep1.bam OUTPUT=insert_metrics.txt    DEVIATIONS=10.0 METRIC_ACCUMULATION_LEVEL=[ALL_READS] INCLUDE_DUPLICATES=false ASSUME_SORTED=true STOP_AFTER=0 VERBOSITY=INFO QUIET=false VALIDATION_STRINGENCY=STRICT COMPRESSION_LEVEL=5 MAX_RECORDS_IN_RAM=500000 CREATE_INDEX=false CREATE_MD5_FILE=false GA4GH_CLIENT_SECRETS=client_secrets.json USE_JDK_DEFLATER=false USE_JDK_INFLATER=false
+    ## htsjdk.samtools.metrics.StringHeader
+    # Started on: Tue Jun 01 18:01:14 CST 2021
 
+    ## METRICS CLASS        picard.analysis.InsertSizeMetrics
+    MEDIAN_INSERT_SIZE      MODE_INSERT_SIZE        MEDIAN_ABSOLUTE_DEVIATION       MIN_INSERT_SIZE MAX_INSERT_SIZE MEAN_INSERT_SIZE        STANDARD_DEVIATION    READ_PAIRS       PAIR_ORIENTATION        WIDTH_OF_10_PERCENT     WIDTH_OF_20_PERCENT     WIDTH_OF_30_PERCENT     WIDTH_OF_40_PERCENT     WIDTH_OF_50_PERCENT   WIDTH_OF_60_PERCENT      WIDTH_OF_70_PERCENT     WIDTH_OF_80_PERCENT     WIDTH_OF_90_PERCENT     WIDTH_OF_95_PERCENT     WIDTH_OF_99_PERCENT     SAMPLE  LIBRARYREAD_GROUP
+    177     64      79      22      2101    184.303587      104.531204      9495677 FR      31      63      95      127     159     187     213     239     315   385      1071
+
+    ## HISTOGRAM    java.lang.Integer
+    insert_size     All_Reads.fr_count
+    22      7
+    """
+    # check: picard
+    if isinstance(bam, str) and file_exists(bam):
+        # outdir
+        if outdir is None:
+            outdir = os.path.dirname(bam)
+        check_path(outdir)
+        # smp_name
+        if smp_name is None:
+            smp_name = file_prefix(bam)
+        # files
+        out_metrics = os.path.join(outdir, smp_name+'.insert_meterics.txt')
+        cmd_txt = os.path.join(outdir, smp_name+'.insert_mertics.cmd.sh')
+        stdout = os.path.join(outdir, smp_name+'.insert_mertics.stdout')
+        stderr = os.path.join(outdir, smp_name+'.insert_mertics.stderr')
+        # command
+        cmd = ' '.join([
+            '{}'.format(which('picard')), # 
+            'CollectInsertSizeMetrics',
+            'I={}'.format(bam),
+            'O={}'.format(out_metrics),
+            'M=0.05',
+            '1> {}'.format(stdout),
+            '2> {}'.format(stderr),
+        ])
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd+'\n')
+        try:
+            run_shell_cmd(cmd)
+        except:
+            log.error('frag_size_picard() failed')
+    else:
+        log.error('frag_size_picard() failed, expect str, got {}'.format(
+            type(bam).__name__))
+        
 
 def frag_size_deeptools(bam, out):
     """Calculate PE fragment size, using deeptools
@@ -457,7 +506,6 @@ def frag_size_samtools(infile, outfile=None):
         with open(outfile, 'wt') as w:
             for k, v in d:
                 w.write(str(k) + '\t' + str(v) + '\n')
-
     return d
 
 

@@ -15,9 +15,9 @@ check_index_args
 import os
 import pathlib
 import tempfile
-from hiseq.utils.utils import Config, update_obj, log
+from hiseq.utils.utils import Config, update_obj, log, is_supported
 from hiseq.utils.file import check_file, file_exists, remove_file
-from hiseq.align.utils import default_values
+# from hiseq.align.utils import default_values
 
 
 class AlignIndex(object):
@@ -46,8 +46,6 @@ class AlignIndex(object):
         self = update_obj(self, kwargs, force=True)
         self.index = index
         self.aligner = aligner
-        self.supported_aligner = default_values('supported_aligner')
-        # see: hiseq/bin/config.toml
 
 
     def is_star_index(self, index=None):
@@ -189,7 +187,7 @@ class AlignIndex(object):
             'STAR': self.is_star_index,
             'salmon': self.is_salmon_index,
         }
-        for a in self.supported_aligner:
+        for a in is_supported(key='supported_aligner', return_values=True):
             is_index = fn.get(a, None)
             if is_index is None:
                 continue
@@ -367,21 +365,16 @@ def fetch_index(genome, group=None, aligner='bowtie', genome_path=None):
             |- transposon/
             |- piRNA_cluster/
     """
-    supported_genomes = default_values('supported_genomes')
-    supported_aligner = default_values('supported_aligner')
-    if supported_genomes is None:
-        raise ValueError('check file: hiseq/bin/config.toml')
-    if supported_aligner is None:
-        raise ValueError('check file: hiseq/bin/config.toml')
     # check arguments
     tag_err = False
-    if not genome in supported_genomes:
+    if not is_supported(genome):
         log.error('genome={}, unknown, supported: {}'.format(
-            genome, supported_genome))
+            genome, is_supported(key='supported_genome', return_values=True)))
         tag_err = True
-    if not aligner in supported_aligner:
+    # if not aligner in supported_aligner:
+    if not is_supported(aligner):
         log.error('aligner={}, unknown, supported: {}'.format(
-            aligner, supported_aligner))
+            aligner, is_supported(key='supported_aligner', return_values=True)))
         tag_err = True
     if genome_path is None:
         genome_path =  os.path.join(str(pathlib.Path.home()), 'data', 'genome')
@@ -418,25 +411,14 @@ def check_index_args(**kwargs):
     aligner
     name
     ...
-<<<<<<< HEAD
-
-    Parameters
-    ----------
-=======
     Parameters
     ----------
     index_list (ignore all)
     extra_index (append)
->>>>>>> fix_atac
     genome
     genome_index
     spikein
     spikein_index
-<<<<<<< HEAD
-    index_list (ignore all)
-    extra_index (append)
-=======
->>>>>>> fix_atac
     to_rRNA
     to_MT
     to_chrM
@@ -470,7 +452,7 @@ def check_index_args(**kwargs):
         '{:>14s} : {}'.format('to_chrM', to_chrM),
         '{:>14s} : {}'.format('to_MT_trRNA', to_MT_trRNA),
         '-'*80,
-        ])
+    ])
     if verbose:
         print(msg)
     # index group:
@@ -490,37 +472,40 @@ def check_index_args(**kwargs):
     else:
         # for index_list
         index_list = [] # init
-        # level-2.1 : spikein
-        if isinstance(spikein, str):
-            spikein_index = fetch_index(spikein, aligner=aligner)
-            if group:
-                group_index_sp = fetch_index(
-                    spikein, group=group, aligner=aligner)
-        if isinstance(spikein_index, str):
-            if group_index_sp:
-                index_list.append(group_index_sp)
-            if AlignIndex(spikein_index, aligner).is_valid():
-                index_list.append(spikein_index)
+        # level-2.1 : extra
+        if isinstance(extra_index, str):
+            if AlignIndex(extra_index, aligner).is_valid():
+                index_list = [extra_index]
             else:
-                log.error('spikein_index not valid: {}'.format(spikein_index))
-        # level-2.2 : genome
-        if isinstance(genome, str):
-            genome_index = fetch_index(genome, aligner=aligner)
-            # for group_index
-            if group:
-                group_index_g = fetch_index(
-                    genome, group=group, aligner=aligner)
-        if isinstance(genome_index, str):
-            if group_index_g:
-                index_list.append(group_index_g)
-            if AlignIndex(genome_index, aligner).is_valid():
-                index_list.append(genome_index)
-            else:
-                log.error('genome_index not valid: {}'.format(genome_index))
-        # level-2.3 : extra
-        if isinstance(extra_index, list):
-            if len(extra_index) > 0:
-                index_list.extend(extra_index)
+                raise ValueError('extra_index not valid, {}'.format(extra_index))
+        else:
+            # level-2.2 : spikein
+            if is_supported(spikein):
+                spikein_index = fetch_index(spikein, aligner=aligner)
+                if group:
+                    group_index_sp = fetch_index(
+                        spikein, group=group, aligner=aligner
+                    )
+                    if group_index_sp:
+                        index_list.append(group_index_sp)
+                if spikein_index:
+                    index_list.append(spikein_index)
+                else:
+                    log.error('AlignIndex({}, {}) not available'.format(
+                        spikein, aligner))
+            # level-2.3 : genome
+            if is_supported(genome):
+                genome_index = fetch_index(genome, aligner=aligner)
+                if group:
+                    group_index_g = fetch_index(
+                        genome, group=group, aligner=aligner)
+                    if group_index_g:
+                        index_list.append(group_index_g)
+                if genome_index:
+                    index_list.append(genome_index)
+                else:
+                    log.error('AlignIndex({}, {}) not available'.format(
+                        genome, aligner))
     # check all
     index_list = [i for i in index_list if 
         AlignIndex(i, aligner).is_valid()]

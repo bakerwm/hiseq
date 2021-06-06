@@ -148,23 +148,26 @@ class Bam(object):
 
     def subset(self, size=20000, subdir=None):
         """Extract N reads from bam list
+        !!!! caustion, PE reads !!!!
         """
         if subdir is None:
             subdir = self._tmp(delete=False)
         check_path(subdir)
         # src, dest
         dest = os.path.join(subdir, os.path.basename(self.bam))
-        # run
-        self.index()
-        srcfile = pysam.AlignmentFile(self.bam, 'rb')
-        destfile = pysam.AlignmentFile(dest, 'wb', template=srcfile)
-        # counter
-        i = 0
-        for read in srcfile.fetch():
-            i +=1
-            if i > size:
-                break
-            destfile.write(read)
+        if file_exists(dest):
+            log.info('Bam.subset() skipped, file exists {}'.format(dest))
+        else:
+            self.index()
+            srcfile = pysam.AlignmentFile(self.bam, 'rb')
+            destfile = pysam.AlignmentFile(dest, 'wb', template=srcfile)
+            # counter
+            i = 0
+            for read in srcfile.fetch():
+                i +=1
+                if i > size:
+                    break
+                destfile.write(read)
         return dest
 
 
@@ -486,7 +489,7 @@ class Bam2cor(object):
         self.init_files()
         # save config
         check_path(self.outdir, create_dirs=True)
-        Config().dump(self.__dict__, self.config_toml)
+        Config().dump(self.__dict__, self.config_yaml)
 
 
     def init_bam(self):
@@ -516,7 +519,7 @@ class Bam2cor(object):
 
     def init_files(self):
         default_files = {
-            'config_toml': os.path.join(self.outdir, 'config.toml'),
+            'config_yaml': os.path.join(self.outdir, 'config.yaml'),
             'bam_npz': os.path.join(self.outdir, self.prefix + '.npz'),
             'log': os.path.join(self.outdir, self.prefix + '.deeptools.log'),
             'plot_cor_heatmap_png': os.path.join(self.outdir, self.prefix + '.cor_heatmap.png'),
@@ -645,7 +648,7 @@ class Bam2fingerprint(object):
         self.init_files()
         # save config
         check_path(self.outdir, create_dirs=True)
-        Config().dump(self.__dict__, self.config_toml)
+        Config().dump(self.__dict__, self.config_yaml)
 
 
     def init_bam(self):
@@ -686,7 +689,7 @@ class Bam2fingerprint(object):
             self.prefix = prefix
         self.fp_png = os.path.join(self.outdir, prefix + '.png')
         self.fp_tab = os.path.join(self.outdir, prefix + '.tab')
-        self.config_toml = os.path.join(self.outdir, 'config.toml')
+        self.config_yaml = os.path.join(self.outdir, 'config.yaml')
 
 
     def run_fingerprint(self):

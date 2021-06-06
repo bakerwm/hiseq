@@ -473,7 +473,7 @@ class BedOverlap(object):
         if not isinstance(self.prefix, str):
             self.prefix = 'peak_overlap'
         # files
-        self.config_toml = os.path.join(self.outdir, 'config.toml')
+        self.config_yaml = os.path.join(self.outdir, 'config.yaml')
         self.tiff = os.path.join(self.outdir, self.prefix + '.tiff')
         self.png = os.path.join(self.outdir, self.prefix + '.png')
         self.venn_R = os.path.join(self.outdir, self.prefix + '.venn.R')
@@ -645,8 +645,8 @@ class PeakIDR(object):
             self.outdir = str(pathlib.Path.cwd())
         self.init_peaks()
         check_path(self.outdir, create_dirs=True)
-        self.config_toml = os.path.join(self.outdir, self.prefix+'.config.toml')
-        Config().dump(self.__dict__, self.config_toml)
+        self.config_yaml = os.path.join(self.outdir, self.prefix+'.config.yaml')
+        Config().dump(self.__dict__, self.config_yaml)
 
     
     def init_peaks(self):

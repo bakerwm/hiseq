@@ -32,14 +32,14 @@ log.setLevel('INFO')
 
 def default_values(x):
     """
-    load default values, saved in package file, in toml format
-    hiseq/bin/config.toml
+    load default values, saved in package file, in yaml format
+    hiseq/bin/config.yaml
     
     supported_genomes:
     supported_aligner:
     """
     pkg_dir = os.path.dirname(hiseq.__file__)
-    f = os.path.join(pkg_dir, 'bin', 'config.toml')
+    f = os.path.join(pkg_dir, 'bin', 'config.yaml')
     if file_exists(f):
         df = Config().load(f)
         out = df.get(x, None)
@@ -69,16 +69,16 @@ class AlignReader(object):
     
     
     def list_config(self):
-        """List the config.toml file
+        """List the config.yaml file
         in the path:
-        x/config/config.toml
+        x/config/config.yaml
         
         old version:
         x/config.pickle
         """
         out = None
         if self.isdir:
-            c = [os.path.join(self.x, 'config.toml'),
+            c = [os.path.join(self.x, 'config.yaml'),
                  os.path.join(self.x, 'config.pickle'),
                  os.path.join(self.x, 'config', 'config.toml'),
                  os.path.join(self.x, 'config', 'config.pickle')]
@@ -122,54 +122,54 @@ class AlignReader(object):
         return (self.bam, self.unmap1, self.unmap2)
     
 
-def check_fx_args(fq1, fq2=None, **kwargs):
-    """
-    Check the fastx in arguments
+# def check_fx_args(fq1, fq2=None, **kwargs):
+#     """
+#     Check the fastx in arguments
     
-    Parameters
-    ----------
-    fq1 : str or list
-    fq2 : None, str or list
+#     Parameters
+#     ----------
+#     fq1 : str or list
+#     fq2 : None, str or list
 
-    check:
-    1. file exists
-    2. file type
-    3. fq paired
-    4. check_empty
-    """
-    if isinstance(fq1, str):
-        k1 = check_fx(fq1, **kwargs)
-        if isinstance(fq2, str):
-            k2 = check_fx(fq2, **kwargs)
-            p1 = check_fx_paired(fq1, fq2, **kwargs)
-            out = all([k1, k2, p1])
-        elif fq2 is None:
-            out = k1
-        else:
-            log.error('fq2 not valid, expect str or NoneType, got {}'.format(
-                type(fq2).__name__))
-            out = False
-    elif isinstance(fq1, list):
-        k1 = all([check_fx(i, **kwargs) for i in fq1])
-        if isinstance(fq2, list):
-            k2 = all([check_fx(i, **kwargs) for i in fq2])
-            if len(fq1) == len(fq2):
-                k3 = all([check_fx_paired(a, b) for a,b in zip(fq1, fq2)])
-                out = all([k1, k2, k3])
-            else:
-                log.error('fq1, fq2 not in same length')
-                out = False
-        elif fq2 is None:
-            out = k1
-        else:
-            log.error('fq2 not valid, expect list or NoneType, got {}'.format(
-                type(fq2).__name__))
-            out = False
-    else:
-        log.error('fq1 expect str or list, got {}'.format(
-            type(fq1).__name__))
-        out = False
-    return out # (fq1, fq2) if out else None
+#     check:
+#     1. file exists
+#     2. file type
+#     3. fq paired
+#     4. check_empty
+#     """
+#     if isinstance(fq1, str):
+#         k1 = check_fx(fq1, **kwargs)
+#         if isinstance(fq2, str):
+#             k2 = check_fx(fq2, **kwargs)
+#             p1 = check_fx_paired(fq1, fq2, **kwargs)
+#             out = all([k1, k2, p1])
+#         elif fq2 is None:
+#             out = k1
+#         else:
+#             log.error('fq2 not valid, expect str or NoneType, got {}'.format(
+#                 type(fq2).__name__))
+#             out = False
+#     elif isinstance(fq1, list):
+#         k1 = all([check_fx(i, **kwargs) for i in fq1])
+#         if isinstance(fq2, list):
+#             k2 = all([check_fx(i, **kwargs) for i in fq2])
+#             if len(fq1) == len(fq2):
+#                 k3 = all([check_fx_paired(a, b) for a,b in zip(fq1, fq2)])
+#                 out = all([k1, k2, k3])
+#             else:
+#                 log.error('fq1, fq2 not in same length')
+#                 out = False
+#         elif fq2 is None:
+#             out = k1
+#         else:
+#             log.error('fq2 not valid, expect list or NoneType, got {}'.format(
+#                 type(fq2).__name__))
+#             out = False
+#     else:
+#         log.error('fq1 expect str or list, got {}'.format(
+#             type(fq1).__name__))
+#         out = False
+#     return out
 
 
 ## fq files: deprecated: by hiseq.utils.file.check_fx()

@@ -166,6 +166,55 @@ def check_fx_paired(fq1, fq2, **kwargs):
         out = False
     return out
 
+
+def check_fx_args(fq1, fq2=None, **kwargs):
+    """
+    Check the fastx in arguments
+    
+    Parameters
+    ----------
+    fq1 : str or list
+    fq2 : None, str or list
+
+    check:
+    1. file exists
+    2. file type
+    3. fq paired
+    4. check_empty
+    """
+    if isinstance(fq1, str):
+        k1 = check_fx(fq1, **kwargs)
+        if isinstance(fq2, str):
+            k2e = check_fx(fq2, **kwargs)
+            k2p = check_fx_paired(fq1, fq2, **kwargs)
+            k2 = k2e and k2p
+        elif fq2 is None:
+            k2 = True # skipped
+        else:
+            k2 = False # error
+            log.error('fq2 not valid, expect str or NoneType, got {}'.format(
+                type(fq2).__name__))
+        out = k1 and k2
+    elif isinstance(fq1, list):
+        k1 = all(check_fx(fq1, **kwargs))
+        if isinstance(fq2, list):
+            k2e = all(check_fx(fq2, **kwargs))
+            k2p = check_fx_paired(fq1, fq2, **kwargs)
+            k2 = k2e and k2p
+        elif fq2 is None:
+            k2 = True
+        else:
+            k2 = False
+            log.error('fq2 not valid, expect list or NoneType, got {}'.format(
+                type(fq2).__name__))
+        out = k1 and k2
+    else:
+        out = False
+        log.error('fq1 expect str or list, got {}'.format(
+            type(fq1).__name__))
+    return out
+
+
         
 ##########################
 ## manipulate files     ##
@@ -358,7 +407,7 @@ def symlink_file(src, dest, absolute_path=False, force=False):
             dest_file = os.path.join(dest, os.path.basename(src))
         else:
             dest_file = dest
-        dest_file = os.path.abspath(os.path.expanduser(os.path.expandvars(dest)))
+        dest_file = os.path.abspath(os.path.expanduser(os.path.expandvars(dest_file)))
         # the relative path of src
         src_dir = os.path.dirname(src)
         src_name = os.path.basename(src)
@@ -710,7 +759,7 @@ def file_abspath(x):
     x : str,list
         Path to a file, or list of files
     """
-    if x is None:
+    if x is None or x == 'None': # in case toml format?!
         out = None
     elif isinstance(x, str):
         out = os.path.abspath(os.path.expanduser(x))
@@ -783,10 +832,10 @@ def fx_name(x, fix_pe=False, fix_rep=False, fix_unmap=False):
     """
     if isinstance(x, str):
         out = file_prefix(x)
-        if fix_unmap:
-            out = re.sub('.unmap$', '', out, flags=re.IGNORECASE)
         if fix_pe:
             out = re.sub('[._](r)?[12]$', '', out, flags=re.IGNORECASE)
+        if fix_unmap:
+            out = re.sub('.unmap$', '', out, flags=re.IGNORECASE)
         if fix_rep:
             out = re.sub('[._]rep[0-9]+$', '', out, flags=re.IGNORECASE)
     elif isinstance(x, list):

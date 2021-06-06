@@ -24,9 +24,10 @@ import argparse
 from Levenshtein import distance
 from hiseq.utils.seq import Fastx
 from hiseq.utils.utils import log, update_obj, Config, run_shell_cmd
-from hiseq.utils.file import check_fx, check_file, check_path, file_abspath, file_exists, fx_name
+from hiseq.utils.file import check_fx, check_file, check_path, file_abspath, \
+    file_exists, fx_name, check_fx_args
 from hiseq.align.align_index import AlignIndex
-from hiseq.align.utils import check_fx_args
+# from hiseq.align.utils import check_fx_args
 
 
 def parse_salmon(x):
@@ -140,7 +141,7 @@ class SalmonConfig(object):
         prefix = os.path.join(self.project_dir, self.smp_name)
         default_files = {
             'project_dir': self.project_dir,
-            'config_toml': os.path.join(self.config_dir, 'config.toml'),
+            'config_yaml': os.path.join(self.config_dir, 'config.yaml'),
             'cmd_shell': os.path.join(self.project_dir, 'cmd.sh'),
             'quant_sf': os.path.join(self.project_dir, 'quant.sf'),
             'bam': prefix + '.bam',
@@ -169,7 +170,7 @@ class Salmon(object):
         self = update_obj(self, args_local.__dict__, force=True) # update
         self.aligner = 'salmon' # force changed
         self.get_cmd()        
-        Config().dump(self.__dict__, self.config_toml)
+        Config().dump(self.__dict__, self.config_yaml)
 
 
     def get_cmd(self):

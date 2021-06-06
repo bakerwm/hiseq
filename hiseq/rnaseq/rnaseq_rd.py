@@ -2,8 +2,8 @@
 # -*- coding:utf-8 -*-
 
 """
-RNA-seq pipeline: level-2 (build design.toml)
-create design.toml
+RNA-seq pipeline: level-2 (build design.yaml)
+create design.yaml
 
 mut
 wt
@@ -25,7 +25,7 @@ from hiseq.utils.utils import log, update_obj, Config, get_date
 
 class RnaseqRd(object):
     """
-    Generate design.toml
+    Generate design.yaml
     format:
     mut
     wt
@@ -50,6 +50,7 @@ class RnaseqRd(object):
             'wt_fq1': None,
             'wt_fq2': None,
             'append': True,
+            'as_se': False,
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'rnaseq_rd'
@@ -198,6 +199,9 @@ class RnaseqRd(object):
                 kb_paired = True #
             k_name = fx_name(ka_fq1[0], fix_pe=True, fix_rep=True)
             # update or not
+            # force to SE
+            if self.as_se:
+                ka_fq2 = kb_fq2 = None
             if all([ka_paired, kb_paired]):
                 out.update({
                     k_name: {
@@ -237,6 +241,8 @@ class RnaseqRd(object):
             wt_paired = True
             self.wt_fq1 = self.wt_fq2 = None # force
         # group
+        if self.as_se:
+            self.mut_fq2 = self.wt_fq2 = None
         if all([mut_paired, wt_paired]):
             k_name = fx_name(self.mut_fq1[0], fix_pe=True, fix_rep=True)
             out = {
@@ -260,6 +266,20 @@ class RnaseqRd(object):
         1. fq_dir
         2. fq1, fq2
         """
+        # convert mut/wt to list
+        if isinstance(self.mut, str):
+            self.mut = [self.mut]
+        if isinstance(self.wt, str):
+            self.wt = [self.wt]
+        if isinstance(self.mut_fq1, str):
+            self.mut_fq1 = [self.mut_fq1]
+        if isinstance(self.mut_fq2, str):
+            self.mut_fq2 = [self.mut_fq2]
+        if isinstance(self.wt_fq1, str):
+            self.wt_fq1 = [self.wt_fq1]
+        if isinstance(self.wt_fq2, str):
+            self.wt_fq2 = [self.wt_fq2]
+        # choose sub-command
         if isinstance(self.fq_dir, str) and isinstance(self.mut, list):
             fq = self.parse_fq_v1()
         elif isinstance(self.mut_fq1, list) and isinstance(self.mut_fq2, list):
@@ -290,17 +310,27 @@ class RnaseqRd(object):
             # for mut
             msg.append('-'*80)
             msg.append(['[mut]', mut_name])
-            for a, b in zip(mut_fq1, mut_fq2):
-                msg.append('{:>60}'.format('-'*56))
-                msg.extend([['fq1', a], ['fq2', b]])
+            if isinstance(mut_fq2, list):
+                for a, b in zip(mut_fq1, mut_fq2):
+                    msg.append('{:>60}'.format('-'*56))
+                    msg.extend([['fq1', a], ['fq2', b]])
+            else:
+                for a in mut_fq1:
+                    msg.append('{:>60}'.format('-'*56))
+                    msg.extend([['fq1', a], ['fq2', None]])
             # for wt
             if wt_fq1 is not None:
                 wt_name = fx_name(wt_fq1[0], fix_pe=True, fix_rep=True)
                 msg.append('{:>80}'.format('-'*76))
                 msg.append(['[wt]', wt_name])
-                for a, b in zip(wt_fq1, wt_fq2):
-                    msg.append('{:>60}'.format('-'*56))
-                    msg.extend([['fq1', a], ['fq2', b]])
+                if isinstance(wt_fq2, list):
+                    for a, b in zip(wt_fq1, wt_fq2):
+                        msg.append('{:>60}'.format('-'*56))
+                        msg.extend([['fq1', a], ['fq2', b]])
+                else:
+                    for a in wt_fq1:
+                        msg.append('{:>60}'.format('-'*56))
+                        msg.extend([['fq1', a], ['fq2', None]])
             # status            
             msg.append('{:>20}'.format('-'*16))
             msg.append(['[Status]', status])
@@ -328,10 +358,10 @@ class RnaseqRd(object):
 def get_args():
     example = '\n'.join([
         'Examples:',
-        '1. Generate design.toml, with --fq-dir',
-        '$ python rnaseq_rd.py -d design.toml --fq-dir data/raw_data --mut K9 --wt IgG',
-        '2. Generate design.toml, with -1 and -2',
-        '$ python rnaseq_rd.py -d design.toml -1 *1.fq.gz -2 *2.fq.gz',
+        '1. Generate design.yaml, with --fq-dir',
+        '$ python rnaseq_rd.py -d design.yaml --fq-dir data/raw_data --mut K9 --wt IgG',
+        '2. Generate design.yaml, with -1 and -2',
+        '$ python rnaseq_rd.py -d design.yaml -1 *1.fq.gz -2 *2.fq.gz',
     ])
     parser = argparse.ArgumentParser(
         prog='rnaseq_rd',
