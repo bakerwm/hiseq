@@ -376,6 +376,8 @@ def get_args():
         help='keyword of mut fastq file, auto-find read1/2')
     parser.add_argument('--wt', nargs='+', dest='wt', default=None,
         help='keyword of wt fastq file, auto-find read1/2')
+    parser.add_argument('--se', dest='as_se', action='store_true',
+        help='choose only fastq1 for PE reads')
     # details
     parser.add_argument('--mut-fq1', nargs='+', dest='mut_fq1', default=None,
         help='filepath or keyword of mut fastq file, read1 of PE')

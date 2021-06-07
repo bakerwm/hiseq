@@ -8,6 +8,7 @@ RNAseq for single fq, single index: r1
 
 import os
 import sys
+import pathlib
 import argparse
 from hiseq.rnaseq.rnaseq_rp import RnaseqRp
 from hiseq.align.align_index import AlignIndex, check_index_args, fetch_index
@@ -18,7 +19,7 @@ from hiseq.rnaseq.utils import rnaseq_trim, rnaseq_align_spikein, \
 from hiseq.utils.file import check_path, check_fx_paired, symlink_file, \
     file_exists, file_abspath, file_prefix, fx_name, Genome
 from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \
-    read_hiseq, is_supported
+    read_hiseq, is_supported, print_dict
 
 
 class RnaseqR1(object):
@@ -227,6 +228,9 @@ class RnaseqR1Config(object):
 
     def init_fq(self):
         # check message
+        if not isinstance(self.fq1, str):
+            raise ValueError('fq1 require str, got {}'.format(
+                type(self.fq1).__name__))
         c1 = isinstance(self.fq1, str)
         if self.fq2 is None or self.fq2 == 'None':
             self.fq2 = None # convert 'None' -> None; from yaml
@@ -313,7 +317,7 @@ class RnaseqR1Config(object):
             raise ValueError('--genome or --extra-index; required')
 
         
-def add_rnaseq_args():
+def get_args():
     example = '\n'.join([
         'Examples:',
         '1. support fastq input',
@@ -322,10 +326,15 @@ def add_rnaseq_args():
         '$ python cnr_r1.py --fq1 f1.fq.gz --fq2 f2.fq.gz -o results -x bowtie2_index/te',
     ])    
     parser = argparse.ArgumentParser(
+        prog='rnaseq_r1',
+        description='run rnaseq_r1',
+        epilog=example,
+        formatter_class=argparse.RawTextHelpFormatter)
+    parser = argparse.ArgumentParser(
         description='RNA-seq pipeline')
-    parser.add_argument('-1', '--fq1', nargs='+', default=None,
+    parser.add_argument('-1', '--fq1', default=None, required=True,
         help='read1 files, (or read1 of PE reads)')
-    parser.add_argument('-2', '--fq2', nargs='+', default=None,
+    parser.add_argument('-2', '--fq2', default=None,
         help='read2 of PE reads')
     parser.add_argument('-o', '--outdir', default=None,
         help='The directory to save results, default, \
@@ -338,24 +347,36 @@ def add_rnaseq_args():
     parser.add_argument('--bed', dest='gene_bed', default=None,
         help='The BED of genes')
     # optional arguments - 0
+    parser.add_argument('-n', '--smp-name', dest='smp_name', default=None,
+        help='Name of the samples, default: from fq1 prefix')
+    # optional arguments - 0
     parser.add_argument('--trimmed', action='store_true',
         help='specify if input files are trimmed')
     # optional arguments - 1
     parser.add_argument('--overwrite', action='store_true',
         help='if spcified, overwrite exists file')
     ## extra: index
-    parser.add_argument('-k', '--spikein', default=None,
-        choices=[None, 'dm3', 'hg19', 'hg38', 'mm10'],
-        help='Spike-in genome : dm3, hg19, hg38, mm10, default: None')
     parser.add_argument('-x', '--extra-index', dest="extra_index",
         help='Provide alignment index(es) for alignment, support multiple\
         indexes. if specified, ignore -g, -k')
-    parser.add_argument('--to-rRNA', action='store_true',
+    parser.add_argument('--genome-index', dest="genome_index", default=None,
+        help='align index of genome')
+    parser.add_argument('-k', '--spikein', default=None,
+        choices=[None, 'dm3', 'hg19', 'hg38', 'mm10'],
+        help='Spike-in genome : dm3, hg19, hg38, mm10, default: None')
+    parser.add_argument('--spikein-index', dest="spikein_index", default=None,
+        help='align index of spikein')    
+    parser.add_argument('--to-rRNA', dest='to_rRNA', action='store_true',
         help='Align to rRNA')
+    parser.add_argument('--rRNA-index', dest="rRNA_index", default=None,
+        help='align index of rRNA')   
     parser.add_argument('--aligner', default='STAR',
         choices=['STAR', 'bowtie', 'bowtie2', 'bwa', 'hisat2', 'kallisto',
             'salmon'],
         help='Aligner option: [STAR, bowtie, bowtie2, bwa], default: [STAR]')
+    ## extra:
+    parser.add_argument('-bs', '--bin-size', default=10, type=int,
+        help='bin size of the bigWig file, default [10]')
     parser.add_argument('-p', '--threads', default=1, type=int,
         help='Number of threads for each job, default [1]')
     parser.add_argument('-j', '--parallel-jobs', default=1, type=int,

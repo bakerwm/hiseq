@@ -24,6 +24,10 @@ from hiseq.atac.atac import get_args as add_atac_args
 from hiseq.cnr.cnr import Cnr
 from hiseq.cnr.cnr import get_args as add_cnr_args
 
+from hiseq.rnaseq.rnaseq import Rnaseq
+from hiseq.rnaseq.rnaseq import get_args as add_rnaseq_args
+
+
 from hiseq.trim.trim import Trim
 from hiseq.trim.trim import get_args as add_trim_args
 
@@ -65,11 +69,13 @@ from hiseq.qc.bacteria import get_args as add_bacteria_args
 
 
 # to-be-deprecated: replaced by specific get_args() in each command
-from hiseq.utils.argsParser import add_quant_args, add_peak_args, add_motif_args, add_rnaseq_args, \
+from hiseq.utils.argsParser import add_quant_args, add_peak_args, add_motif_args, \
     add_rnaseq_args2, add_chipseq_args, \
     add_trackhub_args, add_deseq_pair_args, add_go_args,\
     add_peak2idr_args, add_bed2overlap_args, \
     add_sample_args
+
+# add_rnaseq_args
 
 # add_sheet_args, add_qc_args, add_p7_args, add_demx_args, add_demx2_args, 
 # add_align_args, add_trim_args, add_bam2bw_args, add_bam2cor_args,
@@ -85,7 +91,7 @@ from hiseq.utils.argsParser import add_quant_args, add_peak_args, add_motif_args
 # from hiseq.utils.bam import Bam2cor
 # from hiseq.trim.trimmer import Trim
 # from hiseq.align.align import Align
-from hiseq.rnaseq.rnaseq import RNAseq
+from hiseq.rnaseq.rnaseq import Rnaseq
 from hiseq.rnaseq.deseq_pair import DeseqPair
 from hiseq.chipseq.chipseq import ChIPseq
 from hiseq.go.go import Go
@@ -339,16 +345,16 @@ class Hiseq(object):
         """
         RNA-seq pipeline
         """
-        args = self.init_args(add_atac_args())
-        RNAseq(**args).run()
+        args = self.init_args(add_rnaseq_args())
+        Rnaseq(**args).run()
 
 
-    def rnaseq2(self):
-        """
-        RNA-seq pipeline, simplify version
-        """
-        args = self.init_args(add_rnaseq_args2)
-        RNAseqPipe(**args).run()
+#     def rnaseq2(self):
+#         """
+#         RNA-seq pipeline, simplify version
+#         """
+#         args = self.init_args(add_rnaseq_args2)
+#         RNAseqPipe(**args).run()
 
 
     def chipseq(self):

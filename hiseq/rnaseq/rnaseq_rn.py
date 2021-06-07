@@ -106,7 +106,6 @@ class RnaseqRnConfig(object):
             'fq2': None,
             'outdir': None,
             'smp_name': None,
-            'norm_project': None,
             'binsize': 10,
             'genome_size': 0,
             'genome_size_file': None,
@@ -120,6 +119,7 @@ class RnaseqRnConfig(object):
             'threads': 1,
             'parallel_jobs': 1,
             'overwrite': False,
+            'norm_project': None,
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'rnaseq_rn' #
@@ -197,6 +197,9 @@ class RnaseqRnConfig(object):
             self.fq1 = [self.fq1]
         if isinstance(self.fq2, str):
             self.fq2 = [self.fq2]
+        if not isinstance(self.fq1, list):
+            raise ValueError('fq1 require list, got {}'.format(
+                type(self.fq1).__name__))
         # check message
         c1 = isinstance(self.fq1, list)
         if self.fq2 is None or self.fq2 == 'None':
@@ -239,3 +242,88 @@ class RnaseqRnConfig(object):
             self.genome_size_file = Genome(self.genome).get_fasize()
         else:
             raise ValueError('--genome or --extra-index; required')
+
+                  
+def get_args():
+    example = '\n'.join([
+        'Examples:',
+        '1. support fastq input',
+        '$ python rnaseq_r1.py --fq1 f1.fq.gz --fq2 f2.fq.gz -o results -g dm6',
+        '2. for specific index',
+        '$ python cnr_r1.py --fq1 f1.fq.gz --fq2 f2.fq.gz -o results -x bowtie2_index/te',
+    ])    
+    parser = argparse.ArgumentParser(
+        prog='rnaseq_rn',
+        description='run rnaseq_rn',
+        epilog=example,
+        formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument('-1', '--fq1', nargs='+', required=True,
+        help='read1 files, (or read1 of PE reads)')
+    parser.add_argument('-2', '--fq2', nargs='+', default=None,
+        help='read2 of PE reads')
+    parser.add_argument('-o', '--outdir', default=None,
+        help='The directory to save results, default, \
+        current working directory.')
+    parser.add_argument('-g', '--genome', default=None,
+        choices=['dm3', 'dm6', 'hg19', 'hg38', 'mm9', 'mm10'],
+        help='Reference genome : dm3, dm6, hg19, hg38, mm10, default: hg38')
+    parser.add_argument('--gtf', dest='gene_gtf', default=None,
+        help='The gtf file for quantification, defaut: genome.gtf (None)')
+    parser.add_argument('--bed', dest='gene_bed', default=None,
+        help='The BED of genes')
+    # optional arguments - 0
+    parser.add_argument('-n', '--smp-name', dest='smp_name', default=None,
+        help='Name of the samples, default: from fq1 prefix')
+    # optional arguments - 0
+    parser.add_argument('--trimmed', action='store_true',
+        help='specify if input files are trimmed')
+    # optional arguments - 1
+    parser.add_argument('--overwrite', action='store_true',
+        help='if spcified, overwrite exists file')
+    ## extra: index
+    parser.add_argument('-x', '--extra-index', dest="extra_index",
+        help='Provide alignment index(es) for alignment, support multiple\
+        indexes. if specified, ignore -g, -k')
+    parser.add_argument('--genome-index', dest="genome_index", default=None,
+        help='align index of genome')
+    parser.add_argument('-k', '--spikein', default=None,
+        choices=[None, 'dm3', 'hg19', 'hg38', 'mm10'],
+        help='Spike-in genome : dm3, hg19, hg38, mm10, default: None')
+    parser.add_argument('--spikein-index', dest="spikein_index", default=None,
+        help='align index of spikein')    
+    parser.add_argument('--to-rRNA', dest='to_rRNA', action='store_true',
+        help='Align to rRNA')
+    parser.add_argument('--rRNA-index', dest="rRNA_index", default=None,
+        help='align index of rRNA')   
+    parser.add_argument('--aligner', default='STAR',
+        choices=['STAR', 'bowtie', 'bowtie2', 'bwa', 'hisat2', 'kallisto',
+            'salmon'],
+        help='Aligner option: [STAR, bowtie, bowtie2, bwa], default: [STAR]')
+    ## extra:
+    parser.add_argument('-bs', '--bin-size', default=10, type=int,
+        help='bin size of the bigWig file, default [10]')
+    parser.add_argument('-p', '--threads', default=1, type=int,
+        help='Number of threads for each job, default [1]')
+    parser.add_argument('-j', '--parallel-jobs', default=1, type=int,
+        dest='parallel_jobs',
+        help='Number of jobs run in parallel, default: [1]')
+    ## extra: para
+    parser.add_argument('--extra-para', dest='extra_para', default=None,
+        help='Extra parameters for aligner, eg: -X 2000 for bowtie2. \
+        default: [None]')
+    parser.add_argument('--norm-project', dest='norm_project', default=None,
+        help='The RNAseq_Rx project, for parseing norm scale. eg: \
+        RNAseq_gene/wt.vs.mut for RNAseq_te, default: [None]')
+    return parser
+
+
+def main():
+    args = vars(get_args().parse_args())
+    RnaseqRn(**args).run()
+
+
+if __name__ == '__main__':
+    main()
+
+#
+

@@ -839,7 +839,7 @@ def qc_genebody_enrich(x, hiseq_type='r1', bw_type='r1'):
             n1 = [i.replace(a.smp_name+'_', '') for i in n1]
             n2 = [i.replace(a.smp_name+'_', '') for i in n2]
             n_list = [i+k for i in n1 + n2 for k in ['_fwd', '_rev']]
-            bw_list = [a.bw_fwd, a.bw_rev] + b2f + b2r
+            bw_list = [a.bw_fwd, a.bw_rev] + b1 + b2
             n_list = ['merge_fwd', 'merge_rev'] + n_list
             arg_bw = ' '.join(bw_list)
             arg_label = '--samplesLabel {}'.format(' '.join(n_list))
