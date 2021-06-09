@@ -41,15 +41,18 @@ index1:index2:barcode
 import os
 import sys
 import re
+import shutil
 import pathlib
 import argparse
 from xopen import xopen
 from multiprocessing import Pool
 from contextlib import ExitStack
 import Levenshtein as lev # distance
-from hiseq.utils.utils import update_obj, log, Config
+
+import hiseq
+from hiseq.utils.utils import update_obj, log, Config, run_shell_cmd
 from hiseq.utils.file import check_file, check_path, file_abspath, \
-    list_file, fx_name, symlink_file
+    list_file, fx_name, symlink_file, file_exists
 from hiseq.utils.seq import Fastx
 from hiseq.demx.demx import Demx
 from hiseq.demx.demx_index import DemxIndex
@@ -95,7 +98,7 @@ class Demx2(object):
 
     def init_args(self):
         args_init = {
-            'x': None,
+            'sample_sheet': None,
             'datadir': 'from_illumina',
             'outdir': 'results',
             'mismatch': 0,
@@ -107,28 +110,46 @@ class Demx2(object):
             'gzipped': True,
         }
         self = update_obj(self, args_init, force=False)
-        if not os.path.isfile(self.x):
-            raise ValueError('file not exists x={}'.format(self.x))
+        if not os.path.isfile(self.sample_sheet):
+            raise ValueError('file not exists x={}'.format(self.sample_sheet))
         if not os.path.isdir(self.datadir):
             raise ValueError('not a directory: {}'.format(self.datadir))
         if not isinstance(self.outdir, str):
             self.outdir = 'results'
+        self.outdir = file_abspath(self.outdir)
+        self.datadir = file_abspath(self.datadir)
+        self.sample_sheet = file_abspath(self.sample_sheet)
         # check input fastq files
         f1 = list_file(self.datadir, '*.fq.gz', recursive=True)
         f2 = list_file(self.datadir, '*.fastq.gz', recursive=True)
         self.raw_fq_list = f1 + f2
         if len(self.raw_fq_list) < 2:
             raise ValueError('no fastq files in: {}'.format(self.datadir))
+        self.init_files()
         # read table
         self.load_table()
         # fix files
         # self.demx_bc_shell = os.path.join(self.outdir, 'demx_bc.sh')
-        self.read_count_toml = os.path.join(self.outdir, 'read_count.toml')
+        self.read_count_json = os.path.join(self.outdir, 'read_count.json')
         self.demx_report = os.path.join(self.outdir, 'report.txt')
+        # save part of the objects
+        # bc_ids, i7_ids, sheet, # remove the classes
+        dd = self.__dict__.copy()
+        for i in ['bc_ids', 'i7_ids', 'd_smp', 'sheet']:
+            dd.pop(i)
+        Config().dump(dd, self.config_yaml)
 
+        
+    def init_files(self):
+        self.config_dir = os.path.join(self.outdir, 'config')
+        self.config_yaml = os.path.join(self.config_dir, 'config.yaml')
+        self.report_dir = os.path.join(self.outdir, 'report')
+        self.hiseq_type = 'demx_r1'
+        check_path([self.config_dir, self.report_dir])
 
+        
     def load_table(self):
-        self.sheet = SampleSheet(x=self.x, outdir=self.outdir) # load table
+        self.sheet = SampleSheet(x=self.sample_sheet, outdir=self.outdir) # load table
         df = self.sheet.df # 'name', 'i7', 'bc', 'reads'
         dfx = df.loc[:, ['name', 'i7']].set_index('i7').to_dict('dict')
         self.d_smp = dfx['name'] # dict, {index:sample_name}
@@ -218,8 +239,8 @@ class Demx2(object):
                 # count fq
                 if is_r1:
                     try:
-                        if os.path.isfile(self.read_count_toml):
-                            n_size = Config().load(self.read_count_toml)
+                        if os.path.isfile(self.read_count_json):
+                            n_size = Config().load(self.read_count_json)
                             n_fq = n_size.get(s_name, 0)
                         else:
                             n_fq = Fastx(s_file).number_of_seq()
@@ -254,7 +275,10 @@ class Demx2(object):
                             # os.rename(q, q_new)
                             symlink_file(q, q_new)
                 # read count file
-                t = os.path.join(bc_dir, 'read_count.toml')
+                if self.demo:
+                    t = os.path.join(bc_dir, 'demo', 'read_count.json')
+                else:
+                    t = os.path.join(bc_dir, 'read_count.json')
                 try:
                     d = Config().load(t)
                     n_undemx += d.get('undemx', 0)
@@ -272,13 +296,14 @@ class Demx2(object):
         # Expect reads
         exp_df = self.sheet.df.loc[:, ['name', 'reads']].set_index('name')
         exp_size = exp_df.to_dict('dict')['reads'] # sample_name:reads
-        # to toml
+        n_exp = exp_df['reads'].sum()
+        # to json
         self.rename_i7_files() #
         self.rename_bc_files() #
         q_size = self.i7_size
         q_size.update(self.bc_size) # sample_name:reads
         q_size = dict(sorted(q_size.items(), key=lambda x:x[0])) # sort by key
-        Config().dump(q_size, self.read_count_toml)
+        Config().dump(q_size, self.read_count_json)
         # to txt
         total = sum(q_size.values())
         if total < 1:
@@ -295,7 +320,9 @@ class Demx2(object):
         msg = '\n'.join([
             '-'*80,
             'Demultiplex report:',
-            '{} : {:>10} {:6.1f}M'.format('Input reads', total, total/1e6),
+            '{} : {:>10} {:6.1f}M'.format('Expect reads', '', n_exp),
+            '{} : {:>10} {:6.1f}M (pct: {:5.1f}%)'.format(
+                'output reads', total, total/1e6, total/1e6/n_exp*100),
             '{:>3} {:<40s} {:>10} {:6} {:8s} {:8s}'.format(
                 'order', 'filename', 'count', 'percent', 'million', 'design'),
             '\n'.join(f_stat),
@@ -305,11 +332,40 @@ class Demx2(object):
             w.write(msg+'\n')
         print(msg)
 
+        
+    def report(self):
+        pkg_dir = os.path.dirname(hiseq.__file__)
+        hiseq_report_R = os.path.join(pkg_dir, 'bin', 'hiseq_report.R')
+        report_stdout = os.path.join(self.report_dir, 'report.stdout')
+        report_stderr = os.path.join(self.report_dir, 'report.stderr')
+        hiseq_report_html = os.path.join(
+            self.report_dir,
+            'HiSeq_report.html')
+        cmd = ' '.join([
+            '{}'.format(shutil.which('Rscript')),
+            hiseq_report_R,
+            self.outdir,
+            self.report_dir,
+            '1>{}'.format(report_stdout),
+            '2>{}'.format(report_stderr),
+            ])
+        # save command
+        cmd_txt = os.path.join(self.report_dir, 'report.cmd.sh')
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+        # report_html
+        if file_exists(hiseq_report_html):
+            log.info('report() skipped, file exists: {}'.format(
+                hiseq_report_html))
+        else:
+            run_shell_cmd(cmd)
+
 
     def run(self):
         log.info('Demulplexing starting')
         self.demx_barcode()
         self.wrap_dir()
+        self.report()
         log.info('Demulplexing finish')
 
         
@@ -319,7 +375,7 @@ def get_args():
     Demultiplexing, multi barcode files
     """
     parser = argparse.ArgumentParser(description='hiseq demx2')
-    parser.add_argument('-s', '--xlsx-table', dest='x', required=True,
+    parser.add_argument('-s', '--xlsx-table', dest='sample_sheet', required=True,
         help="Sample table in (xlsx|csv) format; xlsx: require the columns\
         ['Sample_name*', 'P7_index_id*', 'Barcode_id*', 'Reads, M']; \
         csv: require the columns: ['name', 'i7', 'i5', 'bc', 'reads'] \

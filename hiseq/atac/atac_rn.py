@@ -10,17 +10,18 @@ analysis-module:
 """
 
 import os
+import sys
 import pathlib
 import argparse
 from multiprocessing import Pool
 from hiseq.atac.atac_r1 import AtacR1
 from hiseq.atac.atac_rp import AtacRp
-from hiseq.atac.utils import atac_merge_bam, cal_norm_scale, \
+from hiseq.atac.utils import atac_merge_bam, \
     atac_bam_to_bw, atac_call_peak, qc_lendist, qc_frip, qc_bam_cor, \
     qc_peak_idr, qc_peak_overlap, qc_bam_fingerprint, qc_tss_enrich, \
     qc_genebody_enrich    
 from hiseq.utils.file import check_path, check_fx_paired, symlink_file, \
-    file_exists, file_abspath, file_prefix, fx_name, Genome
+    file_exists, file_abspath, file_prefix, fx_name, Genome, list_dir
 from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \
     read_hiseq, list_hiseq_file, run_shell_cmd
 from hiseq.utils.bam import Bam
@@ -67,23 +68,22 @@ class AtacRn(object):
     def run_pipe_r1(self): # for rep_list == 1
         log.warning('merge() skipped, Only 1 replicate detected')
         k_list = [
-            'bam', 'bam_rmdup', 'bw', 'peak', 'peak_seacr', 'peak_seacr_top001',
-            'align_scale_json', 'trim_stat_txt', 'align_json'
+            'bam', 'bw', 'peak', 'peak_seacr_top001', # 'peak_seacr',
+            'align_scale_json', 'trim_json', 'align_json'
         ]
         # get the replist
-        rep_dir = self.rep_list[0] # first one
+        r1_dir = self.rep_list[0] # first one
         for k in k_list:
-            k_from = list_hiseq_file(rep_dir, k, 'r1')
-            # k_to = list_hiseq_file(self.project_dir, k, 'rn')
+            k_from = list_hiseq_file(r1_dir, k, 'r1')
             k_to = getattr(self, k)
-            symlink_file(k_from, k_to)
+            symlink_file(k_from[0], k_to)
         # copy all files in qc dir
-        rep_qc_dir = list_hiseq_file(rep_dir, 'qc_dir', 'r1')
-        rep_qc_files = list_dir(rep_qc_dir, include_dir=True)
-        for f in rep_qc_files:
+        r1_qc_dir = list_hiseq_file(r1_dir, 'qc_dir', 'r1')
+        r1_qc_files = list_dir(r1_qc_dir[0], include_dir=True)
+        for f in r1_qc_files:
             symlink_file(f, self.qc_dir) # to qc_dir
         # update: bam index
-        Bam(self.bam_rmdup).index()
+        Bam(self.bam).index()
 
 
     def run_single_fx(self, i):
@@ -95,15 +95,17 @@ class AtacRn(object):
         """
         # required args
         args_required = ['aligner', 'fq1', 'fq2', 'genome', 'gene_bed',
-            'genome_size', 'is_ip', 'trimmed', 'outdir', 'overwrite',
+            'genome_size', 'trimmed', 'outdir', 'overwrite',
             'parallel_jobs', 'threads', 'spikein', 'spikein_index',
-            'extra_index', 'cut_to_length', 'recursive']
+            'extra_index', 'cut', 'cut_to_length', 'recursive']
         args = dict((k, getattr(self, k)) for k in args_required \
             if k in self.__dict__)
+        n = os.path.basename(self.rep_list[i]) # index
         # update fq1, fq2, rep_list, ...
         args.update({
             'fq1': self.fq1[i],
             'fq2': self.fq2[i],
+            'smp_name': n,
             'rep_list': None,
             'build_design': None,
             'design': None,
@@ -124,11 +126,12 @@ class AtacRn(object):
 
     def run(self):
         # 1. save config
-        Config().dump(self.__dict__, self.config_toml)
+        Config().dump(self.__dict__, self.config_yaml)
         # 2. run AtacR1
         self.run_multi_fx()
         # 3. run AtacRn, merge
         if len(self.rep_list) == 1:
+            log.info('atac_rn() skipped, only 1 rep found')
             self.run_pipe_r1()
         else:
             self.run_pipe_rn()
@@ -164,6 +167,7 @@ class AtacRnConfig(object):
             'genome_size_file': 0,
             'keep_tmp': None,
             'trimmed': False,
+            'cut': False,
             'cut_to_length': 0,
             'recursive': False
         }
@@ -172,6 +176,7 @@ class AtacRnConfig(object):
         if self.outdir is None:
             self.outdir = str(pathlib.Path.cwd())
         self.outdir = file_abspath(self.outdir)
+        self.init_cut()
         self.init_fx()
         self.init_files()
         self.init_index()
@@ -180,6 +185,15 @@ class AtacRnConfig(object):
             self.threads,
             self.parallel_jobs)
 
+
+    def init_cut(self):
+        """
+        Cut the reads to specific length
+        """
+        if self.cut:
+            self.cut_to_length = 50
+            self.recursive = True
+        
 
     def init_fx(self):
         """
@@ -207,10 +221,15 @@ class AtacRnConfig(object):
             if len(fname) > 1:
                 log.warning('fq1 name not identical')
             self.smp_name = fname[0] # first one
-        # update rep_list
-        self.rep_list = [
-            os.path.join(self.outdir, i) for i in fx_name(self.fq1, fix_pe=True)
-        ]
+        # update rep_list, for single-fq #
+        ## for single-fq ##
+        if len(self.fq1) == 1:
+            s = fx_name(self.fq1[0], fix_pe=True)
+            self.rep_list = [os.path.join(self.outdir, s+'_rep1')] # single
+        else:
+            self.rep_list = [
+                os.path.join(self.outdir, i) for i in fx_name(self.fq1, fix_pe=True)
+            ]
 
 
     # update: genome_size_file    
@@ -247,27 +266,43 @@ class AtacRnConfig(object):
             default_dirs[k] = os.path.join(self.project_dir, v)
         self = update_obj(self, default_dirs, force=True) # key
         # files
+        trim_prefix = os.path.join(self.clean_dir, self.smp_name)
+        align_prefix = os.path.join(self.align_dir, self.smp_name)
+        spikein_prefix = os.path.join(self.spikein_dir, self.smp_name)
+        peak_prefix = os.path.join(self.peak_dir, self.smp_name)
         default_files = {
-            'config_toml': self.config_dir + '/config.toml', # updated
-            'report_log': self.report_dir + '/report.log',
-            'report_html': self.report_dir + '/HiSeq_report.html',
-
+            # basic files
+            'config_yaml': os.path.join(self.config_dir, 'config.yaml'),
+            'report_html': os.path.join(self.report_dir, 'HiSeq_report.html'),
+            'bam_raw': self.bam_dir + '/' + self.project_name + '.raw.bam',
             'bam': self.bam_dir + '/' + self.project_name + '.bam',
-            'bam_rmdup': self.bam_dir + '/' + self.smp_name + '.rmdup.bam',
-            'bam_proper_pair': self.bam_dir + '/' + self.smp_name + '.proper_pair.bam',
-            'bed': self.bam_dir + '/' + self.project_name + '.bed',
-            'bg': self.bg_dir + '/' + self.project_name + '.bedGraph',
+            # 'bam_rmdup': self.bam_dir + '/' + self.smp_name + '.rmdup.bam',
+            # 'bam_proper_pair': self.bam_dir + '/' + self.smp_name + '.proper_pair.bam',
             'bw': self.bw_dir + '/' + self.project_name + '.bigWig',
-            'peak': self.peak_dir + '/' + self.project_name + '_peaks.narrowPeak',
-            'peak_seacr': self.peak_dir + '/' + self.project_name + '.stringent.bed',
-            'peak_seacr_top001': self.peak_dir + '/' + self.project_name + '.top0.01.stringent.bed',
+            'peak': peak_prefix+'_peaks.narrowPeak',
+            'peak_seacr': peak_prefix+'.stringent.bed',
+            'peak_seacr_top001': peak_prefix+'.top0.01.stringent.bed',
+            
+            # trimming
+            'trim_stat': trim_prefix+'.trim.stat',
+            'trim_json': trim_prefix+'.trim.json',
+            
+            # align files
+            'align_scale_json': align_prefix+'.scale.json',
+            'align_stat': align_prefix+'.align.stat',
+            'align_json': align_prefix+'.align.json',
+            'align_flagstat': align_prefix+'.align.flagstat',
 
-            'align_scale_json': self.bam_dir + '/' + 'scale.json',
-            'align_flagstat': self.align_dir + '/' + self.smp_name + '.flagstat',
-            'align_stat': self.align_dir + '/' + self.smp_name + '.bowtie2.stat',
-            'align_json': self.align_dir + '/' + self.smp_name + '.bowtie2.json',
+            # spikein files
+            'spikein_scale_json': spikein_prefix+'.scale.json',
+            'spikein_stat': spikein_prefix+'.align.stat',
+            'spikein_json': spikein_prefix+'.align.json',
+            'spikein_flagstat': spikein_prefix+'.align.flagstat',
+            
+            # qc files
+            'trim_summary_json':self.qc_dir +  '/00.trim_summary.json',
             'align_summary_json': self.qc_dir + '/01.alignment_summary.json',
-
+            'lendist_csv': self.qc_dir + '/02.length_distribution.csv',
             'lendist_txt': self.qc_dir + '/02.length_distribution.txt',
             'lendist_pdf': self.qc_dir + '/02.length_distribution.pdf',
             'frip_json': self.qc_dir + '/03.FRiP.json',
@@ -336,6 +371,8 @@ def get_args():
     parser.add_argument('--overwrite', action='store_true',
         help='if spcified, overwrite exists file')
 
+    parser.add_argument('--cut', action='store_true', 
+        help='Cut reads to 50nt, equal to: --cut-to-length 50 --recursive')
     parser.add_argument('--cut-to-length', dest='cut_to_length',
         default=0, type=int,
         help='cut reads to specific length from tail, default: [0]')

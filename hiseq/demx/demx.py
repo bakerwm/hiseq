@@ -40,6 +40,7 @@ index1:index2:barcode
 import os
 import sys
 import re
+import shutil
 import pathlib
 import argparse
 from xopen import xopen
@@ -129,7 +130,21 @@ class Demx(object):
         self.index_table = file_abspath(self.index_table)
         self.outdir = file_abspath(self.outdir)
         # index
+        self.init_files()
         self.check_index()
+        # save config
+        # bc_ids, i7_ids, sheet, # remove the classes
+        dd = self.__dict__.copy()
+#         for i in ['bc_ids', 'i7_ids', 'd_smp', 'sheet']:
+#             dd.pop(i)
+        Config().dump(dd, self.config_yaml)
+        
+        
+    def init_files(self):
+        self.config_dir = os.path.join(self.outdir, 'config')
+        self.config_yaml = os.path.join(self.config_dir, 'config.yaml')
+        self.hiseq_type = 'demx_r1'
+        check_path(self.config_dir)
 
 
     def check_index(self):
@@ -311,8 +326,8 @@ class Demx(object):
             if os.path.exists(f1) and not os.path.exists(f1x):
                 os.rename(f1, f1x)
         # for read count
-        p7_stat_toml = os.path.join(p7_dir, 'read_count.toml')
-        p7_stat = Config().load(p7_stat_toml)
+        p7_stat_json = os.path.join(p7_dir, 'read_count.json')
+        p7_stat = Config().load(p7_stat_json)
         df_stat = {k:v for k,v in p7_stat.items() if k in self.samples}
         undemx += p7_stat.get('undemx', 0)
         # level-2: bc files
@@ -325,16 +340,16 @@ class Demx(object):
                 if os.path.exists(f2) and not os.path.exists(f2x):
                     os.rename(f2, f2x)
             # for read count
-            bc_stat_toml = os.path.join(bc_dir, 'read_count.toml')
-            bc_stat = Config().load(bc_stat_toml)
+            bc_stat_json = os.path.join(bc_dir, 'read_count.json')
+            bc_stat = Config().load(bc_stat_json)
             df_stat.update({k:v for k,v in bc_stat.items() if k in self.samples})
             undemx += bc_stat.get('undemx', 0)
         # update undemx
         df_stat['undemx'] = undemx
         # save to file
         df_stat = dict(sorted(df_stat.items(), key=lambda x:x[0])) # sort by key
-        stat_toml = os.path.join(self.outdir, 'read_count.toml')
-        Config().dump(df_stat, stat_toml)
+        stat_json = os.path.join(self.outdir, 'read_count.json')
+        Config().dump(df_stat, stat_json)
         # report
         stat_report = os.path.join(self.outdir, 'report.txt')
         total = sum(df_stat.values())

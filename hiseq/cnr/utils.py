@@ -511,7 +511,7 @@ def qc_lendist(x, hiseq_type='_r1'):
         log.info('lendist() skipped: file exists: {}'.format(
             a.lendist_txt))
     else:
-        BamPEFragSize(a.bam_rmdup).saveas(a.lendist_txt)
+        BamFragSize(a.bam_rmdup).saveas(a.lendist_txt)
         
         
 def qc_frip(x, hiseq_type='_r1'):

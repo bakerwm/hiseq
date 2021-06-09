@@ -2,8 +2,8 @@
 # -*- coding:utf-8 -*-
 
 """
-ATAC-seq pipeline: level-2 (build design.toml)
-create design.toml
+ATAC-seq pipeline: level-2 (build design.yaml)
+create design.yaml
 """
 
 import os
@@ -15,7 +15,7 @@ from hiseq.utils.utils import log, update_obj, Config, get_date
 
 class AtacRd(object):
     """
-    Generate design.toml
+    Generate design.yaml
     format:
     input: fq1, fq2
     """
@@ -133,10 +133,10 @@ class AtacRd(object):
 def get_args():
     example = '\n'.join([
         'Examples:',
-        '1. Generate design.toml, with --fq-dir',
-        '$ python atac_rd.py -d design.toml --fq-dir data/raw_data',
-        '2. Generate design.toml, with -1 and -2',
-        '$ python atac_rd.py -d design.toml -1 *1.fq.gz -2 *2.fq.gz',
+        '1. Generate design.yaml, with --fq-dir',
+        '$ python atac_rd.py -d design.yaml --fq-dir data/raw_data',
+        '2. Generate design.yaml, with -1 and -2',
+        '$ python atac_rd.py -d design.yaml -1 *1.fq.gz -2 *2.fq.gz',
     ])
     parser = argparse.ArgumentParser(
         prog='atac_rd',

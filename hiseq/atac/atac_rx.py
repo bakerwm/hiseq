@@ -4,7 +4,7 @@
 """
 ATAC-seq pipeline: level-2 (run pipe)
 
-loading fastq config from `design.toml`, run pipeline, with specific parameters
+loading fastq config from `design.yaml`, run pipeline, with specific parameters
 
 analysis-module:
 """
@@ -60,7 +60,7 @@ class AtacRx(object):
 
     def run(self):
         # 1. save config
-        Config().dump(self.__dict__, self.config_toml)
+        Config().dump(self.__dict__, self.config_yaml)
         # 2. run AtacRn->AtacR1
         self.run_multi_group()
         # 3. generate report
@@ -80,6 +80,10 @@ class AtacRxConfig(object):
             'threads': 1,
             'parallel_jobs': 1,
             'overwrite': False,
+            'trimmed': False,
+            'cut': False,
+            'cut_to_length': 0,
+            'recursive': False
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'atacseq_rx'
@@ -90,9 +94,19 @@ class AtacRxConfig(object):
             self.parallel_jobs)
         if not file_exists(self.design):
             raise ValueError('file not exists, --design {}'.format(self.design))
+        self.init_cut()
         self.init_files()
         self.init_fx()
 
+
+    def init_cut(self):
+        """
+        Cut the reads to specific length
+        """
+        if self.cut:
+            self.cut_to_length = 50
+            self.recursive = True
+        
 
     def init_files(self):
         # dirs
@@ -101,7 +115,7 @@ class AtacRxConfig(object):
         self.report_dir = os.path.join(self.project_dir, 'report')
         # files
         default_files = {
-            'config_toml': self.config_dir + '/config.toml',
+            'config_yaml': self.config_dir + '/config.yaml',
             'report_log': self.report_dir + '/report.log',
             'report_html': self.report_dir + '/HiSeq_report.html',
         }
@@ -123,10 +137,10 @@ def get_args():
     """
     example = '\n'.join([
         'Examples:',
-        '1. Run pipeline for design.toml, with different parameters',
-        '$ python atac_rx.py -d design.toml -g dm6 -o results',
+        '1. Run pipeline for design.yaml, with different parameters',
+        '$ python atac_rx.py -d design.yaml -g dm6 -o results',
         '2. Run pipeline with different parameters',
-        '$ python atac_rx.py -d design.toml -g dm6 -o results --extra-index te',
+        '$ python atac_rx.py -d design.yaml -g dm6 -o results --extra-index te',
     ])
     parser = argparse.ArgumentParser(
         prog='atac_rx',
@@ -152,6 +166,8 @@ def get_args():
     parser.add_argument('--overwrite', action='store_true',
         help='if spcified, overwrite exists file')
 
+    parser.add_argument('--cut', action='store_true', 
+        help='Cut reads to 50nt, equal to: --cut-to-length 50 --recursive')
     parser.add_argument('--cut-to-length', dest='cut_to_length',
         default=0, type=int,
         help='cut reads to specific length from tail, default: [0]')

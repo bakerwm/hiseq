@@ -155,8 +155,10 @@ class RnaseqRxConfig(object):
         self.outdir = file_abspath(os.path.expanduser(self.outdir))
         self.threads, self.parallel_jobs = init_cpu(self.threads,
             self.parallel_jobs)
-        self.mut_fq1, self.mut_fq2 = self.init_fq(self.mut_fq1, self.mut_fq2)
-        self.wt_fq1, self.wt_fq2 = self.init_fq(self.wt_fq1, self.wt_fq2)
+        self.mut_fq1, self.mut_fq2, self.mut_is_paired = self.init_fq(self.mut_fq1, self.mut_fq2)
+        self.wt_fq1, self.wt_fq2, self.wt_is_paired = self.init_fq(self.wt_fq1, self.wt_fq2)
+        # paired-end
+        self.is_paired = self.mut_is_paired and self.wt_is_paired
         self.init_index()
         self.init_name()
         self.init_files()
@@ -171,24 +173,25 @@ class RnaseqRxConfig(object):
         if not isinstance(fq1, list):
             raise ValueError('fq1 require list, got {}'.format(
                 type(fq1).__name__))
-#         if not isinstance(fq2, list):
-#             raise ValueError('fq2 require list, got {}'.format(
-#                 type(fq2).__name__))
         # check message
         c1 = isinstance(fq1, list)
         c2 = isinstance(fq2, list)
         c1e = all(file_exists(fq1))
+        c1x = all([c1, c1e])
         if c1:
             if isinstance(fq2, list):
                 c2e = all(file_exists(fq2))
                 c2p = all(check_fx_paired(fq1, fq2))
-            else:
+                c2x = all([c2, c2e, c2p])
+            elif fq2 is None:
                 fq2 = None
-                c2 = c2e = c2p = True
+                c2x = c2p = c2e = True # skipped
+            else:
+                c2x = c2e = c2p = False # force                
         else:
-            c2p = False
+            c1x = c2x = c2e = c2p = False # force
         # final
-        c = all([c1, c2, c1e, c2e, c2p])
+        c = all([c1x, c2x])
         if not c:
             msg = '\n'.join([
                 '='*80,
@@ -208,7 +211,7 @@ class RnaseqRxConfig(object):
             ])
             print(msg)
             raise ValueError('fq1, fq2 not valid')
-        return (file_abspath(fq1), file_abspath(fq2))
+        return (file_abspath(fq1), file_abspath(fq2), c2p)
                 
     
     # update: genome_size_file    

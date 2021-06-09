@@ -29,13 +29,14 @@ BAM:
 import os
 import sys
 import re
+import tempfile
 import pathlib
 import numpy as np
 import pysam
 import pybedtools
 from shutil import which
 from hiseq.utils.utils import log, update_obj, get_date, Config, run_shell_cmd
-from hiseq.utils.file import check_path, file_exists, file_abspath, \
+from hiseq.utils.file import check_path, check_file, file_exists, file_abspath, \
     file_prefix, read_lines
 
 
@@ -118,14 +119,19 @@ class Bam(object):
             outfile = os.path.splitext(self.bam)[0] + '.rmdup.bam'
         sambamba = which('sambamba')
         log_stderr = outfile + '.sambamba.log'
-        cmd = '{} markdup -r -t {} --overflow-list-size 800000 \
-            --tmpdir="./" {} {} 2> {}'.format(
-            sambamba,
-            str(self.threads),
-            self.bam,
-            outfile,
-            log_stderr)
-        if os.path.exists(outfile) and overwrite is False:
+        cmd = ' '.join([
+            '{} markdup -r'.format(which('sambamba')),
+            '-t {}'.format(2), #!! force to 2
+            '--overflow-list-size 800000',
+            '--tmpdir={}'.format(tempfile.TemporaryDirectory().name),
+            '{} {} 2> {}'.format(self.bam, outfile, log_stderr),
+        ])
+        # save cmd
+        cmd_txt = outfile.replace('.bam', '.cmd.sh')
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd+'\n')
+        # if os.path.exists(outfile) and overwrite is False:
+        if check_file(outfile, check_empty=True) and not overwrite:
             log.info('file exists: {}'.format(outfile))
         else:
             run_shell_cmd(cmd)

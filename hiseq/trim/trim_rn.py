@@ -80,7 +80,11 @@ class TrimRn(object):
         if self.outdir is None:
             self.outdir = str(pathlib.Path.cwd())
         self.outdir = file_abspath(os.path.expanduser(self.outdir))
-        if self.smp_name is None or not len(self.fq1) == len(self.smp_name):
+        # init smp_name
+        # if self.smp_name is None or not len(self.fq1) == len(self.smp_name):
+        if isinstance(self.smp_name, list) and len(self.fq1) == len(self.smp_name):
+            pass
+        else:
             self.smp_name = fx_name(self.fq1, fix_pe=self.is_paired)
         self.init_files()
         self.init_fq()

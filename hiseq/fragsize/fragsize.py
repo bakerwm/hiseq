@@ -61,6 +61,12 @@ class BamFragSize(object):
         else:
             raise ValueError('bam, str or list expected, got {}'.format(
                 type(self.bam).__name__))
+        if isinstance(self.labels, str):
+            self.labels = [self.labels]
+        elif isinstance(self.labels, list):
+            pass
+        else:
+            self.labels = None
         # outdir
         if not isinstance(self.outdir, str):
             self.outdir = str(pathlib.Path.cwd())
@@ -154,7 +160,7 @@ class BamFragSizeR1(object):
         Check the strandness, default: [False]
 
     csv_file: str
-        File to save the results
+        File to save the results, in csv format
 
     sample size = 1000 (SE or PE)
 

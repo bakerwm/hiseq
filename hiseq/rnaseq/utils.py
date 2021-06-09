@@ -256,7 +256,7 @@ def rnaseq_trim(x, hiseq_type='rnaseq_r1'):
             'fq2': fq2,
             'outdir': a.clean_dir,
             'len_min': 20,
-            'cut_after_trim': '9,-9',
+            'cut_after_trim': '9,-9' if is_nsr else None,
             'keep_tmp': True,
             'parallel_jobs': 1 # do not allowed > 1 !!!!
         }
@@ -628,11 +628,11 @@ def rnaseq_deseq(x, hiseq_type='rx'):
     stderr = os.path.join(a.deseq_dir, 'deseq.stderr')
     cmd_shell = os.path.join(a.deseq_dir, 'cmd.sh')
     run_go = 1 if a.genome else 0
-    cmd = ' '.join({
+    cmd = ' '.join([
         'Rscript {}'.format(deseq_r),
         '{} {}'.format(x, run_go),
         '1> {} 2> {}'.format(stdout, stderr),
-    })
+    ])
     with open(cmd_shell, 'wt') as w:
         w.write(cmd + '\n')
     if file_exists(a.deseq_fix_xls) and not a.overwrite:
@@ -664,7 +664,7 @@ def qc_trim_summary(x, hiseq_type='r1'):
     # name, total, too_short, dup, too_short2, clean, percent
     
     output:
-    id, input, output, out_pct, rm_pct
+    name, input, output, out_pct, rm_pct
     """
     a = read_hiseq(x, hiseq_type) # for general usage
     if not a.is_hiseq:
@@ -691,7 +691,7 @@ def qc_align_summary(x, hiseq_type='r1'):
     Organize the alignment:
     
     output:
-    id, total, map, unique, multi, spikein, rRNA, unmap
+    name, total, map, unique, multi, spikein, rRNA, unmap
     """
     a = read_hiseq(x, hiseq_type) # for general usage
     if not a.is_hiseq:

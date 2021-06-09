@@ -4,9 +4,9 @@
 """
 ATAC-seq pipeline: level-1 (main port)
 
-mission-1: generate design.toml
+mission-1: generate design.yaml
 
-mission-2: run_pipe, parsing config from design.toml
+mission-2: run_pipe, parsing config from design.yaml
 """
 
 import os
@@ -35,6 +35,9 @@ class Atac(object):
             'outdir': None,
             'genome': None,
             'gene_bed': None,
+            'cut': False,
+            'cut_to_length': 0,
+            'recursive': False,
         }
         self = update_obj(self, args_init, force=False)
 
@@ -51,10 +54,10 @@ def get_args():
     """
     example = '\n'.join([
         'Examples:',
-        '1. Generate design.toml for fastq files',
-        '$ python atac.py -b -d design.toml',
-        '2. Run pipeline for design.toml, with different parameters',
-        '$ python atac.py -d design.toml -g dm6 -o results',
+        '1. Generate design.yaml for fastq files',
+        '$ python atac.py -b -d design.yaml',
+        '2. Run pipeline for design.yaml, with different parameters',
+        '$ python atac.py -d design.yaml -g dm6 -o results',
     ])
     parser = argparse.ArgumentParser(
         prog='atac',
@@ -63,9 +66,9 @@ def get_args():
         formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('-b', '--build-design', dest='build_design',
         action='store_true',
-        help='generate design.toml, with --fq-dir, or fq1/fq2')
+        help='generate design.yaml, with --fq-dir, or fq1/fq2')
     parser.add_argument('-d', '--design', required=True,
-        help='The file saving fastq files config. eg: design.toml')
+        help='The file saving fastq files config. eg: design.yaml')
     parser.add_argument('-r', '--fq-dir', dest='fq_dir',
         help='Path to the directory, contains fastq files, eg: _rep1_1.fq.gz')
     parser.add_argument('-1', '--fq1', nargs='+', required=False,
@@ -91,6 +94,8 @@ def get_args():
     parser.add_argument('--overwrite', action='store_true',
         help='if spcified, overwrite exists file')
 
+    parser.add_argument('--cut', action='store_true', 
+        help='Cut reads to 50nt, equal to: --cut-to-length 50 --recursive')
     parser.add_argument('--cut-to-length', dest='cut_to_length',
         default=0, type=int,
         help='cut reads to specific length from tail, default: [0]')
