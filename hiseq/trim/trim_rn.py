@@ -126,7 +126,7 @@ class TrimRn(object):
             'Status: {}'.format(c0),
             '='*80,
         ])
-        print(msg)
+        # print(msg)
         if not c0:
             raise ValueError('fq1, fq2 no valid')
         self.fq1 = file_abspath(self.fq1)
@@ -209,7 +209,7 @@ def get_args():
     parser.add_argument('-j', '--parallel-jobs', dest='parallel_jobs',
         default=1, type=int,
         help='Number of jobs run in parallel, default: [1]')
-    
+
     parser.add_argument('--overwrite', action='store_true',
         help='if spcified, overwrite exists file')
     ## global arguments
@@ -219,6 +219,8 @@ def get_args():
     parser.add_argument('-e', '--error-rate', default=0.1, type=float,
         dest='error_rate',
         help='Maximum allowed error rate, default [0.1]')
+    parser.add_argument('-O', '--overlap', type=int, default=3,
+        help='At least overlap between adapter and sequence, default: [3]')
     ## specific
     parser.add_argument('--rm-polyN', action='store_true',
         dest='rm_polyN',

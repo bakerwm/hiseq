@@ -423,6 +423,9 @@ def get_args():
     parser.add_argument('-e', '--error-rate', default=0.1, type=float,
         dest='error_rate',
         help='Maximum allowed error rate, default [0.1]')
+    parser.add_argument('-O', '--overlap', type=int, default=3,
+        help='At least overlap between adapter and sequence, default: [3]')
+    
     ## specific
     parser.add_argument('--rm-polyN', action='store_true',
         dest='rm_polyN',
