@@ -145,6 +145,7 @@ class RnaseqRnConfig(object):
         self.project_dir = os.path.join(self.outdir, self.project_name)
         self.config_dir = os.path.join(self.project_dir, 'config')
         default_dirs = {
+            'clean_dir': 'clean_data',
             'align_dir': 'align',
             'bam_dir': 'bam_files',
             'bw_dir': 'bw_files',
@@ -157,6 +158,7 @@ class RnaseqRnConfig(object):
             default_dirs[k] = os.path.join(self.project_dir, v)
         self = update_obj(self, default_dirs, force=True) # key
         # files
+        trim_prefix = os.path.join(self.clean_dir, self.smp_name)
         align_prefix = os.path.join(self.align_dir, self.smp_name)
         count_prefix = os.path.join(self.count_dir, self.smp_name)
         default_files = {
@@ -166,7 +168,16 @@ class RnaseqRnConfig(object):
             'bw': self.bw_dir + '/' + self.project_name + '.bigWig',
             'bw_fwd': self.bw_dir + '/' + self.project_name + '.fwd.bigWig',
             'bw_rev': self.bw_dir + '/' + self.project_name + '.rev.bigWig',
+            
+            # trimming
+            'trim_stat': trim_prefix+'.trim.stat',
+            'trim_json': trim_prefix+'.trim.json',
+            
+            # alignment
+            'align_scale_json': align_prefix+'.scale.json',
+            'align_stat': align_prefix+'.align.stat',
             'align_json': align_prefix+'.align.json',
+            'align_flagstat': align_prefix+'.align.flagstat',
             
             # quantification files
             'strandness_json': count_prefix+'.strandness.json',
@@ -186,7 +197,7 @@ class RnaseqRnConfig(object):
         }
         self = update_obj(self, default_files, force=True) # key
         check_path([
-            self.config_dir, self.align_dir, self.bam_dir, self.bw_dir,
+            self.config_dir, self.clean_dir, self.align_dir, self.bam_dir, self.bw_dir,
             self.count_dir, self.qc_dir, self.report_dir
         ])
 

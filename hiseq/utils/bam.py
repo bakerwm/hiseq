@@ -122,7 +122,7 @@ class Bam(object):
         cmd = ' '.join([
             '{} markdup -r'.format(which('sambamba')),
             '-t {}'.format(2), #!! force to 2
-            '--overflow-list-size 800000',
+            '--overflow-list-size 1000000',
             '--tmpdir={}'.format(tempfile.TemporaryDirectory().name),
             '{} {} 2> {}'.format(self.bam, outfile, log_stderr),
         ])

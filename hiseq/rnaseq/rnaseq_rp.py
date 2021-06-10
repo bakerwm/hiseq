@@ -41,7 +41,7 @@ class RnaseqRp(object):
         # check hiseq_dir
         a = read_hiseq(self.project_dir)
         if not a.is_hiseq:
-            raise ValueError('project_dir not hiseq_dir: {}'.format(self.x))
+            raise ValueError('project_dir not hiseq_dir: {}'.format(self.project_dir))
         # check default files
         self.hiseq_type = 'rnaseq_rp'
         self.report_dir = os.path.join(self.project_dir, 'report')

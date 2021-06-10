@@ -54,7 +54,7 @@ from collections import Counter
 
 
 
-def top_seq(x, n=3, revcmp=False):
+def top_seq(x, n=5, revcmp=False):
     """
     Top N seq in list
     """
