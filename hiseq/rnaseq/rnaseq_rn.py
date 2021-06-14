@@ -213,35 +213,42 @@ class RnaseqRnConfig(object):
                 type(self.fq1).__name__))
         # check message
         c1 = isinstance(self.fq1, list)
+        c1e = all(file_exists(self.fq1))
+        c1x = all([c1, c1e])
         if self.fq2 is None or self.fq2 == 'None':
             self.fq2 = None # convert 'None' -> None; from yaml
-            c2e = c2p = True
+            c2e = True
+            c2p = False # paired
+            c2x = True
         else:
-            c2e = isinstance(self.fq2, list)
+            c2 = isinstance(self.fq2, list)
+            c2e = all(file_exists(self.fq2))
             c2p = check_fx_paired(self.fq1, self.fq2)
-        if not all([c1, c2e, c2p]):
+            c2x = all([c2, c2e, c2p])
+        if not all([c1x, c2x]):
             msg = '\n'.join([
                 '='*80,
                 'Input',
                 '{:>14} : {}'.format('fq1', self.fq1),
                 '{:>14} : {}'.format('fq2', self.fq2),
                 '-'*40,
-                'Status',
-                '{:>14} : {}'.format('fq1 is str', c1),
-                '{:>14} : {}'.format('fq1 is str', c2e),
-                '{:>14} : {}'.format('fq1,fq2 paired', c2p),
+                '{:>14} : {}'.format('fq1 is list', c1),
+                '{:>14} : {}'.format('fq1 exists', c1e),
+                '{:>14} : {}'.format('fq2 is list', c2),
+                '{:>14} : {}'.format('fq2 is exists', c2e),
+                '{:>14} : {}'.format('fq is paired', c2p),
                 '-'*40,
-                'Output: {}'.format(all([c1, c2e, c2p])),
-                '='*80                
+                'Output: {}'.format(all([c1x, c2x])),
+                '='*80
             ])
             print(msg)
             raise ValueError('fq1, fq2 not valid')
         self.fq1 = file_abspath(self.fq1)
         self.fq2 = file_abspath(self.fq2)
+        self.is_paired = c2p
         # update rep_list
-        self.rep_list = [
-            os.path.join(self.outdir, i) for i in fx_name(self.fq1, fix_pe=True, fix_unmap=True)
-        ]
+        snames = fx_name(self.fq1, fix_pe=self.is_paired, fix_unmap=True)
+        self.rep_list = [os.path.join(self.outdir, i) for i in snames]
        
 
     # update: genome_size_file

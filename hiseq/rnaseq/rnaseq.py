@@ -11,7 +11,15 @@ mission-1: generate design.yaml
 
 mission-2: run_pipe, parsing config from design.yaml
 
-analysis-module:
+Run Salmon alone:
+outdir/salmon
+  - config
+  - index 
+  - quant
+  - deseq
+  - report
+  - ...
+  
 """
 
 import os
@@ -186,7 +194,9 @@ def get_args():
             'salmon'],
         help='Aligner option: [STAR, bowtie, bowtie2, bwa], default: [STAR]')
     
-    ## extra:
+    ## extra:    
+    parser.add_argument('--salmon-index', dest='salmon_index', required=False,
+        default=None,help='The path to salmon index')
     parser.add_argument('-bs', '--bin-size', default=10, type=int,
         help='bin size of the bigWig file, default [10]')
     parser.add_argument('-p', '--threads', default=1, type=int,

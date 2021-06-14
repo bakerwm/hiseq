@@ -45,13 +45,13 @@ class CnrRp(object):
         # check default files
         self.hiseq_type = 'cnr_rp'
         self.report_dir = os.path.join(self.project_dir, 'report')
-        self.config_toml = os.path.join(self.report_dir, 'config.toml')
+        self.config_yaml = os.path.join(self.report_dir, 'config.yaml')
         self.report_html = os.path.join(self.report_dir, 'HiSeq_report.html')
         self.report_stdout = os.path.join(self.report_dir, 'report.stdout')
         self.report_stderr = os.path.join(self.report_dir, 'report.stderr')
         check_path(self.report_dir)
         # save config
-        Config().dump(self.__dict__, self.config_toml)
+        Config().dump(self.__dict__, self.config_yaml)
 
 
     def report(self):

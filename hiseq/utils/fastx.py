@@ -15,6 +15,9 @@ from xopen import xopen
 import collections # Fastx().collapse()
 # from hiseq.utils.helper import *
 # from .utils import update_obj
+from hiseq.utils.utils import log, update_obj, run_shell_cmd
+from hiseq.utils.file import fx_name, check_path
+
 
 
 
@@ -755,7 +758,7 @@ class Fastx(object):
                 log.info('{} : {}'.format('Processed', counter))
         # overall
         df = pd.concat(frames, axis=0).groupby(['length']).sum().reset_index()
-        df['id'] = fq_name(self.input)
+        df['id'] = fx_name(self.input)
         # save to file
         if isinstance(csv_file, str):
             if os.path.exists(os.path.dirname(csv_file)):

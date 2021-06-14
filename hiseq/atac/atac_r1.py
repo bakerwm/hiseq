@@ -12,7 +12,8 @@ import sys
 from hiseq.atac.atac_rp import AtacRp
 from hiseq.atac.utils import atac_trim, atac_align_genome, \
     atac_align_spikein, atac_call_peak, atac_bam_to_bw, \
-    qc_trim_summary, qc_align_summary, qc_lendist, qc_frip, qc_tss_enrich, qc_genebody_enrich
+    qc_trim_summary, qc_align_summary, qc_lendist, qc_frip, \
+    qc_tss_enrich, qc_genebody_enrich
 from hiseq.utils.file import check_path, check_fx_paired, symlink_file, \
     file_abspath, file_prefix, fx_name, Genome
 from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \

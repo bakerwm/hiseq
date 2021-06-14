@@ -574,9 +574,40 @@ def rnaseq_bam2bw(x, hiseq_type='r1'):
     Bam2bw(**args).run()
 
     
+def rnaseq_deseq(x, hiseq_type='rx'):
+    """
+    DEseq analysis
+    Using DESeq2, edgeR, ...
+    """    
+    a = read_hiseq(x, 'rnaseq_rx')
+    if not a.is_hiseq:
+        log.error('rnaseq_deseq() skipped, not a rnaseq_rx dir: {}'.format(x))
+        return None
+    # prepare R commands
+    pkg_dir = os.path.dirname(hiseq.__file__)
+    deseq_r = os.path.join(pkg_dir, 'bin', 'run_rnaseq.R')
+    stdout = os.path.join(a.deseq_dir, 'deseq.stdout')
+    stderr = os.path.join(a.deseq_dir, 'deseq.stderr')
+    cmd_shell = os.path.join(a.deseq_dir, 'cmd.sh')
+    run_go = 1 if a.genome else 0
+    cmd = ' '.join([
+        'Rscript {}'.format(deseq_r),
+        '{} {}'.format(x, run_go),
+        '1> {} 2> {}'.format(stdout, stderr),
+    ])
+    with open(cmd_shell, 'wt') as w:
+        w.write(cmd + '\n')
+    if file_exists(a.deseq_fix_xls) and not a.overwrite:
+        log.info('rnaseq_deseq() skipped, file exists: {}'.format(
+            a.deseq_fix_xls))
+    else:
+        try:
+            run_shell_cmd(cmd)
+        except:
+            log.warning('DESeq2 failed.')
     
 
-def rnaseq_salmon(x, hiseq_type='r1'):
+def salmon_align(x, hiseq_type='r1'):
     """
     pseudo_align_dir: salmon.
     Quantification + DEanalysis 
@@ -611,10 +642,10 @@ def rnaseq_salmon(x, hiseq_type='r1'):
     args_local = args_init
     Align(**args_local).run()
 
-
-def rnaseq_deseq(x, hiseq_type='rx'):
+    
+def salmon_deseq(x, hiseq_type='rx'):
     """
-    DEseq analysis
+    DEseq analysis, for salmon output
     Using DESeq2, edgeR, ...
     """    
     a = read_hiseq(x, 'rnaseq_rx')
@@ -623,7 +654,7 @@ def rnaseq_deseq(x, hiseq_type='rx'):
         return None
     # prepare R commands
     pkg_dir = os.path.dirname(hiseq.__file__)
-    deseq_r = os.path.join(pkg_dir, 'bin', 'run_rnaseq.R')
+    deseq_r = os.path.join(pkg_dir, 'bin', 'run_salmon_deseq.R')
     stdout = os.path.join(a.deseq_dir, 'deseq.stdout')
     stderr = os.path.join(a.deseq_dir, 'deseq.stderr')
     cmd_shell = os.path.join(a.deseq_dir, 'cmd.sh')
@@ -631,26 +662,20 @@ def rnaseq_deseq(x, hiseq_type='rx'):
     cmd = ' '.join([
         'Rscript {}'.format(deseq_r),
         '{} {}'.format(x, run_go),
-        '1> {} 2> {}'.format(stdout, stderr),
+        '# 1> {} 2> {}'.format(stdout, stderr),
     ])
     with open(cmd_shell, 'wt') as w:
         w.write(cmd + '\n')
     if file_exists(a.deseq_fix_xls) and not a.overwrite:
-        log.info('rnaseq_deseq() skipped, file exists: {}'.format(
+        log.info('salmon_deseq() skipped, file exists: {}'.format(
             a.deseq_fix_xls))
     else:
         try:
             run_shell_cmd(cmd)
         except:
             log.warning('DESeq2 failed.')
+    
 
-    
-    
-    
-    
-    
-    
-    
 ################################################################################
 # quality control
 # 1. trim

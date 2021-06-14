@@ -2,8 +2,8 @@
 # -*- coding:utf-8 -*-
 
 """
-CnR-seq pipeline: level-2 (build design.toml)
-create design.toml
+CnR-seq pipeline: level-2 (build design.yaml)
+create design.yaml
 
 ip:
 ip_fq2:
@@ -22,7 +22,7 @@ from hiseq.utils.utils import log, update_obj, Config, get_date
 
 class CnrRd(object):
     """
-    Generate design.toml
+    Generate design.yaml
     format:
     ip:
     ip_fq2:
@@ -323,10 +323,10 @@ class CnrRd(object):
 def get_args():
     example = '\n'.join([
         'Examples:',
-        '1. Generate design.toml, with --fq-dir',
-        '$ python cnr_rd.py -d design.toml --fq-dir data/raw_data --ip K9 --input IgG',
-        '2. Generate design.toml, with -1 and -2',
-        '$ python cnr_rd.py -d design.toml -1 *1.fq.gz -2 *2.fq.gz',
+        '1. Generate design.yaml, with --fq-dir',
+        '$ python cnr_rd.py -d design.yaml --fq-dir data/raw_data --ip K9 --input IgG',
+        '2. Generate design.yaml, with -1 and -2',
+        '$ python cnr_rd.py -d design.yaml -1 *1.fq.gz -2 *2.fq.gz',
     ])
     parser = argparse.ArgumentParser(
         prog='cnr_rd',

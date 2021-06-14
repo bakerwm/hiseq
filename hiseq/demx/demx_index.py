@@ -278,7 +278,9 @@ class DemxIndex(object):
                 n += 1
                 if n%1e6 == 0:
                     log.info('Processed reads: {}'.format(n))
-                fq = '\n'.join(['@' + name + ' ' + comment, seq, '+', qual])                
+                if isinstance(comment, str):
+                    name += ' '+comment
+                fq = '\n'.join(['@' + name, seq, '+', qual])                
                 m = comment.split(':')[-1] # '2:N:0:ATCACGAT+AGATCTCG'
                 i = m.split('+')[0] if self.index_type == 'i7' else m.split('+')[1]
                 hit = self.match_index(i, self.idx, self.mismatch)
@@ -324,8 +326,12 @@ class DemxIndex(object):
                     log.info('Processed reads: {}'.format(n))
                 r1_name, r1_seq, r1_qual, r1_comment = r1
                 r2_name, r2_seq, r2_qual, r2_comment = r2
-                fq1 = '\n'.join(['@' + r1_name + ' ' + r1_comment, r1_seq, '+', r1_qual])
-                fq2 = '\n'.join(['@' + r2_name + ' ' + r2_comment, r2_seq, '+', r2_qual])
+                if isinstance(r1_comment, str):
+                    r1_name += ' '+r1_comment
+                if isinstance(r2_comment, str):
+                    r2_name += ' '+r2_comment
+                fq1 = '\n'.join(['@' + r1_name, r1_seq, '+', r1_qual])
+                fq2 = '\n'.join(['@' + r2_name, r2_seq, '+', r2_qual])
                 # check output
                 m1 = r1_comment.split(':')[-1] # '2:N:0:ATCACGAT+AGATCTCG'
                 i1 = m1.split('+')[0] if self.index_type == 'i7' else m1.split('+')[1]

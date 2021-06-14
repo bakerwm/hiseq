@@ -29,23 +29,25 @@ AlignR1()
   |- {bowtie2, bowtie, STAR, bwa, ...}
 """
 
+# import sys
+# import re
+# import shutil
+# import logging
+# import tempfile
+# import collections
+# import pandas as pd
+# from Levenshtein import distance
+
 import os
-import sys
-import re
-import pathlib
-import shutil
-import logging
-import tempfile
+from pathlib import Path # cwd
 import argparse
-import collections
-import pandas as pd
 from multiprocessing import Pool
-from Levenshtein import distance
 from hiseq.utils.seq import Fastx
 from hiseq.utils.utils import update_obj, Config, get_date, read_hiseq, \
     is_supported
 from hiseq.utils.file import check_path, file_abspath, file_prefix, \
-    symlink_file, list_dir, check_fx_args
+    file_exists, symlink_file, list_dir, check_fx_args, check_fx_paired, \
+    fx_name
 from hiseq.align.bowtie import Bowtie
 from hiseq.align.bowtie2 import Bowtie2
 from hiseq.align.star import Star
@@ -260,6 +262,7 @@ class AlignConfig(object):
             'fq2': None,
             'outdir': None,
             'smp_name': None,
+            'unique_only': False,
             'index_list': None,
             'extra_index': None,
             'genome': None,
@@ -267,6 +270,7 @@ class AlignConfig(object):
             'spikein': None,
             'spikein_index': None,
             'to_rRNA': False,
+            'rRNA_index': None,
             'to_chrM': False,
             'to_MT_trRNA': False,
             'threads': 1,
@@ -281,11 +285,66 @@ class AlignConfig(object):
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'alignment_rx' # force ?@!
         if self.outdir is None:
-            self.outdir = str(pathlib.Path.cwd())
+            self.outdir = str(Path.cwd())
         self.outdir = file_abspath(self.outdir)
-        self.init_fx()
+        self.init_fq()
         self.init_index()
         self.init_files()
+
+        
+    def init_fq(self):
+        # convert to list
+        if isinstance(self.fq1, str):
+            self.fq1 = [self.fq1]
+        if isinstance(self.fq2, str):
+            self.fq2 = [self.fq2]
+        if not isinstance(self.fq1, list):
+            raise ValueError('fq1 require list, got {}'.format(
+                type(self.fq1).__name__))
+        # check message
+        c1 = isinstance(self.fq1, list)
+        c1e = all(file_exists(self.fq1))
+        c1x = all([c1, c1e])
+        if self.fq2 is None or self.fq2 == 'None':
+            self.fq2 = None # convert 'None' -> None; from yaml
+            c2e = True
+            c2p = False # paired
+            c2x = True
+        else:
+            c2 = isinstance(self.fq2, list)
+            c2e = all(file_exists(self.fq2))
+            c2p = check_fx_paired(self.fq1, self.fq2)
+            c2x = all([c2, c2e, c2p])
+        if not all([c1x, c2x]):
+            msg = '\n'.join([
+                '='*80,
+                'Input',
+                '{:>14} : {}'.format('fq1', self.fq1),
+                '{:>14} : {}'.format('fq2', self.fq2),
+                '-'*40,
+                '{:>14} : {}'.format('fq1 is list', c1),
+                '{:>14} : {}'.format('fq1 exists', c1e),
+                '{:>14} : {}'.format('fq2 is list', c2),
+                '{:>14} : {}'.format('fq2 is exists', c2e),
+                '{:>14} : {}'.format('fq is paired', c2p),
+                '-'*40,
+                'Output: {}'.format(all([c1x, c2x])),
+                '='*80
+            ])
+            print(msg)
+            raise ValueError('fq1, fq2 not valid')
+        self.fq1 = file_abspath(self.fq1)
+        self.fq2 = file_abspath(self.fq2)
+        self.is_paired = c2p
+        # auto: sample names
+        snames = fx_name(self.fq1, fix_pe=self.is_paired, fix_unmap=True)
+        if isinstance(self.smp_name, list):
+            if len(self.smp_name) == len(self.fq1):
+                if all([isinstance(i, str) for i in self.smp_name]):
+                    snames = self.smp_name
+        self.smp_name = snames
+        # update rep_list
+        self.rep_list = [os.path.join(self.outdir, i) for i in self.smp_name]
 
 
     def init_fx(self):
@@ -321,8 +380,9 @@ class AlignConfig(object):
             raise ValueError('no index found')
         self.index_name = [AlignIndex(i).index_name() for i in self.index_list]
         # auto index_name, 01, 02, ...
-        self.index_name = ['{:02d}_{}'.format(i, n) for i,n in zip(
-            range(len(self.index_name)), self.index_name)]
+        if len(self.index_name) > 1:
+            self.index_name = ['{:02d}_{}'.format(i, n) for i,n in zip(
+                range(len(self.index_name)), self.index_name)]
 
 
     def init_files(self):
@@ -520,17 +580,34 @@ def get_args():
                         help='Fasta/q file, read2 of PE, or SE read, optional')
     parser.add_argument('-o', '--outdir', default=None,
                         help='Directory saving results, default: [cwd]')
+    parser.add_argument('-n', '--smp-name', nargs='+', dest='smp_name', default=None, 
+                        help='The name of the sample')
+
+    # index
+    parser.add_argument('--index-list', dest="index_list", nargs='+',
+        help='A list of index')
+    parser.add_argument('-x', '--extra-index', dest="extra_index",
+        help='Provide alignment index(es) for alignment, support multiple\
+        indexes. if specified, ignore -g, -k')
     parser.add_argument('-g', '--genome', default=None, 
                         help='The name of the genome, [dm6, hg38, mm10]')
-    parser.add_argument('-x', '--genome-index', default=None,
-                        help='The path to the alignment index')
-    parser.add_argument('-n', '--smp-name', nargs='+', default=None, 
-                        dest='smp_name',
-                        help='The name of the sample')
-    parser.add_argument('--spikein', default=None, type=str,
-                        help='The genome name of spikein, default: None')
-    parser.add_argument('--spikein-index', default=None, dest='spikein_index',
-                        help='The alignment index of spikein, default: [None]')
+    parser.add_argument('--genome-index', dest="genome_index", default=None,
+        help='align index of genome')
+    parser.add_argument('-k', '--spikein', default=None,
+        choices=[None, 'dm3', 'hg19', 'hg38', 'mm10'],
+        help='Spike-in genome : dm3, hg19, hg38, mm10, default: None')
+    parser.add_argument('--spikein-index', dest="spikein_index", default=None,
+        help='align index of spikein')    
+    parser.add_argument('--to-rRNA', dest='to_rRNA', action='store_true',
+        help='Align to rRNA')
+    parser.add_argument('--rRNA-index', dest="rRNA_index", default=None,
+        help='align index of rRNA')   
+    parser.add_argument('--to-chrM', action='store_true', dest='to_chrM',
+                        help='Align reads to mitochromosome first')
+    parser.add_argument('--to-MT-trRNA', action='store_true', dest='to_MT_trRNA',
+                        help='Align reads to chrM, tRNA and rRNAs first')    
+    
+    # extra para
     parser.add_argument('-p', '--threads', default=1, type=int,
                         help='Number of threads, default: [1]')
     parser.add_argument('-j', '--parallel-jobs', default=1, type=int,
@@ -549,12 +626,6 @@ def get_args():
                         help='Clean temp files')
     parser.add_argument('-X', '--extra-para', dest='extra_para', default=None,
                         help='Add extra parameters, eg: "-X 2000"')
-    parser.add_argument('--to-rRNA', action='store_true', dest='to_rRNA', 
-                        help='Align reads to rRNA first')
-    parser.add_argument('--to-chrM', action='store_true', dest='to_chrM',
-                        help='Align reads to mitochromosome first')
-    parser.add_argument('--to-MT-trRNA', action='store_true', dest='to_MT_trRNA',
-                        help='Align reads to chrM, tRNA and rRNAs first')
     parser.add_argument('--verbose', action='store_true', 
                         help='Show message in details')
     return parser

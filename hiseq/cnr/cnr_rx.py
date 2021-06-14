@@ -5,7 +5,7 @@
 CnR pipeline: level-2 (: rx; ip vs IgG)
 
 # or without IgG => ATACseq pipe
-loading fastq config from `design.toml`, run pipeline, with specific parameters
+loading fastq config from `design.yaml`, run pipeline, with specific parameters
 
 analysis-module:
 """
@@ -20,10 +20,10 @@ from hiseq.utils.file import check_path, symlink_file, file_abspath, \
     file_prefix, file_exists, check_fx_paired, fx_name, Genome
 from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \
     print_dict, read_hiseq, find_longest_common_str
-from hiseq.cnr.utils import cnr_merge_bam, cal_norm_scale, \
-    cnr_bam_to_bw, cnr_call_peak, qc_lendist, qc_frip, qc_bam_cor, \
-    qc_peak_idr, qc_peak_overlap, qc_bam_fingerprint, qc_tss_enrich, \
-    qc_genebody_enrich, cnr_bw_compare
+from hiseq.cnr.utils import cnr_bam_to_bw, cnr_call_peak, cnr_merge_bam, \
+    qc_lendist, qc_frip, \
+    qc_bam_cor, qc_peak_idr, qc_peak_overlap, qc_bam_fingerprint, \
+    qc_tss_enrich, qc_genebody_enrich, cnr_bw_compare
 
 
 class CnrRx(object):
@@ -70,12 +70,12 @@ class CnrRx(object):
     def prepare_files(self):
         # ip - bam,bw
         ra = read_hiseq(self.ip_dir, 'rn')
-        symlink_file(ra.bam_rmdup, self.ip_bam)
+        symlink_file(ra.bam, self.ip_bam)
         symlink_file(ra.bw, self.ip_bw)
         # input - bam,bw
         rb = read_hiseq(self.input_dir, 'rn')
         if rb.is_hiseq:
-            symlink_file(rb.bam_rmdup, self.input_bam)
+            symlink_file(rb.bam, self.input_bam)
             symlink_file(rb.bw, self.input_bw)
     
     
@@ -114,7 +114,7 @@ class CnrRx(object):
             
     def run(self):
         # 1. save config
-        Config().dump(self.__dict__, self.config_toml)
+        Config().dump(self.__dict__, self.config_yaml)
         # 2. run CnrRn
         self.run_rn()
         # 3. run CnrRx
@@ -170,11 +170,21 @@ class CnrRxConfig(object):
         self.outdir = file_abspath(self.outdir)
         self.threads, self.parallel_jobs = init_cpu(self.threads,
             self.parallel_jobs)
+        self.init_cut()
         self.init_fx()
         self.init_index()
         self.init_name()
         self.init_files()
 
+
+    def init_cut(self):
+        """
+        Cut the reads to specific length
+        """
+        if self.cut:
+            self.cut_to_length = 50
+            self.recursive = True
+        
 
     def init_fx(self):
         """
@@ -258,7 +268,7 @@ class CnrRxConfig(object):
         self = update_obj(self, default_dirs, force=True) # key
         # files
         default_files = {
-            'config_toml': self.config_dir + '/config.toml', # updated
+            'config_yaml': self.config_dir + '/config.yaml', # updated
             'report_log': self.report_dir + '/report.log',
             'report_html': self.report_dir + '/HiSeq_report.html',
             # symlinks - bam
@@ -268,8 +278,9 @@ class CnrRxConfig(object):
             'ip_bw': self.bw_dir + '/' + self.ip_name + '.bigWig',
             'input_bw': self.bw_dir + '/' + self.input_name + '.bigWig',
             # ip over input
+            'bam_raw': self.bam_dir + '/' + self.smp_name + '.raw.bam',
             'bam': self.bam_dir + '/' + self.project_name + '.bam',
-            'bam_rmdup': self.bam_dir + '/' + self.smp_name + '.rmdup.bam',
+            #'bam_rmdup': self.bam_dir + '/' + self.smp_name + '.rmdup.bam',
             'bg': self.bg_dir + '/' + self.project_name + '.bedGraph',
             'bw': self.bw_dir + '/' + self.project_name + '.bigWig',
             'peak': self.peak_dir + '/' + self.project_name + '_peaks.narrowPeak',
@@ -315,10 +326,10 @@ def get_args():
     """
     example = '\n'.join([
         'Examples:',
-        '1. Run pipeline for design.toml, with different parameters',
-        '$ python cnr_rx.py -d design.toml -g dm6 -o results',
+        '1. Run pipeline for design.yaml, with different parameters',
+        '$ python cnr_rx.py -d design.yaml -g dm6 -o results',
         '2. Run pipeline with different parameters',
-        '$ python cnr_rx.py -d design.toml -g dm6 -o results --extra-index te',
+        '$ python cnr_rx.py -d design.yaml -g dm6 -o results --extra-index te',
     ])
     parser = argparse.ArgumentParser(
         prog='cnr_rx',
@@ -334,6 +345,10 @@ def get_args():
         help='Provide alignment index (bowtie2)')
     parser.add_argument('--gene-bed', dest='gene_bed', default=None,
         help='The BED or GTF of genes, for TSS enrichment analysis')
+    parser.add_argument('--trimmed', action='store_true',
+        help='specify if input files are trimmed')
+    parser.add_argument('--cut', action='store_true', 
+        help='Cut reads to 50nt, equal to: --cut-to-length 50 --recursive')
 
     # optional arguments - 1
     parser.add_argument('-p', '--threads', default=1, type=int,
@@ -347,8 +362,6 @@ def get_args():
     parser.add_argument('--cut-to-length', dest='cut_to_length',
         default=0, type=int,
         help='cut reads to specific length from tail, default: [0]')
-    parser.add_argument('--trimmed', action='store_true',
-        help='specify if input files are trimmed')
     parser.add_argument('--recursive', action='store_true',
         help='trim adapter recursively')
     return parser

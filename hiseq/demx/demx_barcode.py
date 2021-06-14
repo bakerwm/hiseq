@@ -308,7 +308,9 @@ class DemxBarcode(object):
                 n += 1
                 if n%1e6 == 0:
                     log.info('Processed reads: {}'.format(n))
-                fq = '\n'.join(['@' + name + ' ' + comment, seq, '+', qual])
+                if isinstance(comment, str):
+                    name += ' '+comment
+                fq = '\n'.join(['@' + name, seq, '+', qual])
                 i = seq[bl:(bl+bw)] # left:(left+width)
                 hit = self.match_index(i, self.idx, self.mismatch)
                 if hit is None:
@@ -353,8 +355,12 @@ class DemxBarcode(object):
                     log.info('Processed reads: {}'.format(n))
                 r1_name, r1_seq, r1_qual, r1_comment = r1
                 r2_name, r2_seq, r2_qual, r2_comment = r2
-                fq1 = '\n'.join(['@' + r1_name + ' ' + r1_comment, r1_seq, '+', r1_qual])
-                fq2 = '\n'.join(['@' + r2_name + ' ' + r2_comment, r2_seq, '+', r2_qual])
+                if isinstance(r1_comment, str):
+                    r1_name += ' '+r1_comment
+                if isinstance(r2_comment, str):
+                    r2_name += ' '+r2_comment
+                fq1 = '\n'.join(['@' + r1_name, r1_seq, '+', r1_qual])
+                fq2 = '\n'.join(['@' + r2_name, r2_seq, '+', r2_qual])
                 # check output
                 seq = r2_seq if self.in_read2 else r1_seq
                 i = seq[bl:(bl+bw)] # left:(left+width)

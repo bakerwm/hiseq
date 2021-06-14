@@ -156,6 +156,10 @@ def get_args():
         help='Provide alignment index (bowtie2)')
     parser.add_argument('--gene-bed', dest='gene_bed', default=None,
         help='The BED or GTF of genes, for TSS enrichment analysis')
+    parser.add_argument('--trimmed', action='store_true',
+        help='specify if input files are trimmed')
+    parser.add_argument('--cut', action='store_true', 
+        help='Cut reads to 50nt, equal to: --cut-to-length 50 --recursive')
 
     # optional arguments - 1
     parser.add_argument('-p', '--threads', default=1, type=int,
@@ -166,13 +170,9 @@ def get_args():
     parser.add_argument('--overwrite', action='store_true',
         help='if spcified, overwrite exists file')
 
-    parser.add_argument('--cut', action='store_true', 
-        help='Cut reads to 50nt, equal to: --cut-to-length 50 --recursive')
     parser.add_argument('--cut-to-length', dest='cut_to_length',
         default=0, type=int,
         help='cut reads to specific length from tail, default: [0]')
-    parser.add_argument('--trimmed', action='store_true',
-        help='specify if input files are trimmed')
     parser.add_argument('--recursive', action='store_true',
         help='trim adapter recursively')
     return parser

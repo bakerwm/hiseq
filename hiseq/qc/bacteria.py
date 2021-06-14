@@ -42,12 +42,17 @@ from multiprocessing import Pool
 from shutil import which
 import pandas as pd
 import hiseq
+from hiseq.trim.trim_r1 import TrimR1
+from hiseq.utils.fastx import Fastx
 from hiseq.utils.utils import update_obj, log, Config, run_shell_cmd
-from hiseq.utils.file import file_exists, check_path, file_abspath, fx_name, file_prefix, check_fx
+from hiseq.utils.file import file_exists, check_path, file_abspath, fx_name, \
+    file_prefix, check_fx, symlink_file
 
 
 class Kraken2(object):
     """Run taxonomic classification using program kraken2. (version 2.0.7-beta)
+    ## extra: remove adapters first
+    
     $ kraken2 --db <path-to-db> 
     mission:
 
@@ -88,6 +93,8 @@ class Kraken2(object):
             'parallel_jobs': 1,
             'save_out': False,
             'unmap_file': None,
+            'trimmed': False,
+            'sub_sample': 0,
             'overwrite': False,
         }
         self = update_obj(self, args_init, force=False)
@@ -102,7 +109,11 @@ class Kraken2(object):
             raise ValueError('fx not exists: {}'.format(self.fq))
         if not isinstance(self.outdir, str):
             self.outdir = str(pathlib.Path.cwd())
-        check_path(self.outdir)
+        # clean dir
+        self.clean_dir = os.path.join(self.outdir, 'clean_data')
+        self.subset_dir = os.path.join(self.clean_dir, '01_subset')
+        self.trim_dir = os.path.join(self.clean_dir, '02_trim_ad')
+        check_path([self.subset_dir, self.trim_dir])
         # args
         self.init_kraken2()
         self.init_kraken2_db()
@@ -412,6 +423,26 @@ class Kraken2(object):
         output = os.path.join(self.outdir, prefix+'.kraken2.out')
         stat = os.path.join(self.outdir, prefix+'.kraken2.stat')
         cmd_file = os.path.join(self.outdir, prefix+'.kraken2.cmd.sh')
+        # output files
+        sub_fx = os.path.join(self.subset_dir, os.path.basename(fx))
+        trimmed_fx = os.path.join(self.trim_dir, os.path.basename(fx))
+        # subsample the reads
+        if self.sub_sample > 0:
+            Fastx(fx).sample(out=sub_fx, n=self.sub_sample)
+        else:
+            symlink_file(fx, sub_fx)
+        # update fx, trim adapters
+        if self.trimmed:
+            symlink_file(sub_fx, trimmed_fx)
+        else:
+            args_trim = {
+                'fq1': sub_fx,
+                'outdir': self.trim_dir,
+                'threads': self.threads,
+            }
+            t = TrimR1(**args_trim)
+            t.run()
+            symlink_file(t.clean_fq1, trimmed_fx)
         # args
         args_zip = '--gzip-compressed' if fx.endswith('.gz') else \
             '--bzip2-compressed' if fx.endswith('.bz2') else ''
@@ -495,6 +526,11 @@ def get_args():
         current directory)')
     parser.add_argument('--db', dest='kraken2_db', required=True, 
         help='Path to Kraken2 database')
+    parser.add_argument('--trimmed', action='store_true',
+        help='The input file was trimmed')
+    parser.add_argument('--sub-sample', dest='sub_sample', type=int, 
+        default=0,
+        help='Sub sample the input fastq, default: [0], total reads')
     parser.add_argument('--top-n', default=10, type=int, dest='topN',
         help='Show topN species. (default: 10)')
     parser.add_argument('--save-out', dest='save_out', action='store_true',

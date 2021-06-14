@@ -102,7 +102,7 @@ class CallPeak(object):
 
     def init_files(self):
         default_files = {
-            'config_toml': self.outdir + '/config.toml',
+            'config_yaml': self.outdir + '/config.yaml',
             'macs2_peak': self.outdir + '/' + self.prefix + '_peaks.narrowPeak',
             'macs2_stdout': self.outdir + '/' + self.prefix + '.macs2.stdout',
             'macs2_stderr': self.outdir + '/' + self.prefix + '.macs2.stderr',
@@ -256,12 +256,12 @@ class CallPeak(object):
 
 
     def run(self):
-        Config().dump(self.__dict__, self.config_toml)
+        Config().dump(self.__dict__, self.config_yaml)
         msg = '\n'.join([
             '-'*80,
             '{:>14s} : {}'.format('Date', get_date()),
             '{:>14s} : {}'.format('program', 'hiseq.cnr.CallPeak'),
-            '{:>14s} : {}'.format('config', self.config_toml),
+            '{:>14s} : {}'.format('config', self.config_yaml),
             '{:>14s} : {}'.format('peakcaller', self.method),
             '{:>14s} : {}'.format('genome', self.genome),
             '{:>14s} : {}'.format('outdir', self.outdir),

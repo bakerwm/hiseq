@@ -15,10 +15,11 @@ import argparse
 from multiprocessing import Pool
 from hiseq.cnr.cnr_r1 import CnrR1
 from hiseq.cnr.cnr_rp import CnrRp
-from hiseq.cnr.utils import cnr_merge_bam, cal_norm_scale, \
-    cnr_bam_to_bw, cnr_call_peak, qc_lendist, qc_frip, qc_bam_cor, \
-    qc_peak_idr, qc_peak_overlap, qc_bam_fingerprint, qc_tss_enrich, \
-    qc_genebody_enrich    
+from hiseq.cnr.utils import cnr_trim, cnr_align_genome, cnr_merge_bam, \
+    cnr_align_spikein, cnr_call_peak, cnr_bam_to_bw, \
+    qc_trim_summary, qc_align_summary, qc_lendist, qc_frip, \
+    qc_bam_cor, qc_peak_idr, qc_tss_enrich, qc_genebody_enrich, \
+     qc_peak_overlap, qc_bam_fingerprint
 from hiseq.utils.file import check_path, check_fx_paired, symlink_file, \
     file_exists, file_abspath, file_prefix, fx_name, Genome
 from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \
@@ -41,7 +42,7 @@ class CnrRn(object):
 
 
     def init_files(self): # from rep_list
-        self.bam_list = list_hiseq_file(self.project_dir, 'bam_rmdup', 'r1')
+        self.bam_list = list_hiseq_file(self.project_dir, 'bam', 'r1')
         self.bw_list = list_hiseq_file(self.project_dir, 'bw', 'r1')
         self.peak_list = list_hiseq_file(self.project_dir, 'peak', 'r1')
 
@@ -67,8 +68,8 @@ class CnrRn(object):
     def run_pipe_r1(self): # for rep_list == 1
         log.warning('merge() skipped, Only 1 replicate detected')
         k_list = [
-            'bam', 'bam_rmdup', 'bw', 'peak', 'peak_seacr', 'peak_seacr_top001',
-            'align_scale_json', 'trim_stat_txt', 'align_json'
+            'bam', 'bw', 'peak', 'peak_seacr', 'peak_seacr_top001',
+            'align_scale_json', 'trim_json', 'align_json'
         ]
         # get the replist
         rep_dir = self.rep_list[0] # first one
@@ -83,7 +84,7 @@ class CnrRn(object):
         for f in rep_qc_files:
             symlink_file(f, self.qc_dir) # to qc_dir
         # update: bam index
-        Bam(self.bam_rmdup).index()
+        Bam(self.bam).index()
 
 
     def run_single_fx(self, i):
@@ -124,7 +125,7 @@ class CnrRn(object):
 
     def run(self):
         # 1. save config
-        Config().dump(self.__dict__, self.config_toml)
+        Config().dump(self.__dict__, self.config_yaml)
         # 2. run CnrR1
         self.run_multi_fx()
         # 3. run CnrRn, merge
@@ -172,6 +173,7 @@ class CnrRnConfig(object):
         if self.outdir is None:
             self.outdir = str(pathlib.Path.cwd())
         self.outdir = file_abspath(self.outdir)
+        self.init_cut()
         self.init_fx()
         self.init_files()
         self.init_index()
@@ -181,6 +183,15 @@ class CnrRnConfig(object):
             self.parallel_jobs)
 
 
+    def init_cut(self):
+        """
+        Cut the reads to specific length
+        """
+        if self.cut:
+            self.cut_to_length = 50
+            self.recursive = True
+        
+        
     def init_fx(self):
         """
         required:
@@ -247,27 +258,47 @@ class CnrRnConfig(object):
             default_dirs[k] = os.path.join(self.project_dir, v)
         self = update_obj(self, default_dirs, force=True) # key
         # files
+        trim_prefix = os.path.join(self.clean_dir, self.smp_name)
+        align_prefix = os.path.join(self.align_dir, self.smp_name)
+        spikein_prefix = os.path.join(self.spikein_dir, self.smp_name)
+        peak_prefix = os.path.join(self.peak_dir, self.smp_name)
         default_files = {
-            'config_toml': self.config_dir + '/config.toml', # updated
-            'report_log': self.report_dir + '/report.log',
-            'report_html': self.report_dir + '/HiSeq_report.html',
-
+            # basic files
+            'config_yaml': os.path.join(self.config_dir, 'config.yaml'),
+            'report_html': os.path.join(self.report_dir, 'HiSeq_report.html'),
+            'bam_raw': self.bam_dir + '/' + self.project_name + '.raw.bam',
             'bam': self.bam_dir + '/' + self.project_name + '.bam',
-            'bam_rmdup': self.bam_dir + '/' + self.smp_name + '.rmdup.bam',
-            'bam_proper_pair': self.bam_dir + '/' + self.smp_name + '.proper_pair.bam',
-            'bed': self.bam_dir + '/' + self.project_name + '.bed',
-            'bg': self.bg_dir + '/' + self.project_name + '.bedGraph',
             'bw': self.bw_dir + '/' + self.project_name + '.bigWig',
-            'peak': self.peak_dir + '/' + self.project_name + '_peaks.narrowPeak',
-            'peak_seacr': self.peak_dir + '/' + self.project_name + '.stringent.bed',
-            'peak_seacr_top001': self.peak_dir + '/' + self.project_name + '.top0.01.stringent.bed',
+            'bg': self.bg_dir + '/' + self.project_name + '.bedGraph',
+            'peak': peak_prefix+'_peaks.narrowPeak',
+            'peak_seacr': peak_prefix+'.stringent.bed',
+            'peak_seacr_top001': peak_prefix+'.top0.01.stringent.bed',
+            
+            # trimming
+            'trim_stat': trim_prefix+'.trim.stat',
+            'trim_json': trim_prefix+'.trim.json',
+            
+            # align files
+            'align_scale_json': align_prefix+'.scale.json',
+            'align_stat': align_prefix+'.align.stat',
+            'align_json': align_prefix+'.align.json',
+            'align_flagstat': align_prefix+'.align.flagstat',
 
+            # spikein files
+            'spikein_scale_json': spikein_prefix+'.scale.json',
+            'spikein_stat': spikein_prefix+'.align.stat',
+            'spikein_json': spikein_prefix+'.align.json',
+            'spikein_flagstat': spikein_prefix+'.align.flagstat',
             'align_scale_json': self.bam_dir + '/' + 'scale.json',
             'align_flagstat': self.align_dir + '/' + self.smp_name + '.flagstat',
             'align_stat': self.align_dir + '/' + self.smp_name + '.bowtie2.stat',
             'align_json': self.align_dir + '/' + self.smp_name + '.bowtie2.json',
             'align_summary_json': self.qc_dir + '/01.alignment_summary.json',
 
+            # qc files
+            'trim_summary_json':self.qc_dir +  '/00.trim_summary.json',
+            'align_summary_json': self.qc_dir + '/01.alignment_summary.json',
+            'lendist_csv': self.qc_dir + '/02.length_distribution.csv',
             'lendist_txt': self.qc_dir + '/02.length_distribution.txt',
             'lendist_pdf': self.qc_dir + '/02.length_distribution.pdf',
             'frip_json': self.qc_dir + '/03.FRiP.json',
@@ -326,6 +357,12 @@ def get_args():
         help='Provide alignment index (bowtie2)')
     parser.add_argument('--gene-bed', dest='gene_bed', default=None,
         help='The BED or GTF of genes, for TSS enrichment analysis')
+    parser.add_argument('--is-ip', dest='is_ip', action='store_true',
+        help='Is the IP sample')
+    parser.add_argument('--trimmed', action='store_true',
+        help='Skip trimming, input reads are already trimmed')
+    parser.add_argument('--cut', action='store_true', 
+        help='Cut reads to 50nt, equal to: --cut-to-length 50 --recursive')
 
     # optional arguments - 1
     parser.add_argument('-p', '--threads', default=1, type=int,
@@ -339,8 +376,6 @@ def get_args():
     parser.add_argument('--cut-to-length', dest='cut_to_length',
         default=0, type=int,
         help='cut reads to specific length from tail, default: [0]')
-    parser.add_argument('--trimmed', action='store_true',
-        help='specify if input files are trimmed')
     parser.add_argument('--recursive', action='store_true',
         help='trim adapter recursively')
     return parser

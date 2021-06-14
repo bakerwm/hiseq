@@ -56,8 +56,9 @@ import os
 import sys
 from hiseq.cnr.cnr_rp import CnrRp
 from hiseq.cnr.utils import cnr_trim, cnr_align_genome, \
-    cnr_align_spikein, cnr_call_peak, cal_norm_scale, cnr_bam_to_bw, \
-    qc_trim, qc_align, qc_lendist, qc_frip, qc_tss_enrich, qc_genebody_enrich
+    cnr_align_spikein, cnr_call_peak, cnr_bam_to_bw, \
+    qc_trim_summary, qc_align_summary, qc_lendist, qc_frip, \
+    qc_tss_enrich, qc_genebody_enrich
 from hiseq.utils.file import check_path, check_fx_paired, symlink_file, \
     file_abspath, file_prefix, fx_name, Genome
 from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \
@@ -74,7 +75,7 @@ class CnrR1(object):
     def init_args(self):
         args_local = CnrR1Config(**self.__dict__)
         self = update_obj(self, args_local.__dict__, force=True)
-        Config().dump(self.__dict__, self.config_toml)
+        Config().dump(self.__dict__, self.config_yaml)
 
 
     def run_pipe(self):
@@ -83,14 +84,16 @@ class CnrR1(object):
         symlink_file(self.fq1, raw_fq1, absolute_path=True)
         symlink_file(self.fq2, raw_fq2, absolute_path=True)
         cnr_trim(self.project_dir, '_r1')
+        if isinstance(self.spikein_index, str):
+            cnr_align_spikein(self.project_dir, '_r1')
         cnr_align_genome(self.project_dir, '_r1')
         cnr_call_peak(self.project_dir, '_r1')
         cnr_bam_to_bw(self.project_dir, '_r1')
         if isinstance(self.spikein_index, str):
             cnr_align_spikein(self.project_dir, '_r1')
         # qc
-        qc_trim(self.project_dir, '_r1')
-        qc_align(self.project_dir, '_r1')
+        qc_trim_summary(self.project_dir, '_r1')
+        qc_align_summary(self.project_dir, '_r1')
         qc_lendist(self.project_dir, '_r1')
         qc_frip(self.project_dir, '_r1')
         qc_tss_enrich(self.project_dir, '_r1')
@@ -148,6 +151,7 @@ class CnrR1Config(object):
         if self.outdir is None:
             self.outdir = str(pathlib.Path.cwd())
         self.outdir = file_abspath(self.outdir)
+        self.init_cut()
         self.init_fx()
         self.init_files()
         self.init_index()
@@ -155,6 +159,15 @@ class CnrR1Config(object):
         self.threads, self.parallel_jobs = init_cpu(
             self.threads,
             self.parallel_jobs)
+
+        
+    def init_cut(self):
+        """
+        Cut the reads to specific length
+        """
+        if self.cut:
+            self.cut_to_length = 50
+            self.recursive = True
 
 
     def init_fx(self):
@@ -225,8 +238,12 @@ class CnrR1Config(object):
             default_dirs[k] = os.path.join(self.project_dir, v)
         self = update_obj(self, default_dirs, force=True)
         # files
+        trim_prefix = os.path.join(self.clean_dir, self.smp_name)
+        spikein_prefix = os.path.join(self.spikein_dir, self.smp_name)
+        align_prefix = os.path.join(self.align_dir, self.smp_name)
+        peak_prefix = os.path.join(self.peak_dir, self.smp_name)
         default_files = {
-            'config_toml': self.config_dir + '/config.toml', # updated
+            'config_yaml': self.config_dir + '/config.yaml', # updated
             'report_log': self.report_dir + '/report.log',
             'report_html': self.report_dir + '/HiSeq_report.html',
             'raw_fq1': self.raw_dir + '/' + os.path.basename(self.fq1),
@@ -234,32 +251,43 @@ class CnrR1Config(object):
             'clean_fq1': self.clean_dir + '/' + os.path.basename(self.fq1),
             'clean_fq2': self.clean_dir + '/' + os.path.basename(self.fq2),
 
+            # basic files
+            'config_yaml': os.path.join(self.config_dir, 'config.yaml'),
+            'report_html': os.path.join(self.report_dir, 'HiSeq_report.html'),
+            'bam_raw': self.bam_dir + '/' + self.project_name + '.raw.bam',
             'bam': self.bam_dir + '/' + self.project_name + '.bam',
-            'bam_rmdup': self.bam_dir + '/' + self.smp_name + '.rmdup.bam',
-            'bam_proper_pair': self.bam_dir + '/' + self.smp_name + '.proper_pair.bam',
-            'bed': self.bam_dir + '/' + self.project_name + '.bed',
-            'bg': self.bg_dir + '/' + self.project_name + '.bedGraph',
             'bw': self.bw_dir + '/' + self.project_name + '.bigWig',
-            'peak': self.peak_dir + '/' + self.project_name + '_peaks.narrowPeak',
-            'peak_seacr': self.peak_dir + '/' + self.project_name + '.stringent.bed',
-            'peak_seacr_top001': self.peak_dir + '/' + self.project_name + '.top0.01.stringent.bed',
+            'peak': peak_prefix+'_peaks.narrowPeak',
+            'peak_seacr': peak_prefix+'.stringent.bed',
+            'peak_seacr_top001': peak_prefix+'.top0.01.stringent.bed',
 
-            'align_scale_json': self.bam_dir + '/scale.json',
-            'trim_stat_txt': self.clean_dir + '/' + self.project_name + '/' + self.project_name + '.trim.stat',
-            'trim_stat_json': self.clean_dir + '/' + self.project_name + '/' + self.project_name + '.trim.json',
-            'align_flagstat': self.align_dir + '/' + self.smp_name + '.flagstat',
-            'align_stat': self.align_dir + '/' + self.smp_name + '.align.stat',
-            'align_json': self.align_dir + '/' + self.smp_name + '.align.json',
-            'spikein_bam': self.spikein_dir + '/spikein.bam',
-            'spikein_scale_json': self.spikein_dir + '/scale.json',
-            'spikein_flagstat': self.spikein_dir + '/spikein.flagstat',
-            'spikein_stat': self.spikein_dir + '/spikein.align.stat',
-            'spikein_json': self.spikein_dir + '/spikein.align.json',
-
-            'trim_summary_json': self.qc_dir + '/00.trim_summary.json',
-            'align_summary_json': self.qc_dir + '/01.alignment_summary.json',
+            # trimming
+            'trim_stat': trim_prefix+'.trim.stat',
+            'trim_json': trim_prefix+'.trim.json',
+            
+            # align files (genome)
+            'align_scale_json': align_prefix+'.scale.json',
+            'align_stat': align_prefix+'.align.stat',
+            'align_json': align_prefix+'.align.json',
+            'align_flagstat': align_prefix+'.align.flagstat',
+            'unmap1': align_prefix+'.unmap.1.fastq',
+            'unmap2': align_prefix+'.unmap.2.fastq',
+            
+            # spikein files
+            'spikein_bam': spikein_prefix+'.bam',
+            'spikein_scale_json': spikein_prefix+'.scale.json',
+            'spikein_stat': spikein_prefix+'.align.stat',
+            'spikein_json': spikein_prefix+'.align.json',
+            'spikein_flagstat': spikein_prefix+'.align.flagstat',
+            'spikein_unmap1': spikein_prefix+'.unmap.1.fastq',
+            'spikein_unmap2': spikein_prefix+'.unmap.2.fastq',
+            
+            # qc
+            'trim_summary_json': os.path.join(self.qc_dir, '00.trim_summary.json'),
+            'align_summary_json': os.path.join(self.qc_dir, '01.alignment_summary.json'),
+            'lendist_csv': self.qc_dir + '/02.length_distribution.fragsize.csv',
             'lendist_txt': self.qc_dir + '/02.length_distribution.txt',
-            'lendist_pdf': self.qc_dir + '/02.length_distribution.pdf',
+            'lendist_pdf': self.qc_dir + '/02.length_distribution.fragsize.pdf',
             'frip_json': self.qc_dir + '/03.FRiP.json',
             'tss_enrich_matrix': self.qc_dir + '/04.tss_enrich.mat.gz',
             'tss_enrich_matrix_log': self.qc_dir + '/04.tss_enrich.log',
@@ -311,7 +339,13 @@ def get_args():
         help='Provide alignment index (bowtie2)')
     parser.add_argument('--gene-bed', dest='gene_bed', default=None,
         help='The BED or GTF of genes, for TSS enrichment analysis')
-
+    parser.add_argument('--is-ip', dest='is_ip', action='store_true',
+        help='Is the IP sample')
+    parser.add_argument('--trimmed', action='store_true',
+        help='Skip trimming, input reads are already trimmed')
+    parser.add_argument('--cut', action='store_true', 
+        help='Cut reads to 50nt, equal to: --cut-to-length 50 --recursive')
+    
     # optional arguments - 1
     parser.add_argument('-p', '--threads', default=1, type=int,
         help='Number of threads to launch, default [1]')
@@ -324,8 +358,6 @@ def get_args():
     parser.add_argument('--cut-to-length', dest='cut_to_length',
         default=0, type=int,
         help='cut reads to specific length from tail, default: [0]')
-    parser.add_argument('--trimmed', action='store_true',
-        help='specify if input files are trimmed')
     parser.add_argument('--recursive', action='store_true',
         help='trim adapter recursively')
     return parser

@@ -23,8 +23,9 @@ from hiseq.rnaseq.rnaseq_rn import RnaseqRn
 from hiseq.rnaseq.rnaseq_rp import RnaseqRp
 from hiseq.rnaseq.utils import rnaseq_trim, rnaseq_align_spikein, \
     rnaseq_align_rRNA, rnaseq_align_genome, rnaseq_quant, rnaseq_bam2bw, \
-    rnaseq_deseq, \
-    qc_trim_summary, qc_align_summary, qc_bam_cor, qc_genebody_enrich
+    rnaseq_deseq, qc_trim_summary, qc_align_summary, qc_bam_cor, \
+    qc_genebody_enrich  # , salmon_align, salmon_deseq
+from hiseq.rnaseq.rnaseq_salmon import RnaseqSalmon
 
 from hiseq.utils.file import check_path, check_fx_paired, symlink_file, \
     file_exists, file_abspath, file_prefix, fx_name, Genome
@@ -103,6 +104,26 @@ class RnaseqRx(object):
         qc_bam_cor(self.project_dir, 'rx')
         
         
+    def run_salmon(self):
+        """
+        Run RNAseq with Salmon+DESeq2
+        """
+        args = {
+            'mut_fq1': self.mut_fq1,
+            'mut_fq2': self.mut_fq2,
+            'wt_fq1': self.wt_fq1,
+            'wt_fq2': self.wt_fq2,
+            'extra_index': self.salmon_index,
+            'outdir': self.salmon_dir,
+            'threads': self.threads,
+            'genome': self.genome,
+        }
+        if AlignIndex(self.salmon_index).is_valid():
+            RnaseqSalmon(**args).run()
+        else:
+            log.warning('--salmon-index not valid, {}'.foramt(self.salmon_index))
+        
+        
     def run(self):
         # 1. save config
         Config().dump(self.__dict__, self.config_yaml)
@@ -113,7 +134,9 @@ class RnaseqRx(object):
         self.run_rx()
         # 4. generate report
         RnaseqRp(self.project_dir).run()
-
+        # 5. run salmon
+        self.run_salmon()
+        
 
 class RnaseqRxConfig(object):
     def __init__(self, **kwargs):
@@ -257,6 +280,7 @@ class RnaseqRxConfig(object):
             'enrich_dir': 'enrich',
             'qc_dir': 'qc',
             'report_dir': 'report',
+            'salmon_dir': 'salmon'
         }
         # convert to path
         for k, v in default_dirs.items():
@@ -325,13 +349,13 @@ def get_args():
     parser.add_argument('-m1', '--mut-fq1', nargs='+', required=True,
         dest='mut_fq1',
         help='read1 files, (or read1 of PE reads) of treatment/mutant samples')
-    parser.add_argument('-m2', '--mut-fq2', nargs='+', required=True,
+    parser.add_argument('-m2', '--mut-fq2', nargs='+', required=False,
         dest='mut_fq2',
         help='read2 files, (or read2 of PE reads) of treatment/mutant samples')
     parser.add_argument('-w1', '--wt-fq1', nargs='+', required=True,
         dest='wt_fq1',
         help='read1 files, (or read1 of PE reads) of control/wt samples')
-    parser.add_argument('-w2', '--wt-fq2', nargs='+', required=True,
+    parser.add_argument('-w2', '--wt-fq2', nargs='+', required=False,
         dest='wt_fq2',
         help='read2 files, (or read2 of PE reads) of control/wt samples')
     parser.add_argument('-o', '--outdir', default=None,
@@ -376,6 +400,9 @@ def get_args():
         choices=['STAR', 'bowtie', 'bowtie2', 'bwa', 'hisat2', 'kallisto',
             'salmon'],
         help='Aligner option: [STAR, bowtie, bowtie2, bwa], default: [STAR]')
+    parser.add_argument('--salmon-index', dest='salmon_index', required=False,
+        default=None,help='The path to salmon index')
+    
     ## extra:
     parser.add_argument('-bs', '--bin-size', default=10, type=int,
         help='bin size of the bigWig file, default [10]')

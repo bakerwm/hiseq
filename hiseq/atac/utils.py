@@ -401,6 +401,7 @@ def atac_call_peak(x, hiseq_type='_r1'):
         log.error('atac_call_peak(SEACR) failed, {}'.format(e))
 
 
+################################################################################
 # quality control #
 def atac_bam_to_bw(x, hiseq_type='_r1'):
     a = read_hiseq(x, hiseq_type) # for general usage

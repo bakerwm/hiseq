@@ -46,9 +46,9 @@ import shutil
 import pyfastx
 import hiseq
 from multiprocessing import Pool
+from hiseq.utils.fastx import Fastx
 from hiseq.utils.utils import update_obj, log, run_shell_cmd
 from hiseq.utils.file import fx_name, check_path, list_file, list_fx
-# from hiseq.utils.helper import update_obj, log, check_path, listfile, fq_name, run_shell_cmd
 from hiseq.demx.sample_sheet import HiSeqIndex # check index name/seq
 from collections import Counter
 
@@ -246,10 +246,14 @@ class HiSeqP7(object):
             'parallel_jobs': 1,
             'overwrite': False,
             'save_seq': False,
+            'sub_sample': 0,
+            'subdir': None,
             }
         self = update_obj(self, args_init, force=False)
         if not isinstance(self.outdir, str):
             self.outdir = str(pathlib.Path.cwd())
+        if not isinstance(self.subdir, str):
+            self.subdir = os.path.join(self.outdir, 'subset')
         self.fq_list = self.init_fq(self.fq)
 
 
@@ -288,7 +292,12 @@ class HiSeqP7(object):
                 msg = r.readlines()
             print(msg)
         else:
-            parse_i7(x, self.outdir, self.save_seq)
+            sub_fx = os.path.join(self.subdir, os.path.basename(x))
+            if self.sub_sample > 0:
+                Fastx(x).sample(out=sub_fx, n=self.sub_sample)
+            else:
+                symlink_file(x, sub_fx)
+            parse_i7(sub_fx, self.outdir, self.save_seq)
 
 
     def run_multi(self, x):
@@ -321,7 +330,7 @@ class HiSeqP7(object):
 
 
     def run(self):
-        check_path(self.outdir)
+        check_path(self.subdir)
         self.run_multi(self.fq_list)
         self.report()
 
@@ -336,6 +345,9 @@ def get_args():
     parser.add_argument('-s', '--save-seq', dest='save_seq', 
         action='store_true',
         help='Saving the barcode and index sequences')
+    parser.add_argument('--sub-sample', dest='sub_sample', type=int, 
+        default=0,
+        help='Sub sample the input fastq, default: [0], total reads')
     parser.add_argument('-j', '--parallel-jobs', default=1, type=int,
         dest='parallel_jobs',
         help='Number of jobs run in parallel, default: [1]')
