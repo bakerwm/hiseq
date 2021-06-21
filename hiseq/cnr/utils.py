@@ -347,7 +347,7 @@ def cnr_merge_bam(x, hiseq_type='_rn'):
     cmd = ' '.join([
         'samtools merge -',
         ' '.join(bam_list),
-        '| samtools sort -o {} -'.format(a.bam),
+        '| samtools sort -o {} -'.format(a.bam_raw),
         '&& samtools index {}'.format(a.bam_raw)])
     if not all(file_exists(bam_list)):
         raise ValueError('bam file not exists: {}'.format(bam_list))
@@ -956,7 +956,13 @@ def qc_peak_overlap(x, hiseq_type='rn', peak_type='r1'):
         log.info('qc_peak_overwrite() skipped, file exists')
     else:
         if all(file_exists(peak_list)):
-            BedOverlap(**args).run()
+            # takes too-long for peaks > 20k
+            n_peaks = [file_nrows(i) > 20000 for i in peak_list]
+            if all([i > 20000 for i in n_peaks]):
+                log.warning('qc_peak_overlap() skipped, too many peaks (>20000): [{}]'.format(
+                    '\,'.join(list(map(str, n_peaks)))))
+            else:
+                BedOverlap(**args).run()
         else:
             log.error('qc_peak_overwrite() failed, peak files not exists')
 

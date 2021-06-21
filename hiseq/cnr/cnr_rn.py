@@ -21,7 +21,7 @@ from hiseq.cnr.utils import cnr_trim, cnr_align_genome, cnr_merge_bam, \
     qc_bam_cor, qc_peak_idr, qc_tss_enrich, qc_genebody_enrich, \
      qc_peak_overlap, qc_bam_fingerprint
 from hiseq.utils.file import check_path, check_fx_paired, symlink_file, \
-    file_exists, file_abspath, file_prefix, fx_name, Genome
+    file_exists, file_abspath, file_prefix, fx_name, Genome, list_dir
 from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \
     read_hiseq, list_hiseq_file, run_shell_cmd
 from hiseq.utils.bam import Bam
@@ -77,10 +77,10 @@ class CnrRn(object):
             k_from = list_hiseq_file(rep_dir, k, 'r1')
             # k_to = list_hiseq_file(self.project_dir, k, 'rn')
             k_to = getattr(self, k)
-            symlink_file(k_from, k_to)
+            symlink_file(k_from[0], k_to)
         # copy all files in qc dir
         rep_qc_dir = list_hiseq_file(rep_dir, 'qc_dir', 'r1')
-        rep_qc_files = list_dir(rep_qc_dir, include_dir=True)
+        rep_qc_files = list_dir(rep_qc_dir[0], include_dir=True)
         for f in rep_qc_files:
             symlink_file(f, self.qc_dir) # to qc_dir
         # update: bam index
@@ -111,16 +111,16 @@ class CnrRn(object):
         })
         CnrR1(**args).run()
 
-
+            
     def run_multi_fx(self):
-        i_list = range(len(self.fq1)) # skip
-#         # in parallel
-#         if self.parallel_jobs > 1 and len(self.fq1) > 1:
-#             with Pool(processes=self.parallel_jobs) as pool:
-#                 pool.map(self.run_single_fx, i_list)
-#         else:
-        for i in i_list:
-            self.run_single_fx(i)
+        i_list = range(len(self.fq1))
+        # in parallel
+        if self.parallel_jobs > 1 and len(self.fq1) > 1:
+            with Pool(processes=self.parallel_jobs) as pool:
+                pool.map(self.run_single_fx, i_list)
+        else:
+            for i in i_list:
+                self.run_single_fx(i)
 
 
     def run(self):
@@ -165,6 +165,7 @@ class CnrRnConfig(object):
             'genome_size_file': 0,
             'keep_tmp': None,
             'trimmed': False,
+            'cut': False,
             'cut_to_length': 0,
             'recursive': False
         }

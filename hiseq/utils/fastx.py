@@ -660,7 +660,7 @@ class Fastx(object):
                     w.write('\n'.join(['>'+name, key]) + '\n')
 
 
-    def detect_adapter(self):
+    def detect_adapter(self, show_log=True):
         """
         Guess adapters, sampling the first 1000000 records
         TruSeq    AGATCGGAAGAGC
@@ -675,10 +675,9 @@ class Fastx(object):
             'nextera': 'CTGTCTCTTATA',
             'smallrna': 'TGGAATTCTCGG'
         }
-
         # count 
         d = {}
-        n_max = 1000000
+        n_max = 100000 # 100k reads
         n = 0
         with xopen(self.input) as r:
             for _, seq, _ in self.readfq(r):
@@ -693,21 +692,20 @@ class Fastx(object):
                 elif ad['smallrna'] in seq:
                     d['smallrna'] = d.get('smallrna', 0) + 1
                 else:
-                    continue
-
+                    d['unknown'] = d.get('unknown', 0) + 1
         # summary
         msg = '\n'.join([
             '{}\t{}\t{}\t{}\t{}'.format('Type', 'sequence', 'total', 'count', 'percent'),
-            '{}\t{}\t{}\t{}\t{:.2f}%'.format('TruSeq', ad['truseq'], n_max, d.get('truseq', 0), d.get('truseq', 0)/n_max * 100),
-            '{}\t{}\t{}\t{}\t{:.2f}%'.format('Nextera', ad['nextera'], n_max, d.get('nextera', 0), d.get('nextera', 0)/n_max * 100),
-            '{}\t{}\t{}\t{}\t{:.2f}%'.format('smallRNA', ad['smallrna'], n_max, d.get('smallrna', 0), d.get('smallrna', 0)/n_max * 100)
+            '{}\t{}\t{}\t{}\t{:.2f}%'.format('TruSeq', ad['truseq'], n_max, d.get('truseq', 0), d.get('truseq', 0)/n_max*100),
+            '{}\t{}\t{}\t{}\t{:.2f}%'.format('Nextera', ad['nextera'], n_max, d.get('nextera', 0), d.get('nextera', 0)/n_max*100),
+            '{}\t{}\t{}\t{}\t{:.2f}%'.format('smallRNA', ad['smallrna'], n_max, d.get('smallrna', 0), d.get('smallrna', 0)/n_max*100),
+            '{}\t{}\t{}\t{}\t{:.2f}%'.format('unknown', 'null', n_max, d.get('unknown', 0), d.get('unknown', 0)/n_max*100)
             ])
-
-        print(msg)
-
+        if show_log:
+            print(msg)
         # sort
-        ds = sorted(d.items(), key=lambda kv: kv[1])
-        dd = collections.OrderedDict(ds)
+        dd = dict(sorted(d.items(), key=lambda x: x[1], reverse=True))
+        # dd = collections.OrderedDict(ds)
         return dd
 
 

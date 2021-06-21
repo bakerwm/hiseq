@@ -48,7 +48,7 @@ import hiseq
 from multiprocessing import Pool
 from hiseq.utils.fastx import Fastx
 from hiseq.utils.utils import update_obj, log, run_shell_cmd
-from hiseq.utils.file import fx_name, check_path, list_file, list_fx
+from hiseq.utils.file import fx_name, check_path, list_file, list_fx, symlink_file
 from hiseq.demx.sample_sheet import HiSeqIndex # check index name/seq
 from collections import Counter
 

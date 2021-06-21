@@ -5,17 +5,15 @@
 
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) < 2){
-  print("Usage: Rscript atacseq_report.R <sample.dir> <out.dir>")
+if (length(args) < 1){
+  print("Usage: Rscript atacseq_report.R <prj.dir>")
   print("")
   print("Option:")
-  print("  sample.dir     The directory of HiSeq output")
-  print("     out.dir     The directory to save html file")
+  print("  sample.dir     The directory of hiseq p7 output")
   stop("arguments failed")
 }
 
 indir   <- args[1]
-outdir  <- args[2]
 
 library(hiseqr)
 library(dplyr)
@@ -24,6 +22,6 @@ library(ggthemes)
 library(ggrepel)
 library(patchwork)
 
-hiseqr::hiseq_p7_report(indir, outdir)
+hiseqr::hiseq_p7_report(indir)
 
 ## EOF

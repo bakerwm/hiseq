@@ -52,7 +52,7 @@ import Levenshtein as lev # distance
 import hiseq
 from hiseq.utils.utils import update_obj, log, Config, run_shell_cmd
 from hiseq.utils.file import check_file, check_path, file_abspath, \
-    list_file, fx_name, symlink_file, file_exists
+    list_file, list_fx, fx_name, symlink_file, file_exists
 from hiseq.utils.seq import Fastx
 from hiseq.demx.demx import Demx
 from hiseq.demx.demx_index import DemxIndex
@@ -120,9 +120,10 @@ class Demx2(object):
         self.datadir = file_abspath(self.datadir)
         self.sample_sheet = file_abspath(self.sample_sheet)
         # check input fastq files
-        f1 = list_file(self.datadir, '*.fq.gz', recursive=True)
-        f2 = list_file(self.datadir, '*.fastq.gz', recursive=True)
-        self.raw_fq_list = f1 + f2
+        self.raw_fq_list = list_fx(self.datadir, recursive=True)
+#         f1 = list_file(self.datadir, '*.fq.gz', recursive=True)
+#         f2 = list_file(self.datadir, '*.fastq.gz', recursive=True)
+#         self.raw_fq_list = f1 + f2
         if len(self.raw_fq_list) < 2:
             raise ValueError('no fastq files in: {}'.format(self.datadir))
         self.init_files()
@@ -139,7 +140,7 @@ class Demx2(object):
             dd.pop(i)
         Config().dump(dd, self.config_yaml)
 
-        
+
     def init_files(self):
         self.config_dir = os.path.join(self.outdir, 'config')
         self.config_yaml = os.path.join(self.config_dir, 'config.yaml')
@@ -219,15 +220,30 @@ class Demx2(object):
             suffix = '_1.fq.gz' if is_r1 else '_2.fq.gz'
             prefix = fx_name(fq, fix_pe=True)
             ###################################################################
+            # fix Index name: 
+            # TruSeq_Index[1-48]
+            # Next_Ad2.[1-24]
+            # P7_[1-8][AB]
+            #
             # Fix sample names: !!!!
             # fix for MGI, Next_Ad2.1 <- Next_Ad2-1_raw
             # fix for MGI, Next-Ad2.1 <- Next-Ad2_1_raw
-            prefix = re.sub('_raw$', '', prefix)
-            prefix = re.sub('TruSeq.Index', 'TruSeq_Index', prefix, flags=re.IGNORECASE)
-            prefix = re.sub('Next.Ad', 'Next_Ad', prefix, flags=re.IGNORECASE)
-            # prefix = re.sub('Next.Ad', 'Next_Ad', prefix)
-            prefix = re.sub('Ad2[^0-9]', 'Ad2.', prefix)
-            s_name = self.d_smp.get(prefix, None) # i7_index -> sample_name
+            p1 = re.compile('TruSeq.Index(\d+)', flags=re.IGNORECASE)
+            p2 = re.compile('Next.Ad2.(\d+)', flags=re.IGNORECASE)
+            p3 = re.compile('P7_([\d][AB])', flags=re.IGNORECASE)
+            m1 = p1.match(prefix)
+            m2 = p2.match(prefix)
+            m3 = p3.match(prefix)
+            if m1:
+                prefix = 'TruSeq_Index{}'.format(m1.group(1))
+            elif m2:
+                prefix = 'Next_Ad2.{}'.format(m2.group(1))
+            elif m3:
+                prefix = 'P7_{}'.format(m3.group(1))
+            else:
+                pass
+            # output filenames
+            s_name = self.d_smp.get(prefix, prefix)
             ###################################################################
             s_file = os.path.join(self.outdir, s_name+suffix) # target file
             if s_name and prefix in self.i7_ids:

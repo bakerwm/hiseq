@@ -94,7 +94,7 @@ class Kraken2(object):
             'save_out': False,
             'unmap_file': None,
             'trimmed': False,
-            'sub_sample': 0,
+            'n_max': 0,
             'overwrite': False,
         }
         self = update_obj(self, args_init, force=False)
@@ -427,8 +427,8 @@ class Kraken2(object):
         sub_fx = os.path.join(self.subset_dir, os.path.basename(fx))
         trimmed_fx = os.path.join(self.trim_dir, os.path.basename(fx))
         # subsample the reads
-        if self.sub_sample > 0:
-            Fastx(fx).sample(out=sub_fx, n=self.sub_sample)
+        if self.n_max > 0:
+            Fastx(fx).sample(out=sub_fx, n=self.n_max)
         else:
             symlink_file(fx, sub_fx)
         # update fx, trim adapters
@@ -528,9 +528,9 @@ def get_args():
         help='Path to Kraken2 database')
     parser.add_argument('--trimmed', action='store_true',
         help='The input file was trimmed')
-    parser.add_argument('--sub-sample', dest='sub_sample', type=int, 
+    parser.add_argument('-n', '--n-max', dest='n_max', type=int, 
         default=0,
-        help='Sub sample the input fastq, default: [0], total reads')
+        help='Maximum number of reads to process, default: [0], all reads')
     parser.add_argument('--top-n', default=10, type=int, dest='topN',
         help='Show topN species. (default: 10)')
     parser.add_argument('--save-out', dest='save_out', action='store_true',

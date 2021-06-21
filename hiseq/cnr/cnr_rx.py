@@ -160,6 +160,7 @@ class CnrRxConfig(object):
             'rmdup': True, # key
             'keep_tmp': None,
             'trimmed': False,
+            'cut': False,
             'cut_to_length': 0,
             'recursive': False
         }

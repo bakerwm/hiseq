@@ -265,8 +265,8 @@ class DemxIndex(object):
         if self.gzipped:
             f_files = [i+'.gz' for i in f_files]
         # check status
-        self.fn_toml = os.path.join(outdir, 'read_count.toml')
-        if os.path.exists(self.fn_toml):
+        self.fn_json = os.path.join(outdir, 'read_count.json')
+        if os.path.exists(self.fn_json):
             log.info('Skipped {}, read_count.json exists'.format(outdir))
             return f_files
         # open multiple files
@@ -290,7 +290,7 @@ class DemxIndex(object):
                 fw.write(fq+'\n')
                 fn[hit] = fn.get(hit, 0) + 1
         # save dict to json
-        Config().dump(fn, self.fn_toml)
+        Config().dump(fn, self.fn_json)
         return f_files
     
     
@@ -310,8 +310,8 @@ class DemxIndex(object):
             f1_files = [i+'.gz' for i in f1_files]
             f2_files = [i+'.gz' for i in f2_files]
         # check status
-        self.fn_toml = os.path.join(outdir, 'read_count.toml')
-        if os.path.exists(self.fn_toml):
+        self.fn_json = os.path.join(outdir, 'read_count.json')
+        if os.path.exists(self.fn_json):
             log.info('Skipped {}, read_count.json exists'.format(outdir))
             return (f1_files, f2_files)
         # open multiple files
@@ -349,7 +349,7 @@ class DemxIndex(object):
                 fw2.write(fq2 + '\n')
                 fn[hit] = fn.get(hit, 0) + 1
         # save dict to json
-        Config().dump(fn, self.fn_toml)
+        Config().dump(fn, self.fn_json)
         return (f1_files, f2_files)
 
     
@@ -357,7 +357,7 @@ class DemxIndex(object):
         """Organize the report
         name, count, pct, to_400M
         """
-        df = Config().load(self.fn_toml)
+        df = Config().load(self.fn_json)
         total = sum(df.values())
         scale = 4e8/total # to_400M
         i = 0

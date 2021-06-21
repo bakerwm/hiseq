@@ -343,6 +343,8 @@ class TrimR1(object):
         # save: 1.cutadapt log/stat; 2. save nodup log/stat; 3. save cut2 log/stat
         # remove: 1. cutadapt fq; 2. nodup fq; 3. cut2() fq;
         # save stat
+        if n_total < 1:
+            n_total = 1
         n_rm_too_short = n_total - n_cut1
         n_rm_rmdup = n_cut1 - n_rmdup
         n_rm_cut2 = n_rmdup - n_cut2
@@ -421,10 +423,15 @@ class TrimR1(object):
         # save: 1.cutadapt log/stat; 2. save nodup log/stat; 3. save cut2 log/stat
         # remove: 1. cutadapt fq; 2. nodup fq; 3. cut2() fq;
         # save stat
+        
         n_rm_too_short = n_total - n_cut1
         n_rm_rmdup = n_cut1 - n_rmdup
         n_rm_cut2 = n_rmdup - n_cut2
-        n_clean_pct = '{:.2f}'.format(n_cut2/n_total*100)
+        try:
+            n_clean_pct = '{:.2f}'.format(n_cut2/n_total*100)
+        except ZeroDivisionError as e:
+            log.error(e)
+            n_clean_pct = 0
         # header
         header = ['#name', 'total', 'too_short', 'dup', 'too_short2', 'clean', 'percent']
         s = [self.smp_name, n_total, n_rm_too_short, n_rm_rmdup, n_rm_cut2, n_cut2, 

@@ -517,7 +517,7 @@ if __name__ == '__main__':
 #                     else:
 #                         os.rename(q, q_new)
 #             # read count
-#             t = os.path.join(bc_dir, 'read_count.toml')
+#             t = os.path.join(bc_dir, 'read_count.json')
 #             try:
 #                 d = Config().load(t)
 #                 n_undemx += d.get('undemx', 0)
@@ -530,8 +530,8 @@ if __name__ == '__main__':
 #     ##############
 #     # all count  #
 #     ##############
-#     stat_toml = os.path.join(outdir, 'read_count.toml')
-#     Config().dump(q_size, stat_toml)
+#     stat_json = os.path.join(outdir, 'read_count.json')
+#     Config().dump(q_size, stat_json)
 #     # log, msg
 #     stat_report = os.path.join(outdir, 'report.txt')
 #     total = sum(q_size.values())

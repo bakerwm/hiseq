@@ -61,8 +61,10 @@ from hiseq.demx.demx2 import get_args as add_demx2_args
 from hiseq.qc.fastqc import Fastqc
 from hiseq.qc.fastqc import get_args as add_fastqc_args
 
-from hiseq.qc.parse_i7 import HiSeqP7
+# from hiseq.qc.parse_i7 import HiSeqP7
 from hiseq.qc.parse_i7 import get_args as add_p7_args
+from hiseq.qc.hiseq_lib import HiseqLib
+from hiseq.qc.hiseq_lib import get_args as add_p7_args
 
 from hiseq.qc.bacteria import Kraken2
 from hiseq.qc.bacteria import get_args as add_bacteria_args
@@ -283,8 +285,9 @@ class Hiseq(object):
         Check library structure: P7, barcode
         """
         args = self.init_args(add_p7_args())
-        HiSeqP7(**args).run()
-
+#         HiSeqP7(**args).run()
+        HiseqLib(**args).run()
+    
         
     def bacteria(self):
         """

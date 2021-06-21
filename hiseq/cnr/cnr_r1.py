@@ -142,6 +142,7 @@ class CnrR1Config(object):
             'genome_size_file': None,
             'keep_tmp': None,
             'trimmed': False,
+            'cut': False,
             'cut_to_length': 0,
             'recursive': False
         }
