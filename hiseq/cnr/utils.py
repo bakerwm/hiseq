@@ -28,12 +28,12 @@ from hiseq.utils.utils import log, update_obj, Config, get_date, \
     find_longest_common_str
 
 
-def atac_rn_norm_scale(x, hiseq_type='rn', by_spikein=False, norm=1000000):
+def cnr_rn_norm_scale(x, hiseq_type='rn', by_spikein=False, norm=1000000):
     """
     Parameters
     ---------
     x: str
-        The path to AtacRn() dir, hiseq_type=atac_rn
+        The path to CnrRn() dir, hiseq_type=cnr_rn
 
     cal the norm scale: combine rep_list
     1. spikein (total mapped, unique+multi)
@@ -41,7 +41,7 @@ def atac_rn_norm_scale(x, hiseq_type='rn', by_spikein=False, norm=1000000):
     """
     a = read_hiseq(x, hiseq_type) # for general usage
     if not a.is_hiseq:
-        log.error('atac_r1_norm_scale() skipped, not a atac_rn dir: {}'.format(x))
+        log.error('cnr_r1_norm_scale() skipped, not a cnr_rn dir: {}'.format(x))
     out = None
     # require two files: {spikein|align}_scale_json, {spikein|align}_json
     sj = a.align_scale_json
@@ -73,7 +73,7 @@ def atac_rn_norm_scale(x, hiseq_type='rn', by_spikein=False, norm=1000000):
     return out
 
 
-def atac_r1_norm_scale(x, hiseq_type='r1', by_spikein=False, norm=1000000):
+def cnr_r1_norm_scale(x, hiseq_type='r1', by_spikein=False, norm=1000000):
     """
     Parameters
     ---------
@@ -89,7 +89,7 @@ def atac_r1_norm_scale(x, hiseq_type='r1', by_spikein=False, norm=1000000):
     """
     a = read_hiseq(x, hiseq_type) # for general usage
     if not a.is_hiseq:
-        log.error('atac_r1_norm_scale() skipped, not a atac_r1 dir: {}'.format(x))
+        log.error('cnr_r1_norm_scale() skipped, not a cnr_r1 dir: {}'.format(x))
         return None
     out = None
     # require two files: {spikein|align}_scale_json, {spikein|align}_json
@@ -118,7 +118,7 @@ def atac_r1_norm_scale(x, hiseq_type='r1', by_spikein=False, norm=1000000):
         Config().dump(dx, sj)
         out = dx
     else:
-        log.error('atac_r1_norm_scale() failed')
+        log.error('cnr_r1_norm_scale() failed')
     return out
 
 
@@ -134,7 +134,7 @@ def cnr_trim(x, hiseq_type='r1'):
     Parameters
     ---------
     x: str
-        The path to AtacR1() dir, atacseq_type=atacseq_r1
+        The path to CnrR1() dir, hiseq_type=cnr_r1
 
     option-1: cut reads from 3' end, to X-nt in length (default: 50)
 
@@ -142,14 +142,14 @@ def cnr_trim(x, hiseq_type='r1'):
     1. do trimming
     2. create symlink
 
-    path -> (AtacReader) -> args
+    path -> (CnrReader) -> args
     fq1, fq2
     clean_fq1, clean_fq2, clean_dir
     cut_to_length, recursive
     """
     a = read_hiseq(x, hiseq_type) # for general usage
     if not a.is_hiseq:
-        log.error('atac_trim() skipped, not a atac_r1 dir: {}'.format(x))
+        log.error('cnr_trim() skipped, not a cnr_r1 dir: {}'.format(x))
         return None
     # do-the-trimming
     fq1, fq2 = a.raw_fq_list
@@ -186,7 +186,7 @@ def cnr_align_spikein(x, hiseq_type='_r1'):
     Parameters
     ---------
     x: str
-        The path to AtacR1() dir, atacseq_type=atacseq_r1
+        The path to CnrR1() dir, hiseq_type=cnr_r1
 
     Align reads to reference genome, using bowtie2
 
@@ -203,10 +203,10 @@ def cnr_align_spikein(x, hiseq_type='_r1'):
     """
     a = read_hiseq(x, hiseq_type) # for general usage
     if not a.is_hiseq:
-        log.error('atac_align_spikein() skipped, not a atac_r1 dir: {}'.format(x))
+        log.error('cnr_align_spikein() skipped, not a cnr_r1 dir: {}'.format(x))
         return None
     if not isinstance(a.spikein_index, str):
-        log.info('atac_align_spikein() skipped, no spikein_index')
+        log.info('cnr_align_spikein() skipped, no spikein_index')
         return None #
     args_local = a.__dict__
     fq1, fq2 = getattr(a, 'clean_fq_list', [None, None])
@@ -230,12 +230,12 @@ def cnr_align_spikein(x, hiseq_type='_r1'):
         'parallel_jobs': a.parallel_jobs,
         'overwrite': a.overwrite,
         'verbose': False,
-        'extra_para': align_extra, # specific for ATACseq
+        'extra_para': align_extra, # specific for Cnr
     }
 #     args_local.update(args_init)
     args_local = args_init
     if file_exists(a.spikein_bam) and not a.overwrite:
-        log.info('atac_align_spikein() skipped, file exists: {}'.format(
+        log.info('cnr_align_spikein() skipped, file exists: {}'.format(
             a.spikein_bam))
     else:
         Align(**args_local).run()
@@ -251,7 +251,7 @@ def cnr_align_spikein(x, hiseq_type='_r1'):
             symlink_file(t.unmap1, a.unmap1)
             symlink_file(t.unmap2, a.unmap2)
     # calculate norm scale
-    s = atac_r1_norm_scale(x, hiseq_type, by_spikein=True)
+    s = cnr_r1_norm_scale(x, hiseq_type, by_spikein=True)
 
 
 def cnr_align_genome(x, hiseq_type='_r1'):
@@ -259,7 +259,7 @@ def cnr_align_genome(x, hiseq_type='_r1'):
     Parameters
     ---------
     x: str
-        The path to AtacR1() dir, atacseq_type=atacseq_r1
+        The path to CnrR1() dir, hiseq_type=cnr_r1
 
     Align reads to reference genome, using bowtie2
 
@@ -268,7 +268,6 @@ def cnr_align_genome(x, hiseq_type='_r1'):
     samtools view -bhS -f 2 -F 1804
 
     ######
-    atac: "-I 10 -X 2000"
     cnr: "-I 10 -X 700"
 
     exclude: -F
@@ -280,7 +279,7 @@ def cnr_align_genome(x, hiseq_type='_r1'):
     """
     a = read_hiseq(x, hiseq_type) # for general usage
     if not a.is_hiseq:
-        log.error('atac_align_genome() skipped, not a atac_r1 dir: {}'.format(x))
+        log.error('cnr_align_genome() skipped, not a cnr_r1 dir: {}'.format(x))
         return None
     args_local = a.__dict__
     fq1, fq2 = getattr(a, 'clean_fq_list', [None, None])
@@ -306,7 +305,7 @@ def cnr_align_genome(x, hiseq_type='_r1'):
 #     args_local.update(args_init)
     args_local = args_init
     if file_exists(a.bam) and not a.overwrite:
-        log.info('atac_align_genome() skipped, file exists: {}'.format(a.bam))
+        log.info('cnr_align_genome() skipped, file exists: {}'.format(a.bam))
     else:
         Align(**args_local).run()
     # copy files; go to align_r1 directory
@@ -332,7 +331,7 @@ def cnr_align_genome(x, hiseq_type='_r1'):
                 # Bam(a.bam).index()
     else:
         symlink_file(a.bam_raw, a.bam)
-    s = atac_r1_norm_scale(x, hiseq_type, by_spikein=False)
+    s = cnr_r1_norm_scale(x, hiseq_type, by_spikein=False)
 
 
 
@@ -342,7 +341,7 @@ def cnr_merge_bam(x, hiseq_type='_rn'):
     """
     a = read_hiseq(x, hiseq_type) # for general usage
     if not a.is_hiseq:
-        log.error('atac_merge_bam() skipped, not a atac_rn dir: {}'.format(x))
+        log.error('cnr_merge_bam() skipped, not a cnr_rn dir: {}'.format(x))
     bam_list = list_hiseq_file(x, 'bam', 'r1')
     cmd = ' '.join([
         'samtools merge -',
@@ -372,9 +371,9 @@ def cnr_merge_bam(x, hiseq_type='_rn'):
         symlink_file(a.bam_raw, a.bam)
     # check-point
     if not file_exists(a.bam):
-        raise ValueError('atac_merge_bam() failed, see: {}'.format(a.bam_dir))
+        raise ValueError('cnr_merge_bam() failed, see: {}'.format(a.bam_dir))
     # calculate norm scale
-    s = atac_rn_norm_scale(x, hiseq_type='rn')
+    s = cnr_rn_norm_scale(x, hiseq_type='rn')
     
     
 def cnr_call_peak(x, hiseq_type='r1'):
@@ -384,7 +383,7 @@ def cnr_call_peak(x, hiseq_type='r1'):
     """
     a = read_hiseq(x, hiseq_type) # for general usage
     if not a.is_hiseq:
-        log.error('qc_bam_fingerprint() failed, not a hiseq dir: {}'.format(x))
+        log.error('cnr_call_peak() failed, not a hiseq dir: {}'.format(x))
         return None
     # r1
     ip_bam = None
@@ -457,7 +456,7 @@ def get_mito_count(x):
 def cnr_bam_to_bw(x, hiseq_type='_r1'):
     a = read_hiseq(x, hiseq_type) # for general usage
     if not a.is_hiseq:
-        log.error('atac_bam_to_bw() skipped, not a atac_r1 dir: {}'.format(x))
+        log.error('cnr_bam_to_bw() skipped, not a cnr_r1 dir: {}'.format(x))
     d = Config().load(a.align_scale_json)
     if isinstance(d, dict):
         scale = d.get('scale', 1.0)
@@ -500,6 +499,9 @@ def qc_trim_summary(x, hiseq_type='r1'):
     # name, input, output, out_pct, rm_pct
     """
     a = read_hiseq(x, hiseq_type) # for general usage
+    if not a.is_hiseq:
+        log.error('qc_trim_summary() failed, not a hiseq_r1: {}'.format(x))
+        return None
     # option-1: stat.yaml
     # option-2: stat.txt
     stat_json = getattr(a, 'trim_json', None)
@@ -585,6 +587,9 @@ def qc_align_summary(x, hiseq_type='r1'):
 
 def qc_lendist(x, hiseq_type='r1'):
     a = read_hiseq(x, hiseq_type) # for general usage
+    if not a.is_hiseq:
+        log.error('qc_lendist() failed, not a hiseq dir: {}'.format(x))
+        return None
     if os.path.exists(a.lendist_csv) and a.overwrite is False:
         log.info('qc_lendist() skipped: file exists: {}'.format(
             a.lendist_csv))
@@ -604,6 +609,9 @@ def qc_lendist(x, hiseq_type='r1'):
 
 def qc_frip(x, hiseq_type='r1'):
     a = read_hiseq(x, hiseq_type) # for general usage
+    if not a.is_hiseq:
+        log.error('qc_frip() failed, not a hiseq dir: {}'.format(x))
+        return None
     qc_frip_dir = os.path.join(a.qc_dir, 'frip_files')
     if check_file(a.frip_json, check_empty=True):
         log.info('qc_frip() skipped, file exists: {}'.format(
@@ -640,7 +648,7 @@ def qc_tss_enrich_tool(x, hiseq_type='r1', bw_type='r1',
     """
     a = read_hiseq(x, hiseq_type) # for general usage
     if not a.is_hiseq:
-        log.error('qc_tss_enrich() failed, not a hiseq dir: {}'.format(x))
+        log.error('qc_tss_enrich_tool() failed, not a hiseq dir: {}'.format(x))
         return None
     bed = getattr(a, 'gene_bed', None)
     if not file_exists(bed):
@@ -760,7 +768,10 @@ def qc_tss_enrich(x, hiseq_type='r1', bw_type='r1', **kwargs):
     $ computeMatrix referencepoint -b -R gene.bed -S in.bw -o mat.gz
     $ plotProfile -m mat.gz -o tss.png
     """
-    a = read_hiseq(x, hiseq_type) # for general usage
+    a = read_hiseq(x, hiseq_type) # for general usage    
+    if not a.is_hiseq:
+        log.error('qc_tss_enrich() failed, not a hiseq dir: {}'.format(x))
+        return None
     # arg_bw, arg_label, arg_title, per_group
     args = qc_tss_enrich_tool(x, hiseq_type, bw_type,
         subcmd='reference-point', **kwargs)
@@ -818,6 +829,9 @@ def qc_genebody_enrich(x, hiseq_type='r1', bw_type='r1', **kwargs):
     $ plotProfile -m mat.gz -o gene_body.png
     """
     a = read_hiseq(x, hiseq_type) # for general usage
+    if not a.is_hiseq:
+        log.error('qc_genebody_enrich() failed, not a hiseq dir: {}'.format(x))
+        return None
     # arg_bw, arg_label, arg_title, per_group
     args = qc_tss_enrich_tool(x, hiseq_type, bw_type,
         subcmd='scale-regions', **kwargs)
@@ -879,6 +893,9 @@ def qc_bam_cor(x, hiseq_type='rn', bam_type='r1'):
         --outRawCounts *counts.tab -b bam
     """
     a = read_hiseq(x, hiseq_type) # for general usage
+    if not a.is_hiseq:
+        log.error('qc_bam_cor() failed, not a hiseq dir: {}'.format(x))
+        return None
     bam_list = list_hiseq_file(x, 'bam', bam_type)
     args = {
         'bam_list': bam_list,
@@ -913,6 +930,9 @@ def qc_peak_idr(x, hiseq_type='rn', peak_type='r1'):
         default: ['r1']
     """
     a = read_hiseq(x, hiseq_type) # for general usage
+    if not a.is_hiseq:
+        log.error('qc_peak_idr() failed, not a hiseq dir: {}'.format(x))
+        return None
     peak_list = list_hiseq_file(x, 'peak', peak_type)
     args = {
         'peak_list': peak_list,
@@ -945,6 +965,9 @@ def qc_peak_overlap(x, hiseq_type='rn', peak_type='r1'):
         default: ['r1']
     """
     a = read_hiseq(x, hiseq_type) # for general usage
+    if not a.is_hiseq:
+        log.error('qc_peak_overlap() failed, not a hiseq dir: {}'.format(x))
+        return None
     peak_list = list_hiseq_file(x, 'peak', peak_type)
     args = {
         'peak_list': peak_list,
@@ -983,6 +1006,9 @@ def qc_bam_fingerprint(x, hiseq_type='rn', bam_type='r1'):
         default: ['r1']
     """
     a = read_hiseq(x, hiseq_type) # for general usage
+    if not a.is_hiseq:
+        log.error('qc_bam_fingerprint() failed, not a hiseq dir: {}'.format(x))
+        return None
     bam_list = list_hiseq_file(x, 'bam', bam_type)
     args = {
         'bam_list': bam_list,

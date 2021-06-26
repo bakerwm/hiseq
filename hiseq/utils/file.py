@@ -837,7 +837,7 @@ def fx_name(x, fix_pe=False, fix_rep=False, fix_unmap=False):
         if fix_unmap:
             out = re.sub('.unmap$', '', out, flags=re.IGNORECASE)
         if fix_rep:
-            out = re.sub('[._]rep[0-9]+$', '', out, flags=re.IGNORECASE)
+            out = re.sub('[._](rep|r)[0-9]+$', '', out, flags=re.IGNORECASE)
     elif isinstance(x, list):
         out = [fx_name(i, fix_pe, fix_rep, fix_unmap) for i in x]
     else:

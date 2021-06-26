@@ -34,7 +34,7 @@ import pathlib
 import argparse
 from hiseq.align.align import Align
 from hiseq.rnaseq.rnaseq_rp import RnaseqRp
-from hiseq.rnaseq.utils import salmon_deseq
+from hiseq.rnaseq.utils import deseq_salmon
 from hiseq.utils.file import check_path, check_fx_paired, symlink_file, \
     file_exists, file_abspath, file_prefix, fx_name, Genome
 from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \

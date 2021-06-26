@@ -383,6 +383,8 @@ class DemxBarcode(object):
         """
         df = Config().load(self.fn_json)
         total = sum(df.values())
+        if total < 1:
+            total = 1000000 # default: 1M
         scale = 4e8/total # to_400M
         i = 0
         f_stat = []

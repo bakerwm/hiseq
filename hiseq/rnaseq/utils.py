@@ -643,7 +643,7 @@ def salmon_align(x, hiseq_type='r1'):
     Align(**args_local).run()
 
     
-def salmon_deseq(x, hiseq_type='rx'):
+def deseq_salmon(x, hiseq_type='rx'):
     """
     DEseq analysis, for salmon output
     Using DESeq2, edgeR, ...
@@ -654,7 +654,7 @@ def salmon_deseq(x, hiseq_type='rx'):
         return None
     # prepare R commands
     pkg_dir = os.path.dirname(hiseq.__file__)
-    deseq_r = os.path.join(pkg_dir, 'bin', 'run_salmon_deseq.R')
+    deseq_r = os.path.join(pkg_dir, 'bin', 'run_deseq_salmon.R')
     stdout = os.path.join(a.deseq_dir, 'deseq.stdout')
     stderr = os.path.join(a.deseq_dir, 'deseq.stderr')
     cmd_shell = os.path.join(a.deseq_dir, 'cmd.sh')
@@ -667,7 +667,7 @@ def salmon_deseq(x, hiseq_type='rx'):
     with open(cmd_shell, 'wt') as w:
         w.write(cmd + '\n')
     if file_exists(a.deseq_fix_xls) and not a.overwrite:
-        log.info('salmon_deseq() skipped, file exists: {}'.format(
+        log.info('deseq_salmon() skipped, file exists: {}'.format(
             a.deseq_fix_xls))
     else:
         try:

@@ -86,7 +86,7 @@ class Bam2bw(object):
             'genome': None,
             'genome_size': None,
             'scaleFactor': 1.0,
-            'normalizeUsing': 'RPKM',
+            'normalizeUsing': 'RPGC',
             'threads': 4,
             'config_txt': os.path.join(self.outdir, 'config.txt'),
             'config_yaml': os.path.join(self.outdir, 'config.yaml'),
@@ -271,7 +271,7 @@ def get_args():
     parser.add_argument('--scaleFactor', nargs='+', type=float, default=[1.0],
         help='The scaling factor, default: [1.0]')
     parser.add_argument('--normalizeUsing', default='None',
-        choices=['RPKM', 'CPM', 'BPM', 'RPGC', 'None'],
+        choices=['RPGC', 'RPKM', 'CPM', 'BPM', 'None'],
         help='Possible choices: RPKM, CPM, BPM, RPGC, None, default: [None] \
         see https://deeptools.readthedocs.io/en/latest/content/tools/bamCoverage.html, \
         for details from deeptools documentation.')

@@ -152,10 +152,14 @@ class Cutadapt(object):
             }
         if self.library_type is None and self.adapter3 is None:
             log.info('Auto detect the adapters:')
-            d = Fastx(self.fq1).detect_adapter()
-            df = pd.DataFrame.from_dict(d, orient='index').sort_values(0, 
-                ascending=False)
-            self.library_type = df.index.to_list()[0] # first one
+            try:
+                d = Fastx(self.fq1).detect_adapter()
+                df = pd.DataFrame.from_dict(d, orient='index').sort_values(0, 
+                    ascending=False)
+                self.library_type = df.index.to_list()[0] # first one
+            except KeyError as e:
+                log.error(e)
+                self.library_type = 'truseq'
             self.adapter3, self.Adapter3 = lib.get(
                 self.library_type, [None, None])
         elif isinstance(self.library_type, str):
