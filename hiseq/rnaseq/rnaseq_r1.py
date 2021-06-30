@@ -101,7 +101,7 @@ class RnaseqR1Config(object):
             self.outdir = str(pathlib.Path.cwd())
         self.outdir = file_abspath(self.outdir)
         if not isinstance(self.smp_name, str):
-            self.smp_name = fx_name(self.fq1, fix_pe=True, fix_unmap=True)
+            self.smp_name = fx_name(self.fq1, fix_pe=self.is_paired, fix_unmap=True)
         self.init_files()
         self.init_fq()
         self.init_index()

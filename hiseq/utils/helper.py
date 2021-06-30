@@ -1831,7 +1831,7 @@ from .utils import update_obj
 # 
 #         # # deprecated
 #         # if not supportedGenome(genome):
-#         #     log.error('genome not supported: {}'.foramt(genome))
+#         #     log.error('genome not supported: {}'.format(genome))
 # 
 # 
 #     def get_fa(self):

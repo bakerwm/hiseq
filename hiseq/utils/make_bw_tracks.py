@@ -107,7 +107,7 @@ def load_regions_from_bed(x):
             n = '{}_{}_{}'.format(bed.chrom, int(bed.start)+1, int(bed.end))
             d[n] = (bed.chrom, int(bed.start)+1, int(bed.end))
     except:
-        print('load_regions_from_bed() failed, {}'.foramt(x))
+        print('load_regions_from_bed() failed, {}'.format(x))
         d = None
     return d
 

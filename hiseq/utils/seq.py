@@ -292,7 +292,9 @@ class Fastx(object):
                     i += 1
                     if i > n:
                         break
-                    name = name + ' ' + comment
+                    if isinstance(comment, str):
+                        if len(comment) > 0:
+                            name += ' '+comment
                     if self.format == 'fastq':
                         fx = '@{}\n{}\n+\n{}'.format(name, seq, qual)
                     elif self.format == 'fasta':
@@ -313,7 +315,9 @@ class Fastx(object):
         with xopen(self.input) as r, xopen(out, 'wt') as w:
             for name, seq, qual, comment in self.readfq(r):
                 qual = 'J' * len(seq) # Phred33, 41
-                name = name + ' ' + comment
+                if isinstance(comment, str):
+                    if len(comment) > 0:
+                        name += ' '+comment
                 w.write('\n'.join('@'+name, seq, '+', qual) + '\n')
 
 
@@ -495,9 +499,9 @@ class Fastx(object):
                 # does not allow 'white spaces' at the end of name-line of fastq
                 # throw error:
                 # ReadAlignChunk_processChunks.cpp:115:processChunks EXITING because of FATAL ERROR in input reads: unknown file format: the read ID should start with @ or >
-#                 if isinstance(comment, str):
-#                     if len(comment) > 0:
-#                         name = name + ' ' + comment #fix comment=None
+                if isinstance(comment, str):
+                    if len(comment) > 0:
+                        name += ' '+comment #fix comment=None
                 # filter length
                 if isinstance(seq, str):
                     if len(seq) < self.len_min:

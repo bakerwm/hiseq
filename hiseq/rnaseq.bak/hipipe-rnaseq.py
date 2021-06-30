@@ -771,7 +771,7 @@ def extra_rnaseq(args, gtf):
     if args['extra_index'] is None:
         log.warning('extra analysis skipped, index not exists: {}'.format(args['extra_index']))
     elif not os.path.exists(gtf):
-        log.warning('extra analysis skipped, gtf file not exists: {}'.foramt(gtf))
+        log.warning('extra analysis skipped, gtf file not exists: {}'.format(gtf))
     else:
         ## control, args['c1']
         ctl_args = args.copy()
@@ -955,7 +955,7 @@ def main():
             log.error('require --design, or -c1, -t1')
         else:
             if not supportedGenome(args['genome']):
-                log.error('genome not supported: {}'.foramt(args['genome']))
+                log.error('genome not supported: {}'.format(args['genome']))
             run(args)
     else:
         design = DesignReader(args['design'])

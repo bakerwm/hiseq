@@ -265,7 +265,7 @@ class AlignIndex(object):
                 try:
                     os.system(cmd)
                 except:
-                    log.error('failed to run: {}-inspect'.foramt(aligner))
+                    log.error('failed to run: {}-inspect'.format(aligner))
                 # processing the file
                 # gsize file
                 gsizes = []

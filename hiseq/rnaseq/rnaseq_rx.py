@@ -121,7 +121,7 @@ class RnaseqRx(object):
         if AlignIndex(self.salmon_index).is_valid():
             RnaseqSalmon(**args).run()
         else:
-            log.warning('--salmon-index not valid, {}'.foramt(self.salmon_index))
+            log.warning('--salmon-index not valid, {}'.format(self.salmon_index))
         
         
     def run(self):
