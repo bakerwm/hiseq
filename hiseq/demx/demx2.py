@@ -214,6 +214,9 @@ class Demx2(object):
         i7_name were sanitized (by "-"):
         eg: 2.1 -> 2-1
         """
+        # save read count
+        self.count_dir = os.path.join(self.outdir, 'read_count')
+        check_path(self.count_dir)
         q_size = {}
         for fq in self.raw_fq_list:
             is_r1 = re.search('_1.f(ast)?q+.gz', fq, re.IGNORECASE)
@@ -253,16 +256,23 @@ class Demx2(object):
                     # os.rename(fq, s_file)
                     symlink_file(fq, s_file)
                 # count fq
+                # save read count to file: read_count/s_name.count.json
+                s_count_json = os.path.join(self.count_dir, s_name + '.count.json')
                 if is_r1:
                     try:
                         if os.path.isfile(self.read_count_json):
                             n_size = Config().load(self.read_count_json)
                             n_fq = n_size.get(s_name, 0)
+                        elif file_exists(s_count_json):
+                            n_fq = Config().load(s_count_json).get(s_name, 0)
                         else:
                             n_fq = Fastx(s_file).number_of_seq()
                     except OSError as e:
                         print(e)
                         n_fq = 0
+                    # save to file
+                    s_count_d = {s_name: n_fq}
+                    Config().dump(s_count_d, s_count_json)
                     q_size.update({
                         s_name: n_fq
                     })
