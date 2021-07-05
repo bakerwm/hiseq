@@ -307,6 +307,7 @@ class AlignConfig(object):
         c1x = all([c1, c1e])
         if self.fq2 is None or self.fq2 == 'None':
             self.fq2 = None # convert 'None' -> None; from yaml
+            c2 = False
             c2e = True
             c2p = False # paired
             c2x = True

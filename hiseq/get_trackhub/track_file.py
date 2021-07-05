@@ -74,10 +74,10 @@ class TrackFile(object):
         default_args = {
             'subgroups': {},
             'colorDim': 'dimX',
+            'colorPal': 1, # color palette, option: 1, 2, 3
             'label_rm_list': [],
         }
         self = update_obj(self, default_args, force=False)
-        self.colorPal = 1 # color palette, option: 1, 2, 3
         self.fname, self.fext = os.path.splitext(os.path.basename(self.s))
         self.fname = self.sanitize(self.fname)
         self.label = self.sanitize(self.fname, self.label_rm_list)
@@ -286,6 +286,7 @@ class TrackFile(object):
         else:
             fish = 'Scarus_hoefleri'
         # output colors
+        print('!AAAA-1', fish, colorPal)
         return color_d.get(fish, c1)[:n]
 
 

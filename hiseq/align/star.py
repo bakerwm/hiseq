@@ -318,7 +318,8 @@ class Star(object):
             symlink_file(self.unmap1_raw, self.unmap1)
             symlink_file(self.unmap2_raw, self.unmap2)
         else:
-            symlink_file(self.unmap1_raw, self.unmap1)
+            symlink_file(self.unmap1_raw, self.unmap)
+            self.unmap1 = self.unmap
             self.unmap2 = None
         # remove old files
         del_list = []

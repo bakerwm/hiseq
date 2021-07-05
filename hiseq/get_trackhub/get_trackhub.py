@@ -19,6 +19,7 @@ import time
 import logging
 import trackhub
 import tempfile
+import argparse
 import subprocess
 from shutil import which
 from urllib.request import urlopen
@@ -361,9 +362,11 @@ class TrackHub():
                 self.trackdb.add_tracks(composite)
                 # add bigWig files
                 for bw in subgroups_config.get('bw_files', []):
+                    print('!AAAA-2', self.colorPal)
                     tk = TrackFile(bw,
                         subgroups=subgroups_dict,
                         colorDim=self.colorDim, # dimX, dimY, dimA, ...
+                        colorPal=self.colorPal,
                         label_rm_list=self.label_rm_list).track
                     signal_view.add_tracks(tk)
                 # add bigBed files
@@ -722,8 +725,25 @@ class TrackHubConfig(object):
         return d_grp
 
 
+def get_args():
+    ## parsing arguments
+    parser = argparse.ArgumentParser(
+        prog='get_trackhub',
+        description='Generate trackhub for bigWig and bigBed files',
+        epilog='Example: \n\
+               python get_trackhub.py --config config.yaml')
+    parser.add_argument('-d', '--demo', action='store_true',
+        help='Show the tutorial')
+    parser.add_argument('--dry-run', dest='dry_run', action='store_true',
+        help='Generate trackhub files, Do not copy track files to remote_dir')
+    parser.add_argument('-c', '--config', default=None,
+        help='Config file, run -d, generate the template')
+    return parser
+    
+    
 def main():
-    trackhub_config_template()
+    args = vars(get_args().parse_args())
+    TrackHub(**args).run()
 
 
 if __name__ == '__main__':

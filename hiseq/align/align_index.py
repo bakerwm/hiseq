@@ -472,15 +472,21 @@ def check_index_args(**kwargs):
     else:
         # for index_list
         index_list = [] # init
-        # level-2.1 : extra
+        # return: genome_index, spikein_index, rRNA_index (extra_index)
+        # level-1.1 : extra
         if isinstance(extra_index, str):
             if AlignIndex(extra_index, aligner).is_valid():
                 index_list = [extra_index]
             else:
                 raise ValueError('extra_index not valid, {}'.format(extra_index))
         else:
-            # level-2.2 : spikein
-            if is_supported(spikein):
+            # level-2.1 : spikein
+            if spikein_index:
+                if AlignIndex(spikein_index, aligner).is_valid():
+                    index_list.append(spikein_index)
+                else:
+                    log.error('not valid spikein_index: {}'.format(spikein_index))
+            elif is_supported(spikein):
                 spikein_index = fetch_index(spikein, aligner=aligner)
                 if group:
                     group_index_sp = fetch_index(
@@ -493,8 +499,13 @@ def check_index_args(**kwargs):
                 else:
                     log.error('AlignIndex({}, {}) not available'.format(
                         spikein, aligner))
-            # level-2.3 : genome
-            if is_supported(genome):
+            # level-2.2 : genome
+            if genome_index:
+                if AlignIndex(genome_index, aligner).is_valid():
+                    index_list.append(genome_index)
+                else:
+                    log.error('not valid index: {}'.format(genome_index))
+            elif is_supported(genome):
                 genome_index = fetch_index(genome, aligner=aligner)
                 if group:
                     group_index_g = fetch_index(

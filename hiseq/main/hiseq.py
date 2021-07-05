@@ -69,11 +69,14 @@ from hiseq.qc.hiseq_lib import get_args as add_p7_args
 from hiseq.qc.bacteria import Kraken2
 from hiseq.qc.bacteria import get_args as add_bacteria_args
 
+from hiseq.get_trackhub.get_trackhub import TrackHub
+from hiseq.get_trackhub.get_trackhub import get_args as add_trackhub_args
+
+
 
 # to-be-deprecated: replaced by specific get_args() in each command
 from hiseq.utils.argsParser import add_quant_args, add_peak_args, add_motif_args, \
-    add_rnaseq_args2, add_chipseq_args, \
-    add_trackhub_args, add_deseq_pair_args, add_go_args,\
+    add_rnaseq_args2, add_chipseq_args, add_deseq_pair_args, add_go_args,\
     add_peak2idr_args, add_bed2overlap_args, \
     add_sample_args
 
@@ -93,13 +96,14 @@ from hiseq.utils.argsParser import add_quant_args, add_peak_args, add_motif_args
 # from hiseq.utils.bam import Bam2cor
 # from hiseq.trim.trimmer import Trim
 # from hiseq.align.align import Align
+# from hiseq.get_trackhub.get_trackhub import TrackHub
+
 from hiseq.rnaseq.rnaseq import Rnaseq
 from hiseq.rnaseq.deseq_pair import DeseqPair
 from hiseq.chipseq.chipseq import ChIPseq
 from hiseq.go.go import Go
 from hiseq.utils.fastx import Fastx
 from hiseq.utils.bed import PeakIDR, BedOverlap
-from hiseq.get_trackhub.get_trackhub import TrackHub
 from hiseq.peak.call_peak import CallPeak
 from hiseq.sample.sample import FxSample
 from hiseq.utils.utils import log, get_date, print_dict
@@ -297,6 +301,16 @@ class Hiseq(object):
         Kraken2(**args).run()
         
 
+    def run_trackhub(self):
+        """
+        Make trackhub
+        """
+        args = self.init_args(add_trackhub_args())
+        TrackHub(**args).run()
+
+        
+        
+        
 ################################################################################
 ## to-be-updated
 ## 2021-05-20
@@ -392,14 +406,6 @@ class Hiseq(object):
         Download files
         """
         dl.main(sys.argv[1:])
-
-
-    def run_trackhub(self):
-        """
-        Make trackhub
-        """
-        args = self.init_args(add_trackhub_args())
-        TrackHub(**args).run()
 
 
 def main():

@@ -320,8 +320,9 @@ def rnaseq_align_spikein(x, hiseq_type='rnaseq_r1'):
             symlink_file(t.bam, a.spikein_bam)
             symlink_file(t.align_json, a.spikein_json)
             symlink_file(t.align_flagstat, a.spikein_flagstat)
-            symlink_file(t.unmap1, a.unmap1)
-            symlink_file(t.unmap2, a.unmap2)
+            symlink_file(t.unmap, a.spikein_unmap)
+            symlink_file(t.unmap1, a.spikein_unmap1)
+            symlink_file(t.unmap2, a.spikein_unmap2)
     # calculate norm scale
     s = rnaseq_r1_norm_scale(x, hiseq_type, by_spikein=True)
 
@@ -386,6 +387,7 @@ def rnaseq_align_rRNA(x, hiseq_type='r1'):
         if t.is_hiseq:
             symlink_file(t.align_json, a.rRNA_json)
             symlink_file(t.align_flagstat, a.rRNA_flagstat)
+            symlink_file(t.unmap, a.rRNA_unmap)            
             symlink_file(t.unmap1, a.rRNA_unmap1)
             symlink_file(t.unmap2, a.rRNA_unmap2)
 
@@ -454,6 +456,7 @@ def rnaseq_align_genome(x, hiseq_type='r1'):
             symlink_file(t.bam, a.bam)
             symlink_file(t.align_json, a.align_json)
             symlink_file(t.align_flagstat, a.align_flagstat)
+            symlink_file(t.unmap, a.unmap)
             symlink_file(t.unmap1, a.unmap1)
             symlink_file(t.unmap2, a.unmap2)
     # calculate norm scale
