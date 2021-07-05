@@ -24,6 +24,7 @@ from hiseq.cnr.utils import cnr_bam_to_bw, cnr_call_peak, cnr_merge_bam, \
     qc_lendist, qc_frip, \
     qc_bam_cor, qc_peak_idr, qc_peak_overlap, qc_bam_fingerprint, \
     qc_tss_enrich, qc_genebody_enrich, cnr_bw_compare
+from hiseq.align.align_index import AlignIndex, check_index_args
 
 
 class CnrRx(object):
