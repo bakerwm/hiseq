@@ -140,6 +140,7 @@ class CnrR1Config(object):
             'binsize': 10,
             'genome_size': 0,
             'genome_size_file': None,
+            'genome_path': None,
             'keep_tmp': None,
             'trimmed': False,
             'cut': False,

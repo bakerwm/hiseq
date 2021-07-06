@@ -333,7 +333,7 @@ def fetch_index(genome, group=None, aligner='bowtie', genome_path=None):
         The aligner, [bowtie, bowtie2, star, bwa, salmon, ...] 
 
     genome_path : str
-        The root of the genome data
+        The root of the genome data; candidate ~/data/genome
 
     Structure of genome_path:
     default: {HOME}/data/genome/{genome_version}/{aligner}/
@@ -414,6 +414,7 @@ def check_index_args(**kwargs):
     to_MT
     to_chrM
     to_MT_trRNA
+    genome_path
     """
     # default arguments
     aligner = kwargs.get('aligner', None)
@@ -428,6 +429,7 @@ def check_index_args(**kwargs):
     to_chrM = kwargs.get('to_chrM', False)
     to_MT_trRNA = kwargs.get('to_MT_trRNA', False)
     verbose = kwargs.get('verbose', False)
+    genome_path = kwargs.get('genome_path', None)
     # for message
     msg = '\n'.join([
         '-'*80,
@@ -476,10 +478,10 @@ def check_index_args(**kwargs):
                 else:
                     log.error('not valid spikein_index: {}'.format(spikein_index))
             elif is_supported(spikein):
-                spikein_index = fetch_index(spikein, aligner=aligner)
+                spikein_index = fetch_index(spikein, aligner=aligner, genome_path=genome_path)
                 if group:
                     group_index_sp = fetch_index(
-                        spikein, group=group, aligner=aligner
+                        spikein, group=group, aligner=aligner, genome_path=genome_path
                     )
                     if group_index_sp:
                         index_list.append(group_index_sp)
@@ -495,10 +497,11 @@ def check_index_args(**kwargs):
                 else:
                     log.error('not valid index: {}'.format(genome_index))
             elif is_supported(genome):
-                genome_index = fetch_index(genome, aligner=aligner)
+                genome_index = fetch_index(genome, aligner=aligner, genome_path=genome_path)
                 if group:
                     group_index_g = fetch_index(
-                        genome, group=group, aligner=aligner)
+                        genome, group=group, aligner=aligner, genome_path=genome_path
+                    )
                     if group_index_g:
                         index_list.append(group_index_g)
                 if genome_index:
