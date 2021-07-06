@@ -63,7 +63,7 @@ from hiseq.utils.file import check_path, check_fx_paired, symlink_file, \
     file_abspath, file_prefix, fx_name, Genome
 from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \
     read_hiseq
-from hiseq.align.align_index import AlignIndex
+from hiseq.align.align_index import AlignIndex, check_index_args
 
 
 class CnrR1(object):
@@ -208,6 +208,9 @@ class CnrR1Config(object):
 
     # update: genome_size_file    
     def init_index(self):
+        index_list = check_index_args(**self.__dict__)
+        if len(index_list) == 0:
+            raise ValueError('no index found')
         # get data from: genome, extra_index
         if isinstance(self.extra_index, str):
             self.genome_size_file = AlignIndex(self.extra_index).index_size(out_file=True)

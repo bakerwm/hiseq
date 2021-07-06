@@ -330,10 +330,11 @@ class Bowtie2(object):
             'unique_only': self.unique_only,
             })
         Config().dump(df, self.align_json)
+        # remove temp files
         del_list = [self.sam]
         if not self.keep_unmap:
             del_list.extend([self.unmap1, self.unmap2, self.unmap])
-        if not self.keep_unmap:
+        if not self.keep_tmp:
             remove_file(del_list, ask=False)
         return (self.bam, self.unmap1, self.unmap2)
 

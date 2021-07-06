@@ -19,14 +19,12 @@ from hiseq.rnaseq.utils import rnaseq_trim, rnaseq_align_spikein, \
     rnaseq_align_rRNA, rnaseq_align_genome, rnaseq_quant, rnaseq_merge_bam, \
     rnaseq_bam2bw, qc_trim_summary, qc_align_summary, qc_bam_cor, \
     qc_genebody_enrich
-
 from hiseq.utils.file import check_path, check_fx_paired, symlink_file, \
     file_exists, file_abspath, file_prefix, fx_name, Genome
 from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \
     read_hiseq, list_hiseq_file, run_shell_cmd
 from hiseq.utils.bam import Bam
-from hiseq.align.align_index import AlignIndex
-
+from hiseq.align.align_index import AlignIndex, check_index_args
 
 
 class RnaseqRn(object):
@@ -202,50 +200,16 @@ class RnaseqRnConfig(object):
         ])
 
 
-    def init_fq(self):
-        # convert to list
+    def init_fq(self):        
         if isinstance(self.fq1, str):
             self.fq1 = [self.fq1]
         if isinstance(self.fq2, str):
             self.fq2 = [self.fq2]
-        if not isinstance(self.fq1, list):
-            raise ValueError('fq1 require list, got {}'.format(
-                type(self.fq1).__name__))
-        # check message
-        c1 = isinstance(self.fq1, list)
-        c1e = all(file_exists(self.fq1))
-        c1x = all([c1, c1e])
-        if self.fq2 is None or self.fq2 == 'None':
-            self.fq2 = None # convert 'None' -> None; from yaml
-            c2e = True
-            c2p = False # paired
-            c2x = True
-        else:
-            c2 = isinstance(self.fq2, list)
-            c2e = all(file_exists(self.fq2))
-            c2p = check_fx_paired(self.fq1, self.fq2)
-            c2x = all([c2, c2e, c2p])
-        if not all([c1x, c2x]):
-            msg = '\n'.join([
-                '='*80,
-                'Input',
-                '{:>14} : {}'.format('fq1', self.fq1),
-                '{:>14} : {}'.format('fq2', self.fq2),
-                '-'*40,
-                '{:>14} : {}'.format('fq1 is list', c1),
-                '{:>14} : {}'.format('fq1 exists', c1e),
-                '{:>14} : {}'.format('fq2 is list', c2),
-                '{:>14} : {}'.format('fq2 is exists', c2e),
-                '{:>14} : {}'.format('fq is paired', c2p),
-                '-'*40,
-                'Output: {}'.format(all([c1x, c2x])),
-                '='*80
-            ])
-            print(msg)
-            raise ValueError('fq1, fq2 not valid')
-        self.fq1 = file_abspath(self.fq1)
-        self.fq2 = file_abspath(self.fq2)
-        self.is_paired = c2p
+        if not check_fx_args(fq1, fq2):
+            raise ValueError('fq1, fq2 not valide, check above message')
+        self.fq1 = file_abspath(fq1)
+        self.fq2 = file_abspath(fq2)
+        self.is_paired = check_fx_paired(self.fq1, self.fq2)
         # update rep_list
         snames = fx_name(self.fq1, fix_pe=self.is_paired, fix_unmap=True)
         self.rep_list = [os.path.join(self.outdir, i) for i in snames]
@@ -253,7 +217,10 @@ class RnaseqRnConfig(object):
 
     # update: genome_size_file
     def init_index(self):
-        # get data from: genome, extra_index
+        index_list = check_index_args(**self.__dict__)
+        if len(index_list) == 0:
+            raise ValueError('no index found')
+        # update: genome_size_file          
         if isinstance(self.extra_index, str):
             self.genome_size_file = AlignIndex(self.extra_index).index_size(out_file=True)
         elif isinstance(self.genome, str):

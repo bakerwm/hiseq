@@ -169,13 +169,16 @@ def check_fx_paired(fq1, fq2, **kwargs):
 
 def check_fx_args(fq1, fq2=None, **kwargs):
     """
-    Check the fastx in arguments
+    Check the fastx, both str or list; fq2 could be None.
     
     Parameters
     ----------
     fq1 : str or list
+        read1 of PE reads, or SE
+        
     fq2 : None, str or list
-
+        read2 of PE reads
+        
     check:
     1. file exists
     2. file type
@@ -183,37 +186,49 @@ def check_fx_args(fq1, fq2=None, **kwargs):
     4. check_empty
     """
     if isinstance(fq1, str):
-        k1 = check_fx(fq1, **kwargs)
-        if isinstance(fq2, str):
-            k2e = check_fx(fq2, **kwargs)
-            k2p = check_fx_paired(fq1, fq2, **kwargs)
-            k2 = k2e and k2p
-        elif fq2 is None:
-            k2 = True # skipped
-        else:
-            k2 = False # error
-            log.error('fq2 not valid, expect str or NoneType, got {}'.format(
-                type(fq2).__name__))
-        out = k1 and k2
-    elif isinstance(fq1, list):
-        k1 = all(check_fx(fq1, **kwargs))
-        if isinstance(fq2, list):
-            k2e = all(check_fx(fq2, **kwargs))
-            k2p = check_fx_paired(fq1, fq2, **kwargs)
-            k2 = k2e and k2p
-        elif fq2 is None:
-            k2 = True
-        else:
-            k2 = False
-            log.error('fq2 not valid, expect list or NoneType, got {}'.format(
-                type(fq2).__name__))
-        out = k1 and k2
-    else:
-        out = False
+        fq1 = [fq1]
+    if isinstance(fq2, str):
+        fq2 = [fq2]
+    if not isinstance(fq1, list):
         log.error('fq1 expect str or list, got {}'.format(
             type(fq1).__name__))
+        return None
+    # check fq1: message
+    c1 = isinstance(fq1, list)
+    c1e = all(file_exists(fq1))
+    c1x = all([c1, c1e])
+    # check fq2:
+    c2 = isinstance(fq2, list)
+    if c2:
+        c2e = all(file_exists(fq2))
+        c2p = all(check_fx_paired(fq1, fq2))
+        c2x = all([c2, c2e, c2p])
+    elif fq2 is None:
+        c2e = c2p = False
+        c2x = True # skipped
+    else:
+        c2x = c2e = c2p = False # force
+    # final
+    out = all([c1x, c2x])
+    if not out:
+        msg = '\n'.join([
+            '='*80,
+            'Check fastq:',
+            '{:>14} : {}'.format('fq1', fq1),
+            '{:>14} : {}'.format('fq2', fq2),
+            '-'*40,
+            'Status',
+            '{:>14} : {}'.format('fq1 is list', c1),
+            '{:>14} : {}'.format('fq1 exists', c1e),
+            '{:>14} : {}'.format('fq2 is list', c2),
+            '{:>14} : {}'.format('fq2 is exists', c2e),
+            '{:>14} : {}'.format('fq is paired', c2p),
+            '-'*40,
+            'Status: {}'.format(out),
+            '='*80                
+        ])
+        print(msg)
     return out
-
 
         
 ##########################

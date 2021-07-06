@@ -3,7 +3,6 @@
 
 """
 RNAseq for single fq, single index: r1
-
 """
 
 import os
@@ -11,15 +10,14 @@ import sys
 import pathlib
 import argparse
 from hiseq.rnaseq.rnaseq_rp import RnaseqRp
-from hiseq.align.align_index import AlignIndex, check_index_args, fetch_index
 from hiseq.rnaseq.utils import rnaseq_trim, rnaseq_align_spikein, \
     rnaseq_align_rRNA, rnaseq_align_genome, rnaseq_quant, rnaseq_bam2bw, \
     qc_trim_summary, qc_align_summary, qc_genebody_enrich
-
 from hiseq.utils.file import check_path, check_fx_paired, symlink_file, \
-    file_exists, file_abspath, file_prefix, fx_name, Genome
+    file_exists, file_abspath, file_prefix, fx_name, Genome, check_fx_args
 from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \
     read_hiseq, is_supported, print_dict
+from hiseq.align.align_index import AlignIndex, check_index_args, fetch_index
 
 
 class RnaseqR1(object):
@@ -95,15 +93,14 @@ class RnaseqR1Config(object):
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'rnaseq_r1'
-        self.is_paired = file_exists(self.fq2)
         # output
         if self.outdir is None:
             self.outdir = str(pathlib.Path.cwd())
         self.outdir = file_abspath(self.outdir)
+        self.init_fq()
         if not isinstance(self.smp_name, str):
             self.smp_name = fx_name(self.fq1, fix_pe=self.is_paired, fix_unmap=True)
         self.init_files()
-        self.init_fq()
         self.init_index()
         self.threads, _ = init_cpu(self.threads, 1)
         Config().dump(self.__dict__, self.config_yaml)
@@ -226,89 +223,20 @@ class RnaseqR1Config(object):
         check_path(dir_list)
 
 
-    def init_fq(self):
-        # check message
-        if not isinstance(self.fq1, str):
-            raise ValueError('fq1 require str, got {}'.format(
-                type(self.fq1).__name__))
-        c1 = isinstance(self.fq1, str)
-        if self.fq2 is None or self.fq2 == 'None':
-            self.fq2 = None # convert 'None' -> None; from yaml
-            c2e = c2p = True
-            self.unmap1, self.unmap2 = (self.unmap, None)
-        else:
-            c2e = isinstance(self.fq2, str)
-            c2p = check_fx_paired(self.fq1, self.fq2)
-        if not all([c1, c2e, c2p]):
-            msg = '\n'.join([
-                '='*80,
-                'Input',
-                '{:>14} : {}'.format('fq1', self.fq1),
-                '{:>14} : {}'.format('fq2', self.fq2),
-                '-'*40,
-                'Status',
-                '{:>14} : {}'.format('fq1 is str', c1),
-                '{:>14} : {}'.format('fq1 is str', c2e),
-                '{:>14} : {}'.format('fq1,fq2 paired', c2p),
-                '-'*40,
-                'Output: {}'.format(all([c1, c2e, c2p])),
-                '='*80                
-            ])
-            print(msg)
-            raise ValueError('fq1, fq2 not valid')
-        self.fq1 = file_abspath(self.fq1)
-        self.fq2 = file_abspath(self.fq2)
+    def init_fq(self):        
+        if not check_fx_args(fq1, fq2):
+            raise ValueError('fq1, fq2 not valide, check above message')
+        self.fq1 = file_abspath(fq1)
+        self.fq2 = file_abspath(fq2)
+        self.is_paired = check_fx_paired(fq1, fq2)
 
     
     # update: genome_size_file
     def init_index(self):
-        # return: genome_index, spikein_index, rRNA_index (extra_index)
-        # spikein-index
-        if isinstance(self.spikein_index, str):
-            if not AlignIndex(self.spikein_index, self.aligner).is_valid():
-                self.spikein_index = None
-        elif is_supported(self.spikein):
-            self.spikein_index = fetch_index(self.spikein, aligner=self.aligner)
-        else:
-            self.spikein_index = None
-        # rRNA-index (genome)
-        if isinstance(self.rRNA_index, str):
-            if not AlignIndex(self.rRNA_index, self.aligner).is_valid():
-                self.rRNA_index = None
-        elif is_supported(self.genome) and self.to_rRNA:
-            for group in ['rRNA', 'MT_trRNA']:
-                i = fetch_index(self.genome, group, aligner=self.aligner)
-                if i:
-                    self.rRNA_index = i
-                    break
-                else:
-                    self.rRNA_index = None
-        else:
-            self.rRNA_index = None
-        if isinstance(self.extra_index, str):
-            if AlignIndex(self.extra_index, self.aligner).is_valid():
-                self.genome_index = self.extra_index
-        elif isinstance(self.genome_index, str):
-            if not AlignIndex(self.genome_index, self.aligner).is_valid():
-                self.genome_index = None
-        elif is_supported(self.genome):
-            self.genome_index = fetch_index(self.genome, aligner=self.aligner)
-        else:
-            self.genome_index = None          
-        # check
-        if self.genome_index is None:
-            raise ValueError('genome/genome_index is missing, check the arguments')
-        # show log
-        msg = '\n'.join([
-            '='*80,
-            'Align index for RnaseqR1():',
-            '{:>14} : {}'.format('spikein_index', self.spikein_index),
-            '{:>14} : {}'.format('rRNA_index', self.rRNA_index),
-            '{:>14} : {}'.format('genome_index', self.genome_index),
-            '='*80,
-        ])
-        print(msg)
-        # get data from: genome, extra_index
+        index_list = check_index_args(**self.__dict__)
+        if len(index_list) == 0:
+            raise ValueError('no index found')
+        # update: genome_size_file          
         if isinstance(self.extra_index, str):
             self.genome_size_file = AlignIndex(self.extra_index).index_size(out_file=True)
         elif isinstance(self.genome, str):

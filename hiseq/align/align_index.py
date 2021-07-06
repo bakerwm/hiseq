@@ -3,6 +3,7 @@
 """For aligner index
 1. search/fetch index
 2. validate index
+3. check arguments
 
 Including functions/classes:
 
@@ -10,6 +11,8 @@ AlignIndex
 fetch_index
 check_index_args
 
+Utilities:
+is_supported: check genome, aligner, ...
 """
 
 import os
@@ -17,7 +20,6 @@ import pathlib
 import tempfile
 from hiseq.utils.utils import Config, update_obj, log, is_supported
 from hiseq.utils.file import check_file, file_exists, remove_file
-# from hiseq.align.utils import default_values
 
 
 class AlignIndex(object):
@@ -59,7 +61,6 @@ class AlignIndex(object):
         if index is None:
             index = self.index
         if index is None:
-#             log.error('index not valid, expect str, got NoneType')
             out = False
         f = [
             'SAindex', 'Genome', 'SA', 'genomeParameters.txt',
@@ -81,7 +82,6 @@ class AlignIndex(object):
         if index is None:
             index = self.index
         if index is None:
-#             log.error('index not valid, expect str, got NoneType')
             out = False
         f = ['.' + i + '.ebwt' for i in [
             '1', '2', '3', '4', 'rev.1', 'rev.2'
@@ -102,7 +102,6 @@ class AlignIndex(object):
         if index is None:
             index = self.index
         if index is None:
-#             log.error('index not valid, expect str, got NoneType')
             out = False
         f = ['.' + i + '.bt2' for i in [
             '1', '2', '3', '4', 'rev.1', 'rev.2'
@@ -123,7 +122,6 @@ class AlignIndex(object):
         if index is None:
             index = self.index
         if index is None:
-#             log.error('index not valid, expect str, got NoneType')
             out = False
         f = ['.' + i + '.ht2' for i in [
             '1', '2', '3', '4', 'rev.1', 'rev.2'
@@ -144,7 +142,6 @@ class AlignIndex(object):
         if index is None:
             index = self.index
         if index is None:
-#             log.error('index not valid, expect str, got NoneType')
             out = False
         f = ['.sa', '.amb', '.ann', '.pac', '.bwt']
         if isinstance(index, str):
@@ -163,8 +160,6 @@ class AlignIndex(object):
         """
         if index is None:
             index = self.index
-#         if index is None:
-#             out = False
         out = False
         if isinstance(index, str):
             f = os.path.join(index, 'info.json')
@@ -220,7 +215,6 @@ class AlignIndex(object):
         if index is None:
             index = self.index
         if index is None:
-#             log.error('index not valid, expect str, got NoneType')
             out = None
         if self.is_valid(index):
             index = index.rstrip('/')
@@ -249,8 +243,6 @@ class AlignIndex(object):
         """        
         if index is None:
             index = self.index
-#         if index is None:
-#             log.error('index not valid, expect str, got NoneType')
         out = None
         if self.is_valid(index):
             tmp_f1 = self._tmp()
@@ -294,7 +286,6 @@ class AlignIndex(object):
         if index is None:
             index = self.index
         if index is None:
-#             log.error('index not valid, expect str, got NoneType')
             out = None
         # gsize: file, chrom_sizes
         gsize = None
@@ -470,9 +461,7 @@ def check_index_args(**kwargs):
     if isinstance(index_list, list):
         pass
     else:
-        # for index_list
         index_list = [] # init
-        # return: genome_index, spikein_index, rRNA_index (extra_index)
         # level-1.1 : extra
         if isinstance(extra_index, str):
             if AlignIndex(extra_index, aligner).is_valid():
@@ -528,8 +517,6 @@ def check_index_args(**kwargs):
         index_list_msg,
         '-'*80,
         ])
-#     if verbose:
-#         print(msg)
     print(msg_out)
     return index_list
 

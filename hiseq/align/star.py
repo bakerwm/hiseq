@@ -4,16 +4,6 @@
 Align reads to index, using STAR
 
 Basic usage: 
-
-<<<<<<< HEAD
-1. SE
-bowtie2 -S -x index in.fq > out.sam 2> out.log
-
-2. PE
-bowtie2 -S -x index -1 r1.fq -2 r2.fq > out.sam 2> out.log
-=======
-STAR 
->>>>>>> fix_atac
 """
 
 import os
@@ -353,6 +343,10 @@ class Star(object):
             'unique_only': self.unique_only,
             })
         Config().dump(df, self.align_json)
+        # remove temp files
+        del_list = [self.unmap1, self.unmap2, self.unmap]
+        if not self.keep_unmap:
+            remove_file(del_list, ask=False)
         return (self.bam, self.unmap1, self.unmap2)
 
 

@@ -18,7 +18,7 @@ from hiseq.utils.file import check_path, check_fx_paired, symlink_file, \
     file_abspath, file_prefix, fx_name, Genome
 from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \
     read_hiseq
-from hiseq.align.align_index import AlignIndex
+from hiseq.align.align_index import AlignIndex, check_index_args
 
 
 class AtacR1(object):
@@ -138,10 +138,12 @@ class AtacR1Config(object):
         if self.smp_name is None:
             self.smp_name = fx_name(self.fq1, fix_pe=True)
 
-    
-    # update: genome_size_file    
+  
     def init_index(self):
-        # get data from: genome, extra_index
+        index_list = check_index_args(**self.__dict__)
+        if len(index_list) == 0:
+            raise ValueError('no index found')
+        # update: genome_size_file          
         if isinstance(self.extra_index, str):
             self.genome_size_file = AlignIndex(self.extra_index).index_size(out_file=True)
         elif isinstance(self.genome, str):

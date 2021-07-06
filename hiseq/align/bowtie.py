@@ -198,11 +198,7 @@ class Bowtie(object):
     bowtie -S -x index in.fq > out.sam 2> out.log
 
     2. PE
-<<<<<<< HEAD
-    bowtie2 -S -x index -1 r1.fq -2 r2.fq > out.sam 2> out.log
-=======
     bowtie -S -x index -1 r1.fq -2 r2.fq > out.sam 2> out.log
->>>>>>> fix_atac
     """
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)

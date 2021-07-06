@@ -26,13 +26,12 @@ from hiseq.rnaseq.utils import rnaseq_trim, rnaseq_align_spikein, \
     rnaseq_deseq, qc_trim_summary, qc_align_summary, qc_bam_cor, \
     qc_genebody_enrich  # , salmon_align, salmon_deseq
 from hiseq.rnaseq.rnaseq_salmon import RnaseqSalmon
-
 from hiseq.utils.file import check_path, check_fx_paired, symlink_file, \
-    file_exists, file_abspath, file_prefix, fx_name, Genome
+    file_exists, file_abspath, file_prefix, fx_name, Genome, check_fx_args
 from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \
     read_hiseq, list_hiseq_file, run_shell_cmd
 from hiseq.utils.bam import Bam
-from hiseq.align.align_index import AlignIndex
+from hiseq.align.align_index import AlignIndex, check_index_args
 
 
 
@@ -188,58 +187,18 @@ class RnaseqRxConfig(object):
 
 
     def init_fq(self, fq1, fq2):
-        # convert to list
-        if isinstance(fq1, str):
-            fq1 = [fq1]
-        if isinstance(fq2, str):
-            fq2 = [fq2]
-        if not isinstance(fq1, list):
-            raise ValueError('fq1 require list, got {}'.format(
-                type(fq1).__name__))
-        # check message
-        c1 = isinstance(fq1, list)
-        c2 = isinstance(fq2, list)
-        c1e = all(file_exists(fq1))
-        c1x = all([c1, c1e])
-        if c1:
-            if isinstance(fq2, list):
-                c2e = all(file_exists(fq2))
-                c2p = all(check_fx_paired(fq1, fq2))
-                c2x = all([c2, c2e, c2p])
-            elif fq2 is None:
-                fq2 = None
-                c2x = c2p = c2e = True # skipped
-            else:
-                c2x = c2e = c2p = False # force                
-        else:
-            c1x = c2x = c2e = c2p = False # force
-        # final
-        c = all([c1x, c2x])
-        if not c:
-            msg = '\n'.join([
-                '='*80,
-                'Check fastq:',
-                '{:>14} : {}'.format('fq1', fq1),
-                '{:>14} : {}'.format('fq2', fq2),
-                '-'*40,
-                'Status',
-                '{:>14} : {}'.format('fq1 is list', c1),
-                '{:>14} : {}'.format('fq1 exists', c1e),
-                '{:>14} : {}'.format('fq2 is list', c2),
-                '{:>14} : {}'.format('fq2 is exists', c2e),
-                '{:>14} : {}'.format('fq is paired', c2p),
-                '-'*40,
-                'Status: {}'.format(c),
-                '='*80                
-            ])
-            print(msg)
-            raise ValueError('fq1, fq2 not valid')
-        return (file_abspath(fq1), file_abspath(fq2), c2p)
-                
+        if not check_fx_args(fq1, fq2):
+            raise ValueError('fq1, fq2 not valide, check above message')
+        p = check_fx_paired(fq1, fq2)
+        return (file_abspath(fq1), file_abspath(fq2), p)
+
     
     # update: genome_size_file    
     def init_index(self):
-        # get data from: genome, extra_index
+        index_list = check_index_args(**self.__dict__)
+        if len(index_list) == 0:
+            raise ValueError('no index found')
+        # update: genome_size_file          
         if isinstance(self.extra_index, str):
             self.genome_size_file = AlignIndex(self.extra_index).index_size(out_file=True)
         elif isinstance(self.genome, str):
