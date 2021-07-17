@@ -5,7 +5,6 @@
 Demo for trackhub, to create CompositeTrack
 
 Stage:
-
 1. Create simple compositeTrack (for few tracks)
 2. Create two compositeTracks
 3. Add subgroups for tracks (for large number of tracks)
@@ -76,6 +75,10 @@ class HttpServer(object):
 
     $ hostname -I
     1.2.3.4 # (fake ip, here)
+    
+    # in case multiple hosts, choose first one
+    $ hostname -I 
+    1.2.3.4  5.6.7.8
 
     you can find the http_root_ip is '1.2.3.4'
 
@@ -209,8 +212,34 @@ class HttpServer(object):
             - Ubuntu
             $ hostname -I
             1.2.3.4
+            
+            $ hostname -I
+            1.2.3.4   5.6.7.8 
+            # in case multiple hosts
         """
-        return run_shell_cmd('hostname -I')[1].strip()
+#         return run_shell_cmd('hostname -I')[1].strip()
+        ip = run_shell_cmd('hostname -I')[1].strip()
+        ip_list = ip.split(' ')
+        if len(ip_list) > 1:
+            ip = ip_list[0] # first
+            log.warning('Multiple ip addresses found: {}, choose: [{}]'.format(
+                ip_list, ip))
+        # validate
+        if self.is_ipv4(ip):
+            return ip
+        else:
+            raise ValueError('not valid ip address found: {}'.format(ip))
+        
+    
+    def is_ipv4(self, s):
+        # validate ipv4
+        def is_valid(i):
+            try: 
+                return str(int(i)) == i and 0 <= int(i) <= 255
+            except: 
+                return False
+        # check
+        return s.count(".") == 3 and all(is_valid(i) for i in s.split("."))
 
 
     def is_url(self, s):
