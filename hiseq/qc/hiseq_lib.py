@@ -68,15 +68,16 @@ import re
 import argparse
 import pathlib
 import shutil
+import tempfile
 import pyfastx
 import hiseq
+from collections import Counter
 from multiprocessing import Pool
 from hiseq.utils.fastx import Fastx
 from hiseq.utils.utils import update_obj, log, run_shell_cmd, Config
 from hiseq.utils.file import fx_name, check_path, list_file, list_fx, \
     file_abspath, file_exists, file_abspath
 from hiseq.demx.sample_sheet import HiSeqIndex # check index name/seq
-from collections import Counter
 
 
 class HiseqLib(object):
@@ -490,6 +491,267 @@ def guess_adapter(fq, show_log=True):
         log.info('unknown library')
         out = None
     return out
+
+
+class HiseqLibSmRNA(object):
+    """
+    Guess the library structure of small RNA (with UMI on 5' end, 
+    UMI or barcode on 3' end), with TruSeq backbond, and sequenced 
+    with Paired-End 150 mode.
+    
+    to-do: update hiseq.qc.hiseq_lib.HiseqLibR1() for 3'-UMI (2021-07-16)
+    
+    Arguments
+    =========
+    fq : str
+        Path to the fastq file, (single file)
+    
+    outdir : str, None
+        Saving temp files in outdir
+        
+    top_n : 100000
+        Check the top 100000 reads, 0 for whole file
+        
+    Example
+    =======
+    >>> u = GuessUMI(fq1=fq1, fq2=fq2, outdir=outdir)
+    >>> u.run()
+    >>> u.__dict__
+        
+    return sequences in read1:
+    5'UMI
+    3'UMI
+    3'barcode
+    3'adapter (TruSeq library)
+    
+    15nt at the beginning of read1
+    
+    the read length MUST be longer than 50nt
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+        
+
+    def init_args(self):
+        args_init = {
+            'fq1': None,
+            'fq2': None,
+            'outdir': None,
+            'top_n': 100000,
+            'verbose': False
+        }
+        self = update_obj(self, args_init, force=False)
+        if not isinstance(self.outdir, str):
+            self.outdir = tempfile.TemporaryDirectory().name
+        check_path(self.outdir)
+        
+    
+    def init_fq(self, fq):
+        flag = False
+        if isinstance(fq, str):
+            if file_exists(self.fq1):
+                if re.search('f(ast)?q(.gz)?$', fq, flags=re.IGNORECASE):
+                    flag = True
+                else:
+                    log.error('not like a fastq file: {}'.format(fq))
+            else:
+                log.error('file not exists: {}'.format(fq))
+        else:
+            log.error('fq, expect str, got {}'.format(type(fq).__name__))
+        if not flag:
+            log.error('illegal fastq file, see message above')
+        return flag
+        
+    
+    def top_freq(self, arr):
+        """
+        Parameters
+        ==========
+        arr : list
+            list of elements
+            
+        return the top element, and frequency
+        (element, freq)
+        """
+        out = None
+        if isinstance(arr, list):
+            if len(arr) > 0:
+                d = Counter(arr) # collections
+                max_freq = max(d.values())
+                for k,v in d.items():
+                    if v == max_freq:
+                        e = k
+                        break # the first top-ranked element
+                out = (e, max_freq/len(arr))
+        else:
+            log.error('top_freq() skipped, expect list, got {}'.format(
+                type(arr).__name__))
+        return out
+    
+    
+    def guess_umi(self, fq):
+        counter = 0
+        n_valid = 0
+        umi_1 = []
+        umi_2 = []
+        try:
+            for _,s,_,_ in pyfastx.Fastx(fq):
+                counter += 1
+                if len(s) > 50:
+                    n_valid += 1
+                    umi_1.append(s[3:6]) # 4:6 NNNCGANNNTCANNN
+                    umi_2.append(s[9:12]) # 10:12 NNNCGANNNTCANNN
+                # skip
+                if counter >= self.top_n and self.top_n > 0:
+                    break
+        except RuntimeError as e:
+            log.error(e)
+        # check frequency
+        umi = None
+        if n_valid < counter:
+            if self.verbose:
+                log.error('read shorter than 50nt: {} / {} ({:.2f}%)'.format(
+                    counter-n_valid, counter, 100-n_valid/counter*100))
+        else:
+            u1 = self.top_freq(umi_1) # (key, value)
+            u2 = self.top_freq(umi_2) # (key, value)
+            # set the cutoff
+            cutoff = 0.9
+            if isinstance(u1, tuple) and isinstance(u2, tuple):
+                if u1[1] > cutoff and u2[1] > cutoff:
+                    umi = 'NNN{}NNN{}NNN'.format(u1[0], u2[0])
+                else:
+                    if self.verbose:
+                        u = 'NNN({}:{:.1f})NNN({}:{:.1f})NNN'.format(
+                            u1[0], u1[1], u2[0], u2[1])
+                        log.error('not valid 5-UMI: {} (umi:freq)'.format(u))
+            else:
+                if self.verbose:
+                    log.error('failed to guess 5-UMI, {}'.format(fq))
+        # output
+        return umi
+
+    
+    def guess_barcode_r1(self, fq, cutoff=0.9):
+        """
+        How to?
+        solution-1: (read1)
+        search for the P7-3'-adapter,
+        in read1: A{ATCACG}
+        """
+        bc = None
+        if file_exists(fq):
+            p = HiseqLibR1(fq, self.outdir, self.top_n)
+            p.parse_i7()
+            # choose top barcode
+            if file_exists(p.i7_json):
+                d = Config().load(p.barcode_json)
+                n_list = [v.get('count', 0) for k,v in d.items()]
+                n_max = max(n_list)
+                h = None # pre-define, in case empty dict
+                for k,v in d.items():
+                    if v['count'] == n_max:
+                        h = v.get('seq', None)
+                        break
+                freq = n_max / sum(n_list)
+                if freq > cutoff:
+                    bc = 'A'+h # barcode prefix: A
+                    print('barcode: {}:{}'.format(bc, freq))
+                else:
+                    log.error('no valid barcode: {}:{}'.format(h, freq))
+            else:
+                log.error('HiseqLibR1() failed')
+        else:
+            log.error('fq file not exists: {}'.format(fq))
+        # return
+        return bc
+    
+    
+    def guess_barcode_r2(self, fq):
+        """
+        How to?
+        3'-UMI on the first (15-nt Zamore lab version) (7nt Yu lab version)
+        in read2: {CGTGAT}T
+        """
+        counter = 0
+        n_valid = 0
+        bc_list = []
+        try:
+            for _,s,_,_ in pyfastx.Fastx(fq):
+                counter += 1
+                if len(s) > 50:
+                    n_valid += 1
+                    bc_list.append(s[:6]) # 6nt
+                # skip
+                if counter >= self.top_n and self.top_n > 0:
+                    break
+        except RuntimeError as e:
+            log.error(e)
+        # check frequency
+        bc = None
+        if n_valid < counter:
+            if self.verbose:
+                log.error('read shorter than 50nt: {} / {} ({:.2f}%)'.format(
+                    counter-n_valid, counter, 100-n_valid/counter*100))
+        else:
+            bc_freq = self.top_freq(bc_list)
+            cutoff = 0.9
+            if isinstance(bc_freq, tuple):
+                if bc_freq[1] > cutoff:
+                    bc = 'NNNNA'+self.rev_comp(bc_freq[0]) #  barcode prefix: A, 
+                else:
+                    if self.verbose:
+                        b = '{}:{}'.format(bc_freq[0], bc_freq[1])
+                        log.error('not valid barcode: {} (bc:freq)'.format(b))
+            else:
+                if self.verbose:
+                    log.error('failed to guess barcode, {}'.format(fq))
+        # output for read1 mode
+        return bc
+
+    
+    def rev_comp(self, x):
+        """Reverse complement DNAseq"""
+        t = {
+            'A': 'T',
+            'C': 'G',
+            'G': 'C',
+            'T': 'A',
+            'N': 'N',
+        }
+        s = x[::-1] # reverse
+        return ''.join([t.get(i, i) for i in s]) # complement
+
+    
+    def run(self):                
+        if self.init_fq(self.fq1):
+            # 5' umi from read1
+            self.umi5 = self.guess_umi(self.fq1)
+            # 3' umi, barcode
+            if self.init_fq(self.fq2):
+                # guess barcode, umi3 (read2)
+                self.barcode = self.guess_barcode_r2(self.fq2)
+                self.umi3 = self.guess_umi(self.fq2)
+            else:
+                # guess barcode, umi3 (read1)
+                self.barcode = self.guess_barcode_r1(self.fq1)
+                self.umi3 = None # self.guess_umi3_r1(self.fq1) # to-do !!!
+        else:
+            self.umi5 = None
+            log.error('fq1 not exists, GuessUMI() failed')
+        # status
+        msg = '\n'.join([
+            '-'*80,
+            'Guess small structure:',
+            '{:>14s}: {}'.format('fq1', self.fq1),
+            '{:>14s}: {}'.format('fq2', self.fq2),
+            '{:>14s}: {}'.format('5-UMI', self.umi5),
+            '{:>14s}: {}'.format('3-UMI', self.umi3),
+            '{:>14s}: {}'.format('3-barcode', self.barcode),
+            '-'*80,
+        ])
+        print(msg)
 
 
 def get_args():
