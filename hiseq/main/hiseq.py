@@ -27,6 +27,9 @@ from hiseq.cnr.cnr import get_args as add_cnr_args
 from hiseq.rnaseq.rnaseq import Rnaseq
 from hiseq.rnaseq.rnaseq import get_args as add_rnaseq_args
 
+from hiseq.smRNA.trim_smRNA import TrimSmRNA
+from hiseq.smRNA.trim_smRNA import get_arge as add_smRNA_args
+
 
 from hiseq.trim.trim import Trim
 from hiseq.trim.trim import get_args as add_trim_args
@@ -198,6 +201,14 @@ class Hiseq(object):
         args = self.init_args(add_cnr_args())
         Cnr(**args).run()
 
+    
+    def smRNA(self):
+        """
+        small RNA pipeline
+        """
+        args = self.init_args(add_smRNA_args())
+        TrimSmRNA(**args).run()        
+        
         
     def trim(self):
         """

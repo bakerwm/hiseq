@@ -5,7 +5,7 @@
 =========
 Attention
 =========
-This script is designed for small RNA seqeuencing reads, by paired-end mode with 150bp read length.
+This script was designed for small RNA seqeuencing reads, by paired-end mode with 150bp read length.
 expect read through the insert, and including both 5'UMI, barcode, 3'adapter in reads
 
 
