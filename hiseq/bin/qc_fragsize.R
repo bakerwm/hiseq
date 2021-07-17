@@ -12,7 +12,6 @@ if (length(args) < 2) {
 pdfout  <- args[1]
 lendist <- args[-1] # multiple files
 
-
 suppressPackageStartupMessages(library(hiseqr))
 suppressPackageStartupMessages(library(readr))
 suppressPackageStartupMessages(library(dplyr))
@@ -20,13 +19,15 @@ suppressPackageStartupMessages(library(ggplot2))
 
 df <- lapply(lendist, function(f){
   readr::read_csv(f, comment = '#', col_types = readr::cols())
-  # %>%
-  #   dplyr::filter(length < 1000) %>%
-  #   dplyr::mutate(count = ifelse(length < 50, 0, count))
 }) %>%
   dplyr::bind_rows()
-
 p <- hiseqr::fragsize_plot(df)
-pdf(pdfout, width = 6, heigh = 4)
+
+## fix plot height
+# 2:4, 4:4.5, 6:5, 8:5.5, 10:6
+n_files  <- length(lendist)
+n_height <- floor(n_files/2)*.8 + 3.5
+
+pdf(pdfout, width = 7, height = n_height)
 print(p)
 dev.off()
