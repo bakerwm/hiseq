@@ -61,6 +61,7 @@ class Cutadapt(object):
             'outdir': None,
             'smp_name': None,
             'len_min': 15,
+            'len_max': 0,
             'cut_to_length': 0,
             'adapter3': None, # read1
             'adapter5': None, # read1
@@ -146,8 +147,8 @@ class Cutadapt(object):
         3. guess from the first 1M reads
         """
         lib = {
-                'truseq': ['AGATCGGAAGAGCACACGT', 'AGATCGGAAGAGCGTCGTG'],
-                'nextera': ['CTGTCTCTTATACACATCT', 'CTGTCTCTTATACACATCT'],
+                'truseq': ['AGATCGGAAGAGC', 'AGATCGGAAGAGC'],
+                'nextera': ['CTGTCTCTTATACA', 'CTGTCTCTTATACA'],
                 'smallrna': ['TGGAATTCTCGGGTGCCAAGG', 'TGGAATTCTCGGGTGCCAAGG']
             }
         if self.library_type is None and self.adapter3 is None:
@@ -207,11 +208,23 @@ class Cutadapt(object):
         """
         # adapter3
         if self.recursive:
-            ad3_list = [self.adapter3[i:] for i in range(0, 10)]
-            Ad3_list = [self.Adapter3[i:] for i in range(0, 10)]
+            if isinstance(self.adapter3, str):
+                ad3_list = [self.adapter3[i:i+14] for i in range(0, 10)]
+            else:
+                ad3_list = []
+            if isinstance(self.Adapter3, str):
+                Ad3_list = [self.Adapter3[i:i+14] for i in range(0, 10)]
+            else:
+                Ad3_list = []
         else:
-            ad3_list = [self.adapter3]
-            Ad3_list = [self.Adapter3]
+            if isinstance(self.adapter3, str):
+                ad3_list = [self.adapter3]
+            else:
+                ad3_lsit = []
+            if isinstance(self.Adapter3, str):
+                Ad3_list = [self.Adapter3]
+            else:
+                Ad3_list = []
         return (ad3_list, Ad3_list)
 
 
@@ -236,10 +249,12 @@ class Cutadapt(object):
         ad3_list, _ = self.get_ad3()
         ad3_arg = ' '.join([
             '-a {}'.format(i) for i in ad3_list])
+        arg_len_max = '-M {}'.format(self.len_max) if self.len_max > 0 else ''
         cmd = ' '.join([
             '{}'.format(shutil.which('cutadapt')),
             ad3_arg,
             arg_adapter_5,
+            arg_len_max,
             '-j {}'.format(self.threads),
             '-m {}'.format(self.len_min),
             '-q {}'.format(self.qual_min),
@@ -409,8 +424,10 @@ def get_args():
         TruSeq, TruSeq standard library \
         Nextera, Tn5 standard library, \
         smallRNA, small RNA library')
-    parser.add_argument('-m', '--len_min', default=15, metavar='len_min',
+    parser.add_argument('-m', '--len-min', dest='len_min', default=15,
         type=int, help='Minimum length of reads after trimming, defualt [15]')
+    parser.add_argument('-M', '--len-max', dest='len_max', default=0,
+        type=int, help='Maxmimum length of reads after trimming, defualt [0], ignore')
     parser.add_argument('--cut-to-length', default=0, dest='cut_to_length',
         type=int,
         help='cut reads to from right, default: [0], full length')
