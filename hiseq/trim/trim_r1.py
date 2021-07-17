@@ -67,6 +67,7 @@ class TrimR1(object):
             'outdir': None, # str
             'smp_name': None,
             'len_min': 15,
+            'len_max': 0,
             'cut_to_length': 0,
             'threads': 4,
             'rmdup': False,
@@ -509,6 +510,8 @@ def get_args():
         smallRNA, small RNA library')
     parser.add_argument('-m', '--len_min', default=15, metavar='len_min',
         type=int, help='Minimum length of reads after trimming, defualt [15]')
+    parser.add_argument('-M', '--len-max', dest='len_max', default=0,
+        type=int, help='Maxmimum length of reads after trimming, defualt [0], ignore')
     parser.add_argument('--cut-to-length', default=0, dest='cut_to_length',
         type=int,
         help='cut reads to from right, default: [0], full length')
