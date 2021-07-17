@@ -118,6 +118,8 @@ class AlignRx(object):
             'fq1': self.fq1[i],
             'fq2': self.fq2[i] if isinstance(self.fq2, list) else None,
             'smp_name': self.smp_name[i],
+            'rep_list': None,
+            'is_paired': None,
             })
         AlignRn(**args_local).run()
 
@@ -133,7 +135,6 @@ class AlignRx(object):
 
 class AlignRn(object):
     """Alignment: fx: 1, index: N
-
     Align to each index, one-by-one, not need: parallel
     """
     def __init__(self, **kwargs):
@@ -190,6 +191,8 @@ class AlignRn(object):
                 'index': index,
                 'index_name': index_name,
                 'index_list': None,
+                'rep_list': None,
+                'is_paired': None,
             })
             bam, unmap1, unmap2 = AlignR1(**args_local).run()
             # update the unmap files for next round
@@ -291,64 +294,8 @@ class AlignConfig(object):
         self.init_index()
         self.init_files()
 
-        
+
     def init_fq(self):
-        # convert to list
-        if isinstance(self.fq1, str):
-            self.fq1 = [self.fq1]
-        if isinstance(self.fq2, str):
-            self.fq2 = [self.fq2]
-        if not isinstance(self.fq1, list):
-            raise ValueError('fq1 require list, got {}'.format(
-                type(self.fq1).__name__))
-        # check message
-        c1 = isinstance(self.fq1, list)
-        c1e = all(file_exists(self.fq1))
-        c1x = all([c1, c1e])
-        if self.fq2 is None or self.fq2 == 'None':
-            self.fq2 = None # convert 'None' -> None; from yaml
-            c2 = False
-            c2e = True
-            c2p = False # paired
-            c2x = True
-        else:
-            c2 = isinstance(self.fq2, list)
-            c2e = all(file_exists(self.fq2))
-            c2p = check_fx_paired(self.fq1, self.fq2)
-            c2x = all([c2, c2e, c2p])
-        if not all([c1x, c2x]):
-            msg = '\n'.join([
-                '='*80,
-                'Input',
-                '{:>14} : {}'.format('fq1', self.fq1),
-                '{:>14} : {}'.format('fq2', self.fq2),
-                '-'*40,
-                '{:>14} : {}'.format('fq1 is list', c1),
-                '{:>14} : {}'.format('fq1 exists', c1e),
-                '{:>14} : {}'.format('fq2 is list', c2),
-                '{:>14} : {}'.format('fq2 is exists', c2e),
-                '{:>14} : {}'.format('fq is paired', c2p),
-                '-'*40,
-                'Output: {}'.format(all([c1x, c2x])),
-                '='*80
-            ])
-            print(msg)
-            raise ValueError('fq1, fq2 not valid')
-        self.fq1 = file_abspath(self.fq1)
-        self.fq2 = file_abspath(self.fq2)
-        self.is_paired = c2p
-        # auto: sample names
-        snames = fx_name(self.fq1, fix_pe=self.is_paired, fix_unmap=True)
-        if isinstance(self.smp_name, list):
-            if len(self.smp_name) == len(self.fq1):
-                if all([isinstance(i, str) for i in self.smp_name]):
-                    snames = self.smp_name
-        self.smp_name = snames
-        # update rep_list
-        self.rep_list = [os.path.join(self.outdir, i) for i in self.smp_name]
-
-
-    def init_fx(self):
         """Force fx to list
         fq1 required. to_list
         fq2 optional, None
@@ -357,15 +304,15 @@ class AlignConfig(object):
         # force fq1 to list
         if isinstance(self.fq1, str):
             self.fq1 = [self.fq1]
-        # force fq2 to list
         if isinstance(self.fq2, str):
             self.fq2 = [self.fq2]
         if not check_fx_args(self.fq1, self.fq2, check_empty=True):
             raise ValueError('fq1, fq2 not valid')
         self.fq1 = file_abspath(self.fq1)
         self.fq2 = file_abspath(self.fq2)
+        self.is_paired = check_fx_paired(self.fq1, self.fq2)
         # auto: sample names
-        snames = file_prefix(self.fq1)
+        snames = fx_name(self.fq1, fix_pe=self.is_paired, fix_unmap=True)
         if isinstance(self.smp_name, str):
             self.smp_name = [self.smp_name]
         if isinstance(self.smp_name, list):
@@ -373,6 +320,8 @@ class AlignConfig(object):
                 if all([isinstance(i, str) for i in self.smp_name]):
                     snames = self.smp_name
         self.smp_name = snames
+        # update rep_list
+        self.rep_list = [os.path.join(self.outdir, i) for i in self.smp_name]
     
 
     def init_index(self):
@@ -425,12 +374,12 @@ class AlignRnConfig(object):
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'alignment_rn'
-        self.init_fx()
+        self.init_fq()
         self.init_index()
         self.init_files()
 
 
-    def init_fx(self):
+    def init_fq(self):
         """
         fq1 : str required. 
         fq2 : None or str, optional, None
@@ -438,19 +387,22 @@ class AlignRnConfig(object):
         index_list : list
         index_name : list
         """
-        flag_err = True
         if isinstance(self.fq1, str):
-            if check_fx_args(self.fq1, self.fq2):
-                flag_err = False
-        if flag_err:
+            flag = check_fx_args(self.fq1, self.fq2)
+        else:
+            flag = False
+        if not flag:
             raise ValueError('fq1, fq2 not valid, str expect, got {}'.format(
             type(self.fq1).__name__))
         self.fq1 = file_abspath(self.fq1)
         self.fq2 = file_abspath(self.fq2)
         self.fx_format = Fastx(self.fq1).format # fasta/q
+        self.is_paired = check_fx_paired(self.fq1, self.fq2)
         # auto: sample names
         if not isinstance(self.smp_name, str):
-            self.smp_name = file_prefix(self.fq1)
+            self.smp_name = fx_name(self.fq1, fix_pe=self.is_paired, fix_unmap=True)
+        # update rep_list
+        self.rep_list = os.path.join(self.outdir, self.smp_name)
 
             
     def init_index(self):
@@ -515,11 +467,11 @@ class AlignR1Config(object):
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'alignment_r1'
-        self.init_fx()
+        self.init_fq()
         self.init_index()
 
 
-    def init_fx(self):
+    def init_fq(self):
         """Force fx to list
         fq1 : str required. 
         fq2 : None or str, optional, None
@@ -527,17 +479,22 @@ class AlignR1Config(object):
         index_list : list
         index_name : list
         """
-        flag_err = True
         if isinstance(self.fq1, str):
-            if check_fx_args(self.fq1, self.fq2):
-                flag_err = False
-        if flag_err:
-            raise ValueError('fq1, fq2 not valid')
+            flag = check_fx_args(self.fq1, self.fq2)
+        else:
+            flag = False
+        if not flag:
+            raise ValueError('fq1, fq2 not valid, str expect, got {}'.format(
+            type(self.fq1).__name__))
         self.fq1 = file_abspath(self.fq1)
         self.fq2 = file_abspath(self.fq2)
+        self.fx_format = Fastx(self.fq1).format # fasta/q
+        self.is_paired = check_fx_paired(self.fq1, self.fq2)
         # auto: sample names
         if not isinstance(self.smp_name, str):
-            self.smp_name = file_prefix(self.fq1)
+            self.smp_name = fx_name(self.fq1, fix_pe=self.is_paired, fix_unmap=True)
+        # update rep_list
+        self.rep_list = os.path.join(self.outdir, self.smp_name)
 
 
     def init_index(self):
