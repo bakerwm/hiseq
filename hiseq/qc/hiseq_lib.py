@@ -95,7 +95,7 @@ class HiseqLib(object):
             'outdir': None,
             'parallel_jobs': 1,
             'overwrite': False,
-            'n_max': 100000,
+            'top_n': 100000,
             }
         self = update_obj(self, args_init, force=False)
         if not isinstance(self.outdir, str):
@@ -130,7 +130,7 @@ class HiseqLib(object):
 
 
     def run_single(self, x):
-        p = HiseqLibR1(x, outdir=self.outdir, n_max=self.n_max)
+        p = HiseqLibR1(x, outdir=self.outdir, top_n=self.top_n)
         if file_exists(p.p7_json) and not self.overwrite:
             log.info('parse_i7 skipped, file exists: {}'.format(p.p7_json))
         else:
@@ -183,10 +183,11 @@ class HiseqLibR1(object):
     1. is nextera
     2. read1: CT...; read2: GA...    
     """
-    def __init__(self, fq, outdir=None, n_max=1000000):
+    def __init__(self, fq, outdir=None, top_n=1000000, cutoff=0.8):
         self.fq = fq
         self.outdir = outdir
-        self.n_max = n_max
+        self.top_n = top_n
+        self.cutoff = cutoff
         if not isinstance(fq, str):
             raise ValueError('str expect, got {}'.format(
                 type(fq).__name__))
@@ -201,7 +202,7 @@ class HiseqLibR1(object):
         self.is_nextera = self.lib == 'nextera'
         self.is_truseq = self.lib == 'truseq'
         self.is_smallrna = self.lib == 'smallrna'
-        self.is_nsr = self.guess_nsr()
+        self.is_nsr = self.guess_nsr(self.cutoff)
         Config().dump(self.__dict__, self.config_yaml)        
 
 
@@ -221,11 +222,11 @@ class HiseqLibR1(object):
     def guess_nsr(self, cutoff=0.9):
         """
         cutoff : float
-            Percentage of reads contains the prefix, default: [0.9]
+            Percentage of reads contains the prefix, default: [0.8]
         read1: CT....
         read2: GA....
         """
-        n_max = 100000 # 100k reads
+        top_n = 100000 # 100k reads
         i = 0
         n_ct = 0
         n_ga = 0
@@ -233,7 +234,7 @@ class HiseqLibR1(object):
             i += 1 # counter
             n_ct += int(s.startswith('CT'))
             n_ga += int(s.startswith('GA'))
-            if i >= n_max:
+            if i >= top_n:
                 break
         # check percentage
         is_read1 = self.fname.endswith('1')
@@ -312,7 +313,7 @@ class HiseqLibR1(object):
                 bc_seq = '-'
                 i7_seq = '-'
             # skipped
-            if i >= self.n_max and self.n_max > 0: # topN seq
+            if i >= self.top_n and self.top_n > 0: # topN seq
                 break
         # wrap log
         # for p7; p7a, p7a-p7b, p7b
@@ -470,10 +471,10 @@ def guess_adapter(fq, show_log=True):
         dx = d.copy()
         dx.pop('unknown', 0) # remove unknown
         n_total = sum(d.values())
-        n_max = max(dx.values())
+        top_n = max(dx.values())
         i = []
         for k,v in dx.items():
-            if v == n_max:
+            if v == top_n:
                 i.append(k)
         # check unique
         if len(set(i)) > 1:
@@ -539,11 +540,17 @@ class HiseqLibSmRNA(object):
             'fq2': None,
             'outdir': None,
             'top_n': 100000,
-            'verbose': False
+            'cutoff': 0.8,
+            'verbose': False,
         }
         self = update_obj(self, args_init, force=False)
         if not isinstance(self.outdir, str):
             self.outdir = tempfile.TemporaryDirectory().name
+        # for fastq: str
+        if isinstance(self.fq1, list):
+            self.fq1 = self.fq1[0]
+        if isinstance(self.fq2, list):
+            self.fq2 = self.fq2[0]
         check_path(self.outdir)
         
     
@@ -556,7 +563,7 @@ class HiseqLibSmRNA(object):
                 else:
                     log.error('not like a fastq file: {}'.format(fq))
             else:
-                log.error('file not exists: {}'.format(fq))
+                log.error('file not exists: {}'.format(fq))            
         else:
             log.error('fq, expect str, got {}'.format(type(fq).__name__))
         if not flag:
@@ -590,7 +597,7 @@ class HiseqLibSmRNA(object):
         return out
     
     
-    def guess_umi(self, fq):
+    def guess_umi(self, fq, cutoff=0.9):
         counter = 0
         n_valid = 0
         umi_1 = []
@@ -617,7 +624,6 @@ class HiseqLibSmRNA(object):
             u1 = self.top_freq(umi_1) # (key, value)
             u2 = self.top_freq(umi_2) # (key, value)
             # set the cutoff
-            cutoff = 0.9
             if isinstance(u1, tuple) and isinstance(u2, tuple):
                 if u1[1] > cutoff and u2[1] > cutoff:
                     umi = 'NNN{}NNN{}NNN'.format(u1[0], u2[0])
@@ -648,13 +654,13 @@ class HiseqLibSmRNA(object):
             if file_exists(p.i7_json):
                 d = Config().load(p.barcode_json)
                 n_list = [v.get('count', 0) for k,v in d.items()]
-                n_max = max(n_list)
+                top_n = max(n_list)
                 h = None # pre-define, in case empty dict
                 for k,v in d.items():
-                    if v['count'] == n_max:
+                    if v['count'] == top_n:
                         h = v.get('seq', None)
                         break
-                freq = n_max / sum(n_list)
+                freq = top_n / sum(n_list)
                 if freq > cutoff:
                     bc = 'A'+h # barcode prefix: A
                     print('barcode: {}:{}'.format(bc, freq))
@@ -668,7 +674,7 @@ class HiseqLibSmRNA(object):
         return bc
     
     
-    def guess_barcode_r2(self, fq):
+    def guess_barcode_r2(self, fq, cutoff=0.9):
         """
         How to?
         3'-UMI on the first (15-nt Zamore lab version) (7nt Yu lab version)
@@ -696,7 +702,6 @@ class HiseqLibSmRNA(object):
                     counter-n_valid, counter, 100-n_valid/counter*100))
         else:
             bc_freq = self.top_freq(bc_list)
-            cutoff = 0.9
             if isinstance(bc_freq, tuple):
                 if bc_freq[1] > cutoff:
                     bc = 'NNNNA'+self.rev_comp(bc_freq[0]) #  barcode prefix: A, 
@@ -727,18 +732,20 @@ class HiseqLibSmRNA(object):
     def run(self):                
         if self.init_fq(self.fq1):
             # 5' umi from read1
-            self.umi5 = self.guess_umi(self.fq1)
+            self.umi5 = self.guess_umi(self.fq1, self.cutoff)
             # 3' umi, barcode
             if self.init_fq(self.fq2):
                 # guess barcode, umi3 (read2)
-                self.barcode = self.guess_barcode_r2(self.fq2)
-                self.umi3 = self.guess_umi(self.fq2)
+                self.barcode = self.guess_barcode_r2(self.fq2, self.cutoff)
+                self.umi3 = self.guess_umi(self.fq2, self.cutoff)
             else:
                 # guess barcode, umi3 (read1)
                 self.barcode = self.guess_barcode_r1(self.fq1)
                 self.umi3 = None # self.guess_umi3_r1(self.fq1) # to-do !!!
         else:
             self.umi5 = None
+            self.umi3 = None
+            self.barcode = None
             log.error('fq1 not exists, GuessUMI() failed')
         # status
         msg = '\n'.join([
@@ -757,23 +764,35 @@ class HiseqLibSmRNA(object):
 def get_args():
     parser = argparse.ArgumentParser(
         description='hiseq i7')
-    parser.add_argument('-i', '--fq', nargs='+', required=True,
-        help='FASTQ files, or directory contains fastq files')
+    parser.add_argument('-1', '--fq1', nargs='+', required=True,
+        help='read1 of Paired end reads')
+    parser.add_argument('-2', '--fq2', nargs='+', required=False, default=None,
+        help='read2 of Paired end reads, optional, for smRNA only')
     parser.add_argument('-o', '--outdir', default=None, required=True,
         help='The directory to save results.')
-    parser.add_argument('-n', '--n-max', dest='n_max', type=int, default=100000,
-        help='Maximum number of reads to process, default: [100000]')
+    parser.add_argument('-n', '--top-n', dest='top_n', type=int, default=100000,
+        help='Top N reads to process, default: [100000]')
     parser.add_argument('-j', '--parallel-jobs', default=1, type=int,
         dest='parallel_jobs',
         help='Number of jobs run in parallel, default: [1]')
     parser.add_argument('-O', '--overwrite', action='store_true',
         help='overwrite the exists files')
+    parser.add_argument('--smRNA', action='store_true',
+        help='for small RNA analysis, UMI+barcode')
+    parser.add_argument('--cutoff', type=float, default=0.8,
+        help='cutoff for matching UMI/barcode for smRNA')
+    parser.add_argument('--debug', dest='verbose', action='store_true',
+        help='Show log message in details')
     return parser
         
 
 def main():
     args = vars(get_args().parse_args())
-    HiseqLib(**args).run()
+    if args['smRNA']:
+        HiseqLibSmRNA(**args).run()
+    else:
+        args['fq'] = args['fq1'] # only for fq1
+        HiseqLib(**args).run()
 
     
 if __name__ == '__main__':

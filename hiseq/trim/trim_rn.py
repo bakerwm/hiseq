@@ -86,6 +86,8 @@ class TrimRn(object):
             pass
         else:
             self.smp_name = fx_name(self.fq1, fix_pe=self.is_paired)
+        self.rep_list = [os.path.join(
+            self.outdir, i) for i in self.smp_name]
         self.init_files()
         self.init_fq()
         Config().dump(self.__dict__.copy(), self.config_yaml)

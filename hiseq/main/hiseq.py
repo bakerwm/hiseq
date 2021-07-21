@@ -28,7 +28,7 @@ from hiseq.rnaseq.rnaseq import Rnaseq
 from hiseq.rnaseq.rnaseq import get_args as add_rnaseq_args
 
 from hiseq.smRNA.trim_smRNA import TrimSmRNA
-from hiseq.smRNA.trim_smRNA import get_arge as add_smRNA_args
+from hiseq.smRNA.trim_smRNA import get_args as add_trim_smRNA_args
 
 
 from hiseq.trim.trim import Trim
@@ -66,7 +66,7 @@ from hiseq.qc.fastqc import get_args as add_fastqc_args
 
 # from hiseq.qc.parse_i7 import HiSeqP7
 # from hiseq.qc.parse_i7 import get_args as add_p7_args
-from hiseq.qc.hiseq_lib import HiseqLib
+from hiseq.qc.hiseq_lib import HiseqLib, HiseqLibSmRNA
 from hiseq.qc.hiseq_lib import get_args as add_p7_args
 
 from hiseq.qc.bacteria import Kraken2
@@ -202,11 +202,11 @@ class Hiseq(object):
         Cnr(**args).run()
 
     
-    def smRNA(self):
+    def trim_smRNA(self):
         """
         small RNA pipeline
         """
-        args = self.init_args(add_smRNA_args())
+        args = self.init_args(add_trim_smRNA_args())
         TrimSmRNA(**args).run()        
         
         
@@ -300,8 +300,13 @@ class Hiseq(object):
         Check library structure: P7, barcode
         """
         args = self.init_args(add_p7_args())
-        HiseqLib(**args).run()
-    
+#         HiseqLib(**args).run()
+        if args['smRNA']:
+            HiseqLibSmRNA(**args).run()
+        else:
+            args['fq'] = args['fq1'] # only for fq1
+            HiseqLib(**args).run()
+
         
     def bacteria(self):
         """

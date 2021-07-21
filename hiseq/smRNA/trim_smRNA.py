@@ -63,6 +63,7 @@ import argparse
 import pathlib
 import shutil
 import tempfile
+import hiseq # for report file
 from hiseq.qc.hiseq_lib import HiseqLibSmRNA
 from hiseq.trim.trim_r1 import TrimR1
 from hiseq.utils.utils import log, Config, update_obj, run_shell_cmd, read_hiseq
@@ -86,6 +87,7 @@ class TrimSmRNA(object):
             'fq2': None, # optional, for checking 3' UMI/barcode only
             'outdir': None,
             'top_n': 100000,
+            'cutoff': 0.8,
             'verbose': False,
             'threads': 4,
             'parallel_jobs': 1,
@@ -93,7 +95,6 @@ class TrimSmRNA(object):
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'trim_rn'
-        self.rep_list = fx_name(self.fq1, fix_pe=True)
         if not isinstance(self.outdir, str):
             self.outdir = str(pathlib.Path.cwd())
         self.outdir = file_abspath(self.outdir)
@@ -101,6 +102,7 @@ class TrimSmRNA(object):
         self.fq2 = file_abspath(self.fq2)
         self.args_valid = self.check_fq() # valid
         self.init_files()
+        self.rep_list = [os.path.join(self.outdir, i) for i in fx_name(self.fq1, fix_pe=True)]
         Config().dump(self.__dict__, self.config_yaml)
         
 
@@ -116,7 +118,8 @@ class TrimSmRNA(object):
         self.project_dir = self.outdir
         self.config_dir = os.path.join(self.project_dir, 'config')
         self.config_yaml = os.path.join(self.config_dir, 'config.yaml')
-        check_path(self.config_dir)
+        self.report_dir = os.path.join(self.project_dir, 'report')
+        check_path([self.config_dir, self.report_dir])
         
         
     def run_single(self, fq1):
@@ -144,11 +147,39 @@ class TrimSmRNA(object):
         else:
             for fq1 in self.fq1:
                 self.run_single(fq1)
-        
+    
+
+    def report(self):
+        pkg_dir = os.path.dirname(hiseq.__file__)
+        hiseq_report_R = os.path.join(pkg_dir, 'bin', 'hiseq_report.R')
+        report_html = os.path.join(
+            self.report_dir,
+            'HiSeq_report.html')
+        report_stdout = os.path.join(self.report_dir, 'report.stdout')
+        report_stderr = os.path.join(self.report_dir, 'report.stderr')
+        cmd = ' '.join([
+            '{}'.format(shutil.which('Rscript')),
+            hiseq_report_R,
+            self.project_dir,
+            self.report_dir,
+            '1>{}'.format(report_stdout),
+            '2>{}'.format(report_stderr),
+            ])
+        # save command
+        cmd_txt = os.path.join(self.report_dir, 'cmd.sh')
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+        # report_html
+        if file_exists(report_html) and not self.overwrite:
+            log.info('report() skipped, file exists: {}'.format(
+                report_html))
+        else:
+            run_shell_cmd(cmd)
     
     def run(self):
         if self.args_valid:
             self.run_multi()
+            self.report()
         else:
             log.error('TrimSmRNA() exit, illegal fastq files')
 
@@ -175,6 +206,7 @@ class TrimSmRNAR1(object):
             'fq2': None, # optional, for checking 3' UMI/barcode only
             'outdir': None,
             'top_n': 100000,
+            'cutoff': 0.8,
             'verbose': False,
             'threads': 4,
             'overwrite': False,
@@ -240,10 +272,12 @@ class TrimSmRNAR1(object):
             'exception_dir': os.path.join(self.project_dir, '3_exceptions'),
             'clean_fq': os.path.join(self.project_dir, self.prefix+'.fq.gz'),
             'trim_json': os.path.join(self.project_dir, self.prefix+'.trim.json'),
+            'report_dir': os.path.join(self.project_dir, 'report'),
         }
         self = update_obj(self, default_files, force=True)
         check_path([
-            self.config_dir, self.trim_dir, self.umi_dir, self.guess_umi_dir
+            self.config_dir, self.trim_dir, self.umi_dir, self.guess_umi_dir,
+            self.report_dir
         ])
         
     
@@ -261,42 +295,6 @@ class TrimSmRNAR1(object):
         self.umi5 = s.umi5
         self.umi3 = s.umi3
         self.barcode = s.barcode
-        
-    
-    # step-1.
-    def guess_exceptions(self, fq):
-        """
-        check any exceptions in fq:
-        
-        - p5 adapters
-        - umi
-        - ...
-        
-        Possible: 5-UMI-adapter not in correct position
-        
-        sequence: 5'-TTCCCTACACGACGCTCTTCCGATCTNNNCGANNNTACNNN-3'
-        correct: 5'-5-UMI-adapter-{insert}-3'
-        wrong:   5'-5-UMI-adapter-{insert}-[5-UMI-adapter]-3'
-        
-        How to?
-        Trim sequences at 3' end, at least 15+18 = 33 nt
-        """
-        args_local = {
-            'fq1': fq,
-            'fq2': None, # skip fq2
-            'outdir': self.exception_dir,
-            'smp_name': self.prefix,
-            'len_min': 33, # 5'UMI(15)+insert(18)=33
-            'qual_min': 35,
-            'save_untrim': False,
-            'adapter3': 'TTCCCTACACGACGCTCTTCCGATCT',
-            'recursive': True,
-            'rm_untrim': False, # remove no-adapter reads
-            'threads': self.threads,
-        }
-        trim = TrimR1(**args_local)
-        trim.run()
-        return trim.clean_fq1 # no ad
     
     
     # step-1.
@@ -320,6 +318,38 @@ class TrimSmRNAR1(object):
     
     # step-2.
     def extract_umi(self, fq):
+        print('!AAAA-1', self.umi5, self.umi3, self.barcode)
+        # guess umi5, umi3
+        if isinstance(self.umi5, list):
+            u5 = ','.join(self.umi5)
+        elif isinstance(self.umi5, str):
+            u5 = self.umi5
+        else:
+            u5 = None
+            log.warning('UMI5 not found')
+        # guess umi3
+        if isinstance(self.umi3, list):
+            u3 = ','.join(self.umi3)
+        elif isinstance(self.umi3, str):
+            u3 = self.umi3
+        else:
+            u3 = None
+            log.warning('UMI3 not found')
+        # guess barcode
+        if isinstance(self.barcode, list):
+            bc = ','.join(self.barcode)
+        elif isinstance(self.barcode, str):
+            bc = self.barcode
+        else:
+            bc = None
+            log.warning('barcode not found')
+        # choose process
+        if u5:
+            u3 = u3 if u3 else bc if bc else 'N' # 3end
+        else:
+            log.error('UMI5 not detected, skipped')
+            return fq
+        # the main process        
         out_fq = os.path.join(self.umi_dir, self.prefix+'.fq.gz')
         dup_fq = os.path.join(self.umi_dir, self.prefix+'.dup.fq.gz')
         stdout = os.path.join(self.umi_dir, 'run_umitools.stdout')
@@ -328,8 +358,8 @@ class TrimSmRNAR1(object):
         cmd = ' '.join([
             '{}'.format(shutil.which('umitools')),
             'reformat_sra_fastq',
-            '-5 {}'.format(self.umi5),
-            '-3 {}'.format(self.umi3 if self.umi3 else self.barcode),
+            '-5 {}'.format(u5),
+            '-3 {}'.format(u3),
             '-i {}'.format(fq),
             '-o {}'.format(out_fq),
             '-d {}'.format(dup_fq),
@@ -346,10 +376,59 @@ class TrimSmRNAR1(object):
                 run_shell_cmd(cmd)
             except:
                 log.error('extract_umi() failed')
-        # for clean data
-        if file_exists(out_fq):
-            symlink_file(out_fq, self.clean_fq)
+#         # for clean data
+#         if file_exists(out_fq):
+#             symlink_file(out_fq, self.clean_fq)
         return out_fq
+    
+    
+    # step-3. remove p5 
+    def guess_exceptions(self, fq):
+        """
+        check any exceptions in fq:
+        
+        - p5 adapters
+        - umi
+        - ...
+        
+        Possible: 5-UMI-adapter not in correct position
+        
+        sequence: 5'-TTCCCTACACGACGCTCTTCCGATCTNNNCGANNNTACNNN-3'
+        correct: 5'-5-UMI-adapter-{insert}-3'
+        wrong:   5'-5-UMI-adapter-{insert}-[5-UMI-adapter]-3'
+        
+        How to?
+        Trim sequences at 3' end, at least 15+18 = 33 nt
+        """
+        # check if barcode/umi is None
+        if self.umi3 is None and self.barcode is None:
+            # use 'N' instead
+            # trim 10nt at 3' end,
+            cut_after_trim = '0,-10'
+        else:
+            cut_after_trim = 0
+        args_local = {
+            'fq1': fq,
+            'fq2': None, # skip fq2
+            'outdir': self.exception_dir,
+            'smp_name': self.prefix,
+            'len_min': 18, # 18-40
+            'cut_after_trim': cut_after_trim,
+            'qual_min': 35,
+            'save_untrim': False,
+            'overlap': 2,
+            'adapter3': 'TTCCCTACACGACGCTCTTCCGATCT', # ACTCT
+            'recursive': True,
+            'rm_untrim': False, # remove no-adapter reads
+            'threads': self.threads,
+        }
+        trim = TrimR1(**args_local)
+        trim.run()
+        # return trim.clean_fq1 # no ad
+        # for clean data
+        if file_exists(trim.clean_fq1):
+            symlink_file(trim.clean_fq1, self.clean_fq)
+        return trim.clean_fq1
     
     
     def parse_value(self, x):
@@ -421,7 +500,7 @@ class TrimSmRNAR1(object):
         """
         if not file_exists(x):
             log.error('umitools log not exists: {}'.format(x))
-            return None
+            return {} # empty
         try:
             with open(x) as r:
                 lines = r.readlines()
@@ -450,15 +529,20 @@ class TrimSmRNAR1(object):
         # 2. umitools log
         umi_log = os.path.join(self.umi_dir, 'run_umitools.stderr')
         d2 = self.wrap_umitools_log(umi_log)
-        # 3. combine
-        # name, total, clean, percentage, too_short, no_umi, pcr_dup
+        # 3. trim exceptions
+        fq_excepion_dir = os.path.join(self.exception_dir, self.prefix)
+        b = read_hiseq(fq_excepion_dir)
+        d3 = Config().load(b.trim_json)
+        # 4. combine
+        # name, total, clean, percentage, too_short, too_short2, no_umi, dup
         out = {
             'name': d1.get('name', ''),
             'total': d1.get('total', 0),
-            'clean': d2.get('clean', 0),
+            'clean': d3.get('clean', 0),
             'too_short': d1.get('total', 0) - d1.get('clean', 0),
+            'too_short2': d3.get('total', 0) - d3.get('clean', 0), # rm_p5
             'no_umi': d2.get('no_umi', 0),
-            'pcr_dup': d2.get('dup', 0),            
+            'dup': d2.get('dup', 0),
         }
         # for divided by zero
         try:
@@ -468,14 +552,43 @@ class TrimSmRNAR1(object):
             out['percentage'] = 0
         # save to stat
         Config().dump(out, self.trim_json)
-        
     
+
+    def report(self):
+        pkg_dir = os.path.dirname(hiseq.__file__)
+        hiseq_report_R = os.path.join(pkg_dir, 'bin', 'hiseq_report.R')
+        report_html = os.path.join(
+            self.report_dir,
+            'HiSeq_report.html')
+        report_stdout = os.path.join(self.report_dir, 'report.stdout')
+        report_stderr = os.path.join(self.report_dir, 'report.stderr')
+        cmd = ' '.join([
+            '{}'.format(shutil.which('Rscript')),
+            hiseq_report_R,
+            self.project_dir,
+            self.report_dir,
+            '1>{}'.format(report_stdout),
+            '2>{}'.format(report_stderr),
+            ])
+        # save command
+        cmd_txt = os.path.join(self.report_dir, 'cmd.sh')
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+        # report_html
+        if file_exists(report_html) and not self.overwrite:
+            log.info('report() skipped, file exists: {}'.format(
+                report_html))
+        else:
+            run_shell_cmd(cmd)
+
+
     def run(self):
         if self.args_valid:
             fq_noad = self.trim_ad(self.fq1)
-            fq_x = self.guess_exceptions(fq_noad)
-            fq_clean = self.extract_umi(fq_x)
+            fq_clean = self.extract_umi(fq_noad)
+            fq_x = self.guess_exceptions(fq_clean) # remove P5 adapters
             self.wrap_stat()
+            self.report()
         else:
             log.error('TrimSmRNA() faiiled, args illegal')
         
@@ -489,9 +602,10 @@ def get_args():
         default=None, help='read2 of FASTQ files, optional')
     parser.add_argument('-o', '--outdir', default=None, required=False,
         help='The directory to save results.')
-    parser.add_argument('-n', '--top-n', dest='top_n ', type=int, 
-        default=100000,
+    parser.add_argument('-n', '--top-n', dest='top_n', type=int, default=100000,
         help='Guess smRNA structure from top_n reads, default: [100000]')
+    parser.add_argument('-c', '--cutoff', type=float, default=0.8,
+        help='Cutoff for matching UMI/barcode/p7, default: [0.8]')
     parser.add_argument('-p', '--threads', type=int, default=4,
         help='Number of threads for cutadapt --cores, default: [4]')
     parser.add_argument('-j', '--parallel-jobs', default=1, type=int,
