@@ -55,14 +55,13 @@ Quality control
 import os
 import sys
 from hiseq.cnr.cnr_rp import CnrRp
-from hiseq.cnr.utils import cnr_trim, cnr_align_genome, \
-    cnr_align_spikein, cnr_call_peak, cnr_bam_to_bw, \
-    qc_trim_summary, qc_align_summary, qc_lendist, qc_frip, \
-    qc_tss_enrich, qc_genebody_enrich
-from hiseq.utils.file import check_path, check_fx_paired, symlink_file, \
-    file_abspath, file_prefix, fx_name, Genome
-from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \
-    read_hiseq
+from hiseq.cnr.utils import (cnr_trim, cnr_align_genome,  cnr_align_spikein,
+    cnr_call_peak, cnr_bam_to_bw, qc_trim_summary, qc_align_summary, 
+    qc_lendist, qc_frip, qc_tss_enrich, qc_genebody_enrich)
+from hiseq.utils.file import (check_fx_args, check_path, check_fx_paired, symlink_file,
+    file_abspath, file_prefix, fx_name, Genome)
+from hiseq.utils.utils import (log, update_obj, Config, get_date, init_cpu,
+    read_hiseq)
 from hiseq.align.align_index import AlignIndex, check_index_args
 
 
@@ -154,7 +153,7 @@ class CnrR1Config(object):
             self.outdir = str(pathlib.Path.cwd())
         self.outdir = file_abspath(self.outdir)
         self.init_cut()
-        self.init_fx()
+        self.init_fq()
         self.init_files()
         self.init_index()
         # threads
@@ -172,39 +171,20 @@ class CnrR1Config(object):
             self.recursive = True
 
 
-    def init_fx(self):
+    def init_fq(self):
         """
         required:
-        1. fq1:str, fq2:str
+        1. fq1:str, fq2:str/None
         2. paired
         """
-        # check message
-        c1 = isinstance(self.fq1, str)
-        c2 = isinstance(self.fq2, str)
-        c3 = check_fx_paired(self.fq1, self.fq2)
-        if not all([c1, c2, c3]):
-            # get message
-            msg = '\n'.join([
-                '='*80,
-                'Input',
-                '{:>14} : {}'.format('fq1', self.fq1),
-                '{:>14} : {}'.format('fq2', self.fq2),
-                '-'*40,
-                'Status',
-                '{:>14} : {}'.format('fq1 is str', c1),
-                '{:>14} : {}'.format('fq1 is str', c2),
-                '{:>14} : {}'.format('fq1,fq2 paired', c3),
-                '-'*40,
-                'Output: {}'.format(all([c1, c2, c3])),
-                '='*80                
-            ])
-            print(msg)
-            raise ValueError('fq1, fq2 not valid')
+        if not check_fx_args(self.fq1, self.fq2):
+            raise ValueError('fq1, fq2 not valide, check above message')
         self.fq1 = file_abspath(self.fq1)
         self.fq2 = file_abspath(self.fq2)
+        self.is_paired = check_fx_paired(self.fq1, self.fq2)
         # auto: sample names
-        if self.smp_name is None:
-            self.smp_name = fx_name(self.fq1, fix_pe=True)
+        if not isinstance(self.smp_name, str):
+            self.smp_name = fx_name(self.fq1, fix_pe=self.is_paired, fix_unmap=True)
 
 
     # update: genome_size_file    

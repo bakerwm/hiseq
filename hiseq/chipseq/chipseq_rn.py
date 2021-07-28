@@ -2,7 +2,7 @@
 # -*- coding:utf-8 -*-
 
 """
-CnRseq pipeline: level-3 (run _rn)
+Chipseqseq pipeline: level-3 (run _rn)
 
 fastq files from: fq1/fq2
 
@@ -13,21 +13,22 @@ import os
 import pathlib
 import argparse
 from multiprocessing import Pool
-from hiseq.cnr.cnr_r1 import CnrR1
-from hiseq.cnr.cnr_rp import CnrRp
-from hiseq.cnr.utils import (cnr_trim, cnr_align_genome, cnr_merge_bam,
-    cnr_align_spikein, cnr_call_peak, cnr_bam_to_bw, qc_trim_summary,
-    qc_align_summary, qc_lendist, qc_frip, qc_bam_cor, qc_peak_idr, 
-    qc_tss_enrich, qc_genebody_enrich, qc_peak_overlap, qc_bam_fingerprint)
-from hiseq.utils.file import (check_fx_args, check_path, check_fx_paired, symlink_file,
-    file_exists, file_abspath, file_prefix, fx_name, Genome, list_dir)
-from hiseq.utils.utils import (log, update_obj, Config, get_date, init_cpu,
-    read_hiseq, list_hiseq_file, run_shell_cmd)
+from hiseq.chipseq.chipseq_r1 import ChipseqR1
+from hiseq.chipseq.chipseq_rp import ChipseqRp
+from hiseq.chipseq.utils import chipseq_trim, chipseq_align_genome, chipseq_merge_bam, \
+    chipseq_align_spikein, chipseq_call_peak, chipseq_bam_to_bw, \
+    qc_trim_summary, qc_align_summary, qc_lendist, qc_frip, \
+    qc_bam_cor, qc_peak_idr, qc_tss_enrich, qc_genebody_enrich, \
+     qc_peak_overlap, qc_bam_fingerprint
+from hiseq.utils.file import check_path, check_fx_args, check_fx_paired, symlink_file, \
+    file_exists, file_abspath, file_prefix, fx_name, Genome, list_dir
+from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \
+    read_hiseq, list_hiseq_file, run_shell_cmd
 from hiseq.utils.bam import Bam
 from hiseq.align.align_index import AlignIndex, check_index_args
 
 
-class CnrRn(object):
+class ChipseqRn(object):
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
@@ -35,7 +36,7 @@ class CnrRn(object):
 
 
     def init_args(self):
-        args_local = CnrRnConfig(**self.__dict__)
+        args_local = ChipseqRnConfig(**self.__dict__)
         self = update_obj(self, args_local.__dict__, force=True)
         self.init_files()
 
@@ -47,12 +48,10 @@ class CnrRn(object):
 
 
     def run_pipe_rn(self): # for rep_list > 1
-        cnr_merge_bam(self.project_dir, 'rn')
-        cnr_call_peak(self.project_dir, 'rn')
-        cnr_bam_to_bw(self.project_dir, 'rn')
-        cnr_call_peak(self.project_dir, 'rn')
-        # qc_trim(self.project_dir, 'rn')
-        # qc_align(self.project_dir, 'rn')
+        chipseq_merge_bam(self.project_dir, 'rn')
+        chipseq_call_peak(self.project_dir, 'rn')
+        chipseq_bam_to_bw(self.project_dir, 'rn')
+        chipseq_call_peak(self.project_dir, 'rn')
         qc_lendist(self.project_dir, 'rn')
         qc_frip(self.project_dir, 'rn')
         qc_tss_enrich(self.project_dir, 'rn')
@@ -103,12 +102,12 @@ class CnrRn(object):
         # update fq1, fq2, rep_list, ...
         args.update({
             'fq1': self.fq1[i],
-            'fq2': self.fq2[i],
+            'fq2': self.fq2[i] if isinstance(self.fq2, list) else None,
             'rep_list': None,
             'build_design': None,
             'design': None,
         })
-        CnrR1(**args).run()
+        ChipseqR1(**args).run()
 
             
     def run_multi_fx(self):
@@ -125,18 +124,18 @@ class CnrRn(object):
     def run(self):
         # 1. save config
         Config().dump(self.__dict__, self.config_yaml)
-        # 2. run CnrR1
+        # 2. run ChipseqR1
         self.run_multi_fx()
-        # 3. run CnrRn, merge
+        # 3. run ChipseqRn, merge
         if len(self.rep_list) == 1:
             self.run_pipe_r1()
         else:
             self.run_pipe_rn()
         # 4. generate reprot
-        CnrRp(**self.__dict__).run()
+        ChipseqRp(**self.__dict__).run()
 
 
-class CnrRnConfig(object):
+class ChipseqRnConfig(object):
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
@@ -159,7 +158,7 @@ class CnrRnConfig(object):
             'threads': 1,
             'parallel_jobs': 1,
             'overwrite': False,
-            'binsize': 10,
+            'binsize': 100,
             'genome_size': 0,
             'genome_size_file': 0,
             'keep_tmp': None,
@@ -169,7 +168,7 @@ class CnrRnConfig(object):
             'recursive': False
         }
         self = update_obj(self, args_init, force=False)
-        self.hiseq_type = 'cnr_rn'
+        self.hiseq_type = 'chipseq_rn'
         if self.outdir is None:
             self.outdir = str(pathlib.Path.cwd())
         self.outdir = file_abspath(self.outdir)
@@ -191,7 +190,7 @@ class CnrRnConfig(object):
             self.cut_to_length = 50
             self.recursive = True
         
-    
+        
     def init_fq(self):
         """
         required:
@@ -331,18 +330,18 @@ class CnrRnConfig(object):
 
 
 def get_args():
-    """Parsing arguments for cnr: rn
+    """Parsing arguments for chipseq: rn
     """
     example = '\n'.join([
         'Examples:',
         '1. support fastq input',
-        '$ python cnr_rn.py --fq1 *1.fq.gz --fq2 *2.fq.gz -o results -g dm6',
+        '$ python chipseq_rn.py --fq1 *1.fq.gz --fq2 *2.fq.gz -o results -g dm6',
         '2. for specific index',
-        '$ python cnr_rn.py --fq1 *1.fq.gz --fq2 *2.fq.gz -o results -x bowtie2_index/te',
+        '$ python chipseq_rn.py --fq1 *1.fq.gz --fq2 *2.fq.gz -o results -x bowtie2_index/te',
     ])
     parser = argparse.ArgumentParser(
-        prog='cnr_rn',
-        description='cnr_rn: for multiple PE reads',
+        prog='chipseq_rn',
+        description='chipseq_rn: for multiple PE reads',
         epilog=example,
         formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('-1', '--fq1', nargs='+', required=True,
@@ -384,7 +383,7 @@ def get_args():
 
 def main():
     args = vars(get_args().parse_args())
-    CnrRn(**args).run()
+    ChipseqRn(**args).run()
 
 
 if __name__ == '__main__':

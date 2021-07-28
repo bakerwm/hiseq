@@ -159,7 +159,10 @@ def check_fx_paired(fq1, fq2, **kwargs):
         # output
         out = all([chk1, chk2, chk3])
     elif isinstance(fq1, list) and isinstance(fq2, list):
-        out = [check_fx_paired(f1, f2, **kwargs) for f1,f2 in zip(fq1, fq2)]
+        if len(fq1) == len(fq2) and len(fq1) > 0:
+            out = all([check_fx_paired(f1, f2, **kwargs) for f1,f2 in zip(fq1, fq2)])
+        else:
+            out = False
     else:
         log.error('illegal fq1,fq2; str,list expect, got {}, {}'.format(
             type(fq1).__name__, type(fq2).__name__))
@@ -201,7 +204,7 @@ def check_fx_args(fq1, fq2=None, **kwargs):
     c2 = isinstance(fq2, list)
     if c2:
         c2e = all(file_exists(fq2))
-        c2p = all(check_fx_paired(fq1, fq2))
+        c2p = check_fx_paired(fq1, fq2)
         c2x = all([c2, c2e, c2p])
     elif fq2 is None:
         c2e = c2p = False

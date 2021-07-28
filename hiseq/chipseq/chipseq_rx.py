@@ -2,7 +2,7 @@
 # -*- coding:utf-8 -*-
 
 """
-CnR pipeline: level-2 (: rx; ip vs IgG)
+Chipseq pipeline: level-2 (: rx; ip vs IgG)
 
 # or without IgG => ATACseq pipe
 loading fastq config from `design.yaml`, run pipeline, with specific parameters
@@ -14,26 +14,27 @@ import os
 import pathlib
 import argparse
 from multiprocessing import Pool
-from hiseq.cnr.cnr_rn import CnrRn
-from hiseq.cnr.cnr_rp import CnrRp
-from hiseq.utils.file import check_fx_args, check_path, symlink_file, file_abspath, \
-    file_prefix, file_exists, check_fx_paired, fx_name, Genome
-from hiseq.utils.utils import (log, update_obj, Config, get_date, init_cpu,
-    print_dict, read_hiseq, find_longest_common_str)
-from hiseq.cnr.utils import (cnr_bam_to_bw, cnr_call_peak, cnr_merge_bam, 
-    qc_lendist, qc_frip, qc_bam_cor, qc_peak_idr, qc_peak_overlap,
-    qc_bam_fingerprint, qc_tss_enrich, qc_genebody_enrich, cnr_bw_compare)
+from hiseq.chipseq.chipseq_rn import ChipseqRn
+from hiseq.chipseq.chipseq_rp import ChipseqRp
+from hiseq.utils.file import check_fx_args, check_fx_paired, check_path, \
+    symlink_file, file_abspath, file_prefix, file_exists, fx_name, Genome
+from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \
+    print_dict, read_hiseq, find_longest_common_str
+from hiseq.chipseq.utils import chipseq_bam_to_bw, chipseq_call_peak, chipseq_merge_bam, \
+    qc_lendist, qc_frip, \
+    qc_bam_cor, qc_peak_idr, qc_peak_overlap, qc_bam_fingerprint, \
+    qc_tss_enrich, qc_genebody_enrich, chipseq_bw_compare
 from hiseq.align.align_index import AlignIndex, check_index_args
 
 
-class CnrRx(object):
+class ChipseqRx(object):
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
 
 
     def init_args(self):
-        args_local = CnrRxConfig(**self.__dict__)
+        args_local = ChipseqRxConfig(**self.__dict__)
         self = update_obj(self, args_local.__dict__, force=True)
 
         
@@ -55,7 +56,7 @@ class CnrRx(object):
             'smp_name': self.ip_name,
             'parallel_jobs': 1,
         })
-        CnrRn(**args_local).run()
+        ChipseqRn(**args_local).run()
         # for input
         if self.input_fq1 is not None:
             args_local.update({
@@ -64,7 +65,7 @@ class CnrRx(object):
                 'fq2': self.input_fq2,
                 'smp_name': self.input_name,
             })
-            CnrRn(**args_local).run()
+            ChipseqRn(**args_local).run()
 
 
     def prepare_files(self):
@@ -84,9 +85,9 @@ class CnrRx(object):
         Run ip over input (IgG), for quality control
         """
         # ip-over-input
-        cnr_bw_compare(self.project_dir, 'rx') # generate bw, ip.over.input
-        cnr_call_peak(self.project_dir, 'rx') # call peak
-        # cnr_call_motifs(self.project_dir, 'rx') # to-do
+        chipseq_bw_compare(self.project_dir, 'rx') # generate bw, ip.over.input
+        chipseq_call_peak(self.project_dir, 'rx') # call peak
+        # chipseq_call_motifs(self.project_dir, 'rx') # to-do
         # qc - enrich
         qc_tss_enrich(self.project_dir, 'rx')
         qc_genebody_enrich(self.project_dir, 'rx')
@@ -115,9 +116,9 @@ class CnrRx(object):
     def run(self):
         # 1. save config
         Config().dump(self.__dict__, self.config_yaml)
-        # 2. run CnrRn
+        # 2. run ChipseqRn
         self.run_rn()
-        # 3. run CnrRx
+        # 3. run ChipseqRx
         self.prepare_files()
         if self.input_fq1 is None:
             print('!ip - only, ...')
@@ -125,10 +126,10 @@ class CnrRx(object):
         else:
             self.run_rx()
         # 4. generate report
-        CnrRp(self.project_dir).run()
+        ChipseqRp(self.project_dir).run()
 
 
-class CnrRxConfig(object):
+class ChipseqRxConfig(object):
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
@@ -154,7 +155,7 @@ class CnrRxConfig(object):
             'threads': 1,
             'parallel_jobs': 1,
             'overwrite': False,
-            'binsize': 10,
+            'binsize': 100,
             'genome_size': 0,
             'genome_size_file': 0,
             'rmdup': True, # key
@@ -165,7 +166,7 @@ class CnrRxConfig(object):
             'recursive': False
         }
         self = update_obj(self, args_init, force=False)
-        self.hiseq_type = 'cnr_rx'
+        self.hiseq_type = 'chipseq_rx'
         if self.outdir is None:
             self.outdir = str(pathlib.Path.cwd())
         self.outdir = file_abspath(self.outdir)
@@ -173,8 +174,8 @@ class CnrRxConfig(object):
             self.parallel_jobs)
         self.init_cut()
         self.init_fq()
-        self.init_index()
         self.init_name()
+        self.init_index()
         self.init_files()
 
 
@@ -195,10 +196,26 @@ class CnrRxConfig(object):
         if not check_fx_args(self.ip_fq1, self.ip_fq2):
             raise ValueError('ip fastq files failed')
         # input
-        if isinstance(self.input_fq1, list):
-            if not check_fx_args(self.input_fq1, self.input_fq2):
-                raise ValueError('input fastq files failed')
-    
+        if not check_fx_args(self.input_fq1, self.input_fq2):
+            raise ValueError('input fastq files failed')
+        
+        
+    def init_name(self):
+        """
+        ip_name, input_name, smp_name
+        ip_dir, input_dir
+        """
+        if not isinstance(self.ip_name, str):
+            self.ip_name = fx_name(self.ip_fq1[0], fix_pe=True, fix_rep=True)
+        if not isinstance(self.input_name, str):
+            self.input_name = fx_name(self.input_fq1[0], fix_pe=True, fix_rep=True)
+        # for ip.vs.input
+        if not isinstance(self.smp_name, str):
+            self.smp_name = '{}.vs.{}'.format(self.ip_name, self.input_name)
+        # update ip/input dirs
+        self.ip_dir = os.path.join(self.outdir, self.ip_name)
+        self.input_dir = os.path.join(self.outdir, self.input_name)
+
     
     # update: genome_size_file    
     def init_index(self):
@@ -211,28 +228,6 @@ class CnrRxConfig(object):
             raise ValueError('--genome or --extra-index; required')
 
 
-    def init_name(self):
-        """
-        ip_name, input_name, smp_name
-        ip_dir, input_dir
-        """
-        if not isinstance(self.ip_name, str):
-            # fix ip over input
-            self.ip_name = fx_name(self.ip_fq1[0], fix_pe=True, fix_rep=True)
-        if self.input_fq1 is None:
-            self.input_name = 'null'
-        else:
-            if not isinstance(self.input_name, str):
-                self.input_name = fx_name(self.input_fq1[0], 
-                    fix_pe=True, fix_rep=True)
-        # for ip.vs.input
-        if not isinstance(self.smp_name, str):
-            self.smp_name = '{}.vs.{}'.format(self.ip_name, self.input_name)
-        # update ip/input dirs
-        self.ip_dir = os.path.join(self.outdir, self.ip_name)
-        self.input_dir = os.path.join(self.outdir, self.input_name)
-    
-    
     def init_files(self):
         # dirs
         self.project_name = self.smp_name
@@ -311,22 +306,22 @@ class CnrRxConfig(object):
 
     
 def get_args():
-    """Parsing arguments for cnr_rx
+    """Parsing arguments for chipseq_rx
     """
     example = '\n'.join([
         'Examples:',
         '1. Run pipeline for design.yaml, with different parameters',
-        '$ python cnr_rx.py -d design.yaml -g dm6 -o results',
+        '$ python chipseq_rx.py -d design.yaml -g dm6 -o results',
         '2. Run pipeline with different parameters',
-        '$ python cnr_rx.py -d design.yaml -g dm6 -o results --extra-index te',
+        '$ python chipseq_rx.py -d design.yaml -g dm6 -o results --extra-index te',
     ])
     parser = argparse.ArgumentParser(
-        prog='cnr_rx',
-        description='cnr_rx: for multiple groups of PE reads',
+        prog='chipseq_rx',
+        description='chipseq_rx: for multiple groups of PE reads',
         epilog=example,
         formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('-d', '--design', required=True,
-        help='The file saving fastq files config; generated by cnr_rd.py')
+        help='The file saving fastq files config; generated by chipseq_rd.py')
     parser.add_argument('-g', '--genome', default=None,
         choices=['dm3', 'dm6', 'hg19', 'hg38', 'mm9', 'mm10'],
         help='Reference genome : dm3, dm6, hg19, hg39, mm9, mm10, default: dm6')
@@ -358,7 +353,7 @@ def get_args():
 
 def main():
     args = vars(get_args().parse_args())
-    CnrRx(**args).run()
+    ChipseqRx(**args).run()
 
 
 if __name__ == '__main__':

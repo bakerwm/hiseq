@@ -27,6 +27,9 @@ from hiseq.cnr.cnr import get_args as add_cnr_args
 from hiseq.rnaseq.rnaseq import Rnaseq
 from hiseq.rnaseq.rnaseq import get_args as add_rnaseq_args
 
+from hiseq.chipseq.chipseq import Chipseq
+from hiseq.chipseq.chipseq import get_args as add_chipseq_args
+
 from hiseq.smRNA.trim_smRNA import TrimSmRNA
 from hiseq.smRNA.trim_smRNA import get_args as add_trim_smRNA_args
 
@@ -42,7 +45,7 @@ from hiseq.align.align import get_args as add_align_args
 from hiseq.bam2bw.bam2bw import Bam2bw
 from hiseq.bam2bw.bam2bw import get_args as add_bam2bw_args
 
-from hiseq.utils.bam import Bam2cor
+from hiseq.utils.bam import Bam2cor, Bw2cor
 from hiseq.bam2cor.bam2cor import get_args as add_bam2cor_args
 
 from hiseq.fragsize.fragsize import BamFragSize
@@ -79,12 +82,12 @@ from hiseq.get_trackhub.get_trackhub import get_args as add_trackhub_args
 
 # to-be-deprecated: replaced by specific get_args() in each command
 from hiseq.utils.argsParser import add_quant_args, add_peak_args, add_motif_args, \
-    add_rnaseq_args2, add_chipseq_args, add_deseq_pair_args, add_go_args,\
+    add_rnaseq_args2, add_deseq_pair_args, add_go_args,\
     add_peak2idr_args, add_bed2overlap_args, \
     add_sample_args
 
 # add_rnaseq_args
-
+# add_chipseq_args
 # add_sheet_args, add_qc_args, add_p7_args, add_demx_args, add_demx2_args, 
 # add_align_args, add_trim_args, add_bam2bw_args, add_bam2cor_args,
 # add_fragsize_args, 
@@ -103,7 +106,7 @@ from hiseq.utils.argsParser import add_quant_args, add_peak_args, add_motif_args
 
 from hiseq.rnaseq.rnaseq import Rnaseq
 from hiseq.rnaseq.deseq_pair import DeseqPair
-from hiseq.chipseq.chipseq import ChIPseq
+# from hiseq.chipseq.chipseq import ChIPseq
 from hiseq.go.go import Go
 from hiseq.utils.fastx import Fastx
 from hiseq.utils.bed import PeakIDR, BedOverlap
@@ -201,6 +204,11 @@ class Hiseq(object):
         args = self.init_args(add_cnr_args())
         Cnr(**args).run()
 
+        
+    def chipseq(self):
+        args = self.init_args(add_chipseq_args())
+        Chipseq(**args).run()
+        
     
     def trim_smRNA(self):
         """
@@ -240,7 +248,16 @@ class Hiseq(object):
         using deeptools
         """
         args = self.init_args(add_bam2cor_args())
-        Bam2cor(**args).run()
+#         Bam2cor(**args).run()
+        if all([i.endswith('.bam') for i in args['bam_list']]):
+            print('Bam2cor')
+            Bam2cor(**args).run()
+        elif all([i.endswith('.bigWig') for i in args['bam_list']]):
+            print('Bw2cor')
+            args['bw_list'] = args['bam_list'] # update
+            Bw2cor(**args).run()
+        else:
+            log.error('no bam/bigWig files found')
 
 
     def bed2overlap(self):
@@ -389,12 +406,12 @@ class Hiseq(object):
 #         RNAseqPipe(**args).run()
 
 
-    def chipseq(self):
-        """
-        ChIPseq pipeline
-        """
-        args = self.init_args(add_chipseq_args())
-        ChIPseq(**args).run()
+#     def chipseq(self):
+#         """
+#         ChIPseq pipeline
+#         """
+#         args = self.init_args(add_chipseq_args())
+#         ChIPseq(**args).run()
 
 
 

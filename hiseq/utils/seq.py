@@ -17,6 +17,7 @@ from xopen import xopen
 import pyfastx
 import collections # Fastx().collapse()
 
+
 # hiseq.utils.utils
 # circular import
 logging.basicConfig(
@@ -848,7 +849,7 @@ class Fastx(object):
                 log.info('{} : {}'.format('Processed', counter))
         # overall
         df = pd.concat(frames, axis=0).groupby(['length']).sum().reset_index()
-        df['id'] = fq_name(self.input)
+        df['id'] = os.path.splitext(os.path.basename(self.input))[0]
         # save to file
         if isinstance(csv_file, str):
             if os.path.exists(os.path.dirname(csv_file)):

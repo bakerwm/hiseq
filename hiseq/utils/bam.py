@@ -770,3 +770,185 @@ def bwCompare(bw1, bw2, bw_out, operation='log2', **kwargs):
     else:
         run_shell_cmd(cmd)
 
+
+class Bw2cor(object):
+    """
+    Compute correlation between replicates
+
+    input: bw
+    output: count_matrix
+            cor_matrix
+            cor_plot
+            ...
+
+    window = 500bp
+
+    eg:
+    multiBigwigSummary bins --binSize 500 --smartLabels -o *bw.npz \
+        --outRawCounts *counts.tab -b bw
+    """
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+
+
+    def init_args(self):
+        args_init = {
+            'cor_method': 'pearson',
+            'make_plot': True,
+            'bw_dir': None,
+            'bw_list': None,
+            'outdir': None,
+            'prefix': None,
+            'binsize': 500,
+            'threads': 1,
+            'overwrite': False,
+            'multibigwigsummary': which('multiBigwigSummary'),
+            'plotcorrelation': which('plotCorrelation'),
+            'plotpca': which('plotPCA'),
+            'flag': True # whether run/not
+        }
+        self = update_obj(self, args_init, force=False)
+        # output
+        if self.outdir is None:
+            self.outdir = str(pathlib.Path.cwd())
+        self.outdir = file_abspath(self.outdir)
+        if not isinstance(self.prefix, str):
+            self.prefix = 'multibw'
+        # check commands
+        self.flag = all([
+            isinstance(self.multibigwigsummary, str),
+            isinstance(self.plotcorrelation, str),
+            isinstance(self.plotpca, str),
+        ])
+        if not self.flag:
+            raise ValueError('check bw and commands')
+        self.init_bw()
+        self.init_files()
+        # save config
+        check_path(self.outdir, create_dirs=True)
+        Config().dump(self.__dict__, self.config_yaml)
+
+
+    def init_bw(self):
+        b = []
+        if isinstance(self.bw_dir, str):
+            b = listfile(self.bw_dir, '*.bigWig')
+            print('!A-1', b)
+        elif isinstance(self.bw_list, str):
+            if self.bw_list.endswith('.bigWig'):
+                b.append(self.bw_list)
+            elif self.bw_list.endswith('.txt'):
+                b = read_lines(self.bw_list, comment='#')
+            else:
+                log.error('unknown bw: {}'.format(self.bw_list))
+        elif isinstance(self.bam_list, list):
+            b = self.bw_list
+        else:
+            log.error('bw_dir, bw required')
+        # file exists
+        b = [i for i in b if file_exists(i) and i.endswith('.bigWig')]
+        if len(b) == 0:
+            log.error('no bw files detected')
+        self.bw_list = b
+        self.bw_line = ' '.join(self.bw_list)
+
+
+    def init_files(self):
+        default_files = {
+            'config_yaml': os.path.join(self.outdir, 'config.yaml'),
+            'bw_npz': os.path.join(self.outdir, self.prefix + '.npz'),
+            'log': os.path.join(self.outdir, self.prefix + '.deeptools.log'),
+            'plot_cor_heatmap_png': os.path.join(self.outdir, self.prefix + '.cor_heatmap.png'),
+            'log_heatmap': os.path.join(self.outdir, self.prefix + '.cor_heatmap.log'),
+            'cor_counts': os.path.join(self.outdir, self.prefix + '.cor_counts.tab'),
+            'cor_matrix': os.path.join(self.outdir, self.prefix + '.cor.matrix'),
+            'plot_cor_pca_png': os.path.join(self.outdir, self.prefix + '.cor_PCA.png'),
+            'log_pca': os.path.join(self.outdir, self.prefix + '.cor_PCA.log')
+        }
+        self = update_obj(self, default_files, force=True) # key
+        check_path(self.outdir, create_dirs=True)
+
+
+    def bw_summary(self):
+        cmd = ' '.join([
+            '{} bins --binSize {}'.format(self.multibigwigsummary, self.binsize),
+            '-p {}'.format(self.threads),
+            '--smartLabels -o {}'.format(self.bw_npz),
+            '--outRawCounts {}'.format(self.cor_counts),
+            '--bwfiles {}'.format(self.bw_line)
+        ])
+        cmd_txt = os.path.join(self.outdir, self.prefix + '.bw_cor.sh')
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+        if os.path.exists(self.bw_npz) and not self.overwrite:
+            log.warning('file exists: {}'.format(self.bw_npz))
+        else:
+            _, stdout, stderr = run_shell_cmd(cmd)
+            with open(self.log, 'wt') as w:
+                w.write(stdout + '\n' + stderr + '\n')
+        # check
+        if not os.path.exists(self.bw_npz):
+            log.error('Bw2cor() failed, output file not found: {}'.format(
+                self.bw_npz))
+
+
+    def plot_cor_heatmap(self):
+        cmd = ' '.join([
+            '{} -in {}'.format(self.plotcorrelation, self.bw_npz),
+            '--corMethod {}'.format(self.cor_method),
+            '--plotTitle "{} Correlation"'.format(self.cor_method),
+            '--whatToPlot heatmap --colorMap RdYlBu --plotNumbers',
+            '-o {}'.format(self.plot_cor_heatmap_png),
+            '--outFileCorMatrix {}'.format(self.cor_matrix)
+            ])
+        cmd_txt = os.path.join(self.outdir, self.prefix + '.heatmap.sh')
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+        if os.path.exists(self.plot_cor_heatmap_png) and not self.overwrite:
+            log.warning('Bw2cor.plot_cor_heatmap() skipped, file exists: {}'.format(
+                self.plot_cor_heatmap_png))
+        else:
+            _, stdout, stderr = run_shell_cmd(cmd)
+            with open(self.log_heatmap, 'wt') as w:
+                w.write(stdout + '\n' + stderr + '\n')
+        # check
+        if not os.path.exists(self.plot_cor_heatmap_png):
+            log.error('Bw2cor() failed, output file not found: {}'.format(
+                self.plot_cor_heatmap_png))
+
+
+    def plot_cor_pca(self):
+        """
+        plotPCA:
+        Make PCA plot, for bw_summary
+        correlation
+        """
+        cmd = ' '.join([
+            '{} -in {}'.format(self.plotpca, self.bw_npz),
+            '-o {}'.format(self.plot_cor_pca_png),
+            '-T "PCA for Bw files"'
+            ])
+        cmd_txt = os.path.join(self.outdir, self.prefix + '.pca.sh')
+        with open(cmd_txt, 'wt') as w:
+            w.write(cmd + '\n')
+        if os.path.exists(self.plot_cor_pca_png) and not self.overwrite:
+            log.warning('Bw2cor.plot_cor_pca() skipped, file exists: {}'.format(self.bam_npz))
+        else:
+            _, stdout, stderr = run_shell_cmd(cmd)
+            with open(self.log_pca, 'wt') as w:
+                w.write(stdout + '\n' + stderr + '\n')
+        # check
+        if not os.path.exists(self.plot_cor_pca_png):
+            log.error('Bw2cor() failed, output file not found: {}'.format(self.plot_cor_pca_png))
+
+
+    def run(self):
+        if len(self.bw_list) > 1:
+            self.bw_summary()
+            # plot
+            if self.make_plot is True:
+                self.plot_cor_heatmap()
+                self.plot_cor_pca()
+        else:
+            log.error('require >=2 bw files')

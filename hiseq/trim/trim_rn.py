@@ -28,7 +28,7 @@ import pathlib
 import argparse
 from multiprocessing import Pool
 from hiseq.utils.file import check_path, file_abspath, check_fx, \
-    check_fx_paired, fx_name
+    check_fx_args, fx_name
 from hiseq.utils.utils import log, update_obj, Config
 from hiseq.trim.trim_r1 import TrimR1
 
@@ -98,38 +98,7 @@ class TrimRn(object):
             self.fq1 = [self.fq1]
         if isinstance(self.fq2, str):
             self.fq2 = [self.fq2]
-        c1 = isinstance(self.fq1, list)
-        c1q = all(check_fx(self.fq1)) # force
-        if self.fq2 is None:
-            c2 = c2q = c2pe = False
-            c2x = True
-        else:
-            c2 = isinstance(self.fq2, list)
-            c2q = all(check_fx(self.fq2)) # force
-            c2pe = all(check_fx_paired(self.fq1, self.fq2))
-            c2x = all([c2, c2q, c2pe])
-        # out
-        c0 = all([c1, c1q, c2x])
-        # show message
-        msg = '\n'.join([
-            '='*80,
-            'Run TrimRn() with parameters:',
-            '{:>14} : {}'.format('fq1', self.fq1),
-            '{:>14} : {}'.format('fq2', self.fq2),
-            '-'*40,
-            '{:>14} : {}'.format('fq1 [list]', c1),
-            '{:>14} : {}'.format('fq1 [fastq]', c1q),
-            '{:>14} : {}'.format('fq2 [list]', c2),
-            '{:>14} : {}'.format('fq2 [fastq]', c2q),
-            '{:>14} : {}'.format('fq [paired]', c2pe),
-            '{:>14} : {}'.format('rmdup', self.rmdup),
-            '{:>14} : {}'.format('cut after trim', self.cut_after_trim),
-            '-'*40,
-            'Status: {}'.format(c0),
-            '='*80,
-        ])
-        # print(msg)
-        if not c0:
+        if not check_fx_args(self.fq1, self.fq2):
             raise ValueError('fq1, fq2 no valid')
         self.fq1 = file_abspath(self.fq1)
         self.fq2 = file_abspath(self.fq2)

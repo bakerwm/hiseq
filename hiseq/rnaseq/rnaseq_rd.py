@@ -58,99 +58,75 @@ class RnaseqRd(object):
         self.fq_dir = file_abspath(self.fq_dir)
 
 
-    def update_design(self):
-        # load design/fq_groups
-        if file_exists(self.design) and self.append:
-            design_dict = Config().load(self.design)
-        else:
-            design_dict = {}
-        # new fq_groups
-        fq_flag = []
-        msg = ['='*80, 'Check fastq files']
-        for g, d in self.fq_groups.items():
-            d['fq1'] = file_abspath(d.get('fq1', []))
-            d['fq2'] = file_abspath(d.get('fq2', []))
-            # status
-            fg_flag = []
-            msg.append('-'*80)
-            msg.append('>{:<10}'.format(g))
-            for f1, f2 in zip(d['fq1'], d['fq2']):
-                fs = file_exists([f1, f2])
-                fg_flag.append(all(fs))
-                fs = ['ok' if i else 'failed' for i in fs]
-                msg.append('{:>10} : {}'.format('fq_dir', os.path.dirname(f1)))
-                msg.append('{:>10} : {}'.format(fs[0], os.path.basename(f1)))
-                msg.append('{:>10} : {}'.format(fs[1], os.path.basename(f2)))
-            # status
-            msg.append('{:<6} : {}'.format('status', all(fg_flag)))
-            if d in design_dict.values():
-                msg.append('{:<6} : {}'.format('action', 'skipped, file exists'))
-                continue
-            if all(fg_flag):
-                design_dict.update({g:d})
-            fq_flag.append(all(fg_flag))
-        msg.append('='*80)
-        print('\n'.join(msg))
-        if not all(fq_flag):
-            raise ValueError('fastq files failed, check above log')
-        self.fq_groups = design_dict
-
-
-    def check_fx_args(self):
+    def parse_fq_v1(self):
         """
-        Check the args for fastq
-        mut_fq1 : file or keyword (+)
-        mut_fq2 : file or keyword (+)
-        wt_fq1 : file or keyword (+, optional)
-        wt_fq2 : file or keyword (+, optional)
+        Version-1:
+        parse fastq files by keyword
+        fq-dir
+        ip (required)
+        input (optional)
+        
+        return: dict (groups)
         """
-        # file exists or keywords
-        # for mut files
-        if isinstance(self.mut, list):
-            c_mut = all([isinstance(i, str) for i in self.mut])
-        elif isinstance(self.mut_fq1, list):
-            c2 = isinstance(self.mut_fq2, list)
-            c1p = all(check_fx_paired(self.mut_fq1, self.mut_fq2))
-            c1s = all([isinstance(i, str) for i in self.mut_fq1 + self.mut_fq2])
-            c_mut = all([c2, c1p, c1s])
+        # check fq_dir
+        if isinstance(self.fq_dir, str):
+            f_list = list_fx(self.fq_dir)
         else:
-            c_mut = False
-        ## for wt files
-        if isinstance(self.wt, list):
-            c_wt = all([isinstance(i, str) for i in self.wt])
-        elif self.wt_fq1 is None:
-            c_wt = True
-        elif isinstance(self.wt_fq1, list):
-            c4 = isinstance(self.wt_fq2, list)
-            c3p = all(check_fx_paired(self.wt_fq1, self.wt_fq2))
-            c3s = all([isinstance(i, str) for \
-                       i in self.wt_fq1 + self.wt_fq2])
-            c_wt = all([c4, c3p, c3s])
+            log.warning('--fq-dir required')
+            f_list = []
+        # check ip
+        if not isinstance(self.ip, list):
+            return None
+        # check input
+        if isinstance(self.input, str):
+            self.input = [self.input] * len(self.ip)
+        elif isinstance(self.input, list):
+            if len(self.input) == 1:
+                self.input = [self.input[0]] * len(self.ip)
         else:
-            c_wt = False
-        # message
-        chk = all([c_mut, c_wt])
-        msg = '\n'.join([
-            '='*80,
-            'Arugments :',
-            '{:>14} : {}'.format('mut', self.mut),
-            '{:>14} : {}'.format('wt', self.wt),
-            '{:>14} : {}'.format('mut_fq1', self.mut_fq1),
-            '{:>14} : {}'.format('mut_fq2', self.mut_fq2),
-            '{:>14} : {}'.format('wt_fq1', self.wt_fq1),
-            '{:>14} : {}'.format('wt_fq2', self.wt_fq2),
-            '-'*40,
-            'Status :',
-            '{:>20} : {}'.format('mut files or str', c_mut),
-            '{:>20} : {}'.format('wt files or str', c_wt),
-            '-'*40,
-            'Results : {}'.format(chk),
-        ])
-        print(msg)
+            log.error('--input expect str, list, got {}'.format(
+                type(self.input).__name__))
+            return None
+        # split files input groups
+        out = {}
+        for ka, kb in zip(self.ip, self.input):
+            # ip files
+            ka_fq = [i for i in f_list if ka in fx_name(i)]
+            ka_fq = [i for i in ka_fq if file_exists(i)]
+            ka_fq1 = [i for i in ka_fq if fx_name(i).endswith('_1')]
+            ka_fq2 = [i for i in ka_fq if fx_name(i).endswith('_2')]
+            ka_paired = check_fx_paired(ka_fq1, ka_fq2)
+            # input files
+            kb_fq = [i for i in f_list if kb in fx_name(i)]
+            kb_fq = [i for i in kb_fq if file_exists(i)]
+            kb_fq1 = [i for i in kb_fq if fx_name(i).endswith('_1')]
+            kb_fq2 = [i for i in kb_fq if fx_name(i).endswith('_2')]
+            kb_paired = check_fx_paired(kb_fq1, kb_fq2)
+            if len(ka_fq) > 0 and len(kb_fq) > 0:
+                if all([ka_paired, kb_paired]) and not self.as_se:
+                    k_name = fx_name(ka_fq[0], fix_pe=True, fix_rep=True)
+                    out.update({
+                        k_name: {
+                            'mut_fq1': ka_fq1,
+                            'mut_fq2': ka_fq2,
+                            'wt_fq1': kb_fq1,
+                            'wt_fq2': kb_fq2,
+                        }
+                    })
+                else:
+                    k_name = fx_name(ka_fq[0], fix_pe=False, fix_rep=True)
+                    out.update({
+                        k_name: {
+                            'mut_fq1': ka_fq1,
+                            'mut_fq2': None,
+                            'wt_fq1': kb_fq1,
+                            'wt_fq2': None,
+                        }
+                    })
         # output
-        return chk
-
-
+        return out
+                    
+        
     def parse_fq_v1(self):
         """
         Version-1:
@@ -187,13 +163,13 @@ class RnaseqRd(object):
             ka_fq = [i for i in f_list if ka in fx_name(i)]
             ka_fq1 = [i for i in ka_fq if fx_name(i).endswith('_1')]
             ka_fq2 = [i for i in ka_fq if fx_name(i).endswith('_2')]
-            ka_paired = all(check_fx_paired(ka_fq1, ka_fq2)) 
+            ka_paired = check_fx_paired(ka_fq1, ka_fq2) 
             # wt files
             if isinstance(kb, str):
                 kb_fq = [i for i in f_list if kb in fx_name(i)]
                 kb_fq1 = [i for i in kb_fq if fx_name(i).endswith('_1')]
                 kb_fq2 = [i for i in kb_fq if fx_name(i).endswith('_2')]
-                kb_paired = all(check_fx_paired(kb_fq1, kb_fq2))
+                kb_paired = check_fx_paired(kb_fq1, kb_fq2)
             else:
                 kb_fq1 = kb_fq2 = None
                 kb_paired = True #
@@ -229,14 +205,14 @@ class RnaseqRd(object):
         """
         # mut
         if isinstance(self.mut_fq1, list):
-            mut_paired = all(check_fx_paired(self.mut_fq1, self.mut_fq2))
+            mut_paired = check_fx_paired(self.mut_fq1, self.mut_fq2)
         else:
             mut_paired = False
             log.warning('--mut-fq1 expect list, got {}'.format(
                 type(self.mut_fq1).__name__))
         # wt (optional)
         if isinstance(self.wt_fq1, list):
-            wt_paired = all(check_fx_paired(self.wt_fq1, self.wt_fq2))
+            wt_paired = check_fx_paired(self.wt_fq1, self.wt_fq2)
         else:
             wt_paired = True
             self.wt_fq1 = self.wt_fq2 = None # force
@@ -377,7 +353,7 @@ def get_args():
     parser.add_argument('--wt', nargs='+', dest='wt', default=None,
         help='keyword of wt fastq file, auto-find read1/2')
     parser.add_argument('--se', dest='as_se', action='store_true',
-        help='choose only fastq1 for PE reads')
+        help='choose only fastq1 of PE reads')
     # details
     parser.add_argument('--mut-fq1', nargs='+', dest='mut_fq1', default=None,
         help='filepath or keyword of mut fastq file, read1 of PE')

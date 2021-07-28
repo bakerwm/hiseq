@@ -2,7 +2,7 @@
 # -*- coding:utf-8 -*-
 
 """
-CnR-seq pipeline: level-2 (build design.yaml)
+Chipseq-seq pipeline: level-2 (build design.yaml)
 create design.yaml
 
 ip:
@@ -15,12 +15,12 @@ search files by key words, from command line
 
 import os
 import argparse
-from hiseq.utils.file import file_abspath, file_exists, fx_name, list_fx, \
-    check_fx_paired
+from hiseq.utils.file import check_fx_args, check_fx_paired, file_abspath, \
+    file_exists, fx_name, list_fx
 from hiseq.utils.utils import log, update_obj, Config, get_date
 
 
-class CnrRd(object):
+class ChipseqRd(object):
     """
     Generate design.yaml
     format:
@@ -45,9 +45,10 @@ class CnrRd(object):
             'input_fq1': None,
             'input_fq2': None,
             'append': True,
+            'as_se': False,
         }
         self = update_obj(self, args_init, force=False)
-        self.hiseq_type = 'cnr_rd'
+        self.hiseq_type = 'chipseq_rd'
         self.build_design = False # force
         self.fq_dir = file_abspath(self.fq_dir)
 
@@ -72,45 +73,51 @@ class CnrRd(object):
         if not isinstance(self.ip, list):
             return None
         # check input
-        if self.input is None:
-            self.input = [None] * len(self.ip)
-        elif isinstance(self.input, str):
+        if isinstance(self.input, str):
             self.input = [self.input] * len(self.ip)
         elif isinstance(self.input, list):
             if len(self.input) == 1:
                 self.input = [self.input[0]] * len(self.ip)
         else:
-            self.input = [None] * len(self.ip)
+            log.error('--input expect str, list, got {}'.format(
+                type(self.input).__name__))
+            return None
         # split files input groups
         out = {}
         for ka, kb in zip(self.ip, self.input):
             # ip files
             ka_fq = [i for i in f_list if ka in fx_name(i)]
+            ka_fq = [i for i in ka_fq if file_exists(i)]
             ka_fq1 = [i for i in ka_fq if fx_name(i).endswith('_1')]
             ka_fq2 = [i for i in ka_fq if fx_name(i).endswith('_2')]
             ka_paired = check_fx_paired(ka_fq1, ka_fq2)
             # input files
-            if isinstance(kb, str):
-                kb_fq = [i for i in f_list if kb in fx_name(i)]
-                kb_fq1 = [i for i in kb_fq if fx_name(i).endswith('_1')]
-                kb_fq2 = [i for i in kb_fq if fx_name(i).endswith('_2')]
-                kb_paired = check_fx_paired(kb_fq1, kb_fq2)
-            else:
-                kb_fq1 = kb_fq2 = None
-                kb_paired = True #
-            k_name = fx_name(ka_fq1[0], fix_pe=True, fix_rep=True)
-            # update or not
-            if all([ka_paired, kb_paired]):
-                out.update({
-                    k_name: {
-                        'ip_fq1': ka_fq1,
-                        'ip_fq2': ka_fq2,
-                        'input_fq1': kb_fq1,
-                        'input_fq2': kb_fq2
-                    }
-                })
-            else:
-                log.warning('not paired: {}'.format(k_name))
+            kb_fq = [i for i in f_list if kb in fx_name(i)]
+            kb_fq = [i for i in kb_fq if file_exists(i)]
+            kb_fq1 = [i for i in kb_fq if fx_name(i).endswith('_1')]
+            kb_fq2 = [i for i in kb_fq if fx_name(i).endswith('_2')]
+            kb_paired = check_fx_paired(kb_fq1, kb_fq2)
+            if len(ka_fq) > 0 and len(kb_fq) > 0:
+                if all([ka_paired, kb_paired]) and not self.as_se:
+                    k_name = fx_name(ka_fq[0], fix_pe=True, fix_rep=True)
+                    out.update({
+                        k_name: {
+                            'ip_fq1': ka_fq1,
+                            'ip_fq2': ka_fq2,
+                            'input_fq1': kb_fq1,
+                            'input_fq2': kb_fq2
+                        }
+                    })
+                else:
+                    k_name = fx_name(ka_fq[0], fix_pe=False, fix_rep=True)
+                    out.update({
+                        k_name: {
+                            'ip_fq1': ka_fq,
+                            'ip_fq2': None,
+                            'input_fq1': kb_fq,
+                            'input_fq2': None,
+                        }
+                    })
         # output
         return out
             
@@ -126,20 +133,10 @@ class CnrRd(object):
         return: dict (groups)
         """
         # ip
-        if isinstance(self.ip_fq1, list):
-            ip_paired = check_fx_paired(self.ip_fq1, self.ip_fq2)
-        else:
-            ip_paired = False
-            log.warning('--ip-fq1 expect list, got {}'.format(
-                type(self.ip_fq1).__name__))
-        # input (optional)
-        if isinstance(self.input_fq1, list):
-            input_paired = check_fx_paired(self.input_fq1, self.input_fq2)
-        else:
-            input_paired = True
-            self.input_fq1 = self.input_fq2 = None # force
-        # group
-        if all([ip_paired, input_paired]):
+        ka = check_fx_args(fq1=self.ip_fq1, fq2=self.ip_fq2)
+        # input
+        kb = check_fx_args(fq1=self.input_fq1, fq2=self.input_fq2)
+        if all([ka, kb]):
             k_name = fx_name(self.ip_fq1[0], fix_pe=True, fix_rep=True)
             out = {
                 k_name: {
@@ -150,31 +147,36 @@ class CnrRd(object):
                 }
             }
         else:
+            log.error('--ip-fq1, --input-fq1 files not valid')
             out = None
-        return out
+        return None
 
                 
     def parse_fq(self):
         """
         locate fastq files, into groups: self.fq_groups
-
         required:
         1. fq_dir
         2. fq1, fq2
         """
-        if isinstance(self.fq_dir, str) and isinstance(self.ip, list):
+        if isinstance(self.fq_dir, str) and isinstance(self.ip, list) \
+            and isinstance(self.input, list):
             fq = self.parse_fq_v1()
         elif isinstance(self.ip_fq1, list) and isinstance(self.ip_fq2, list):
             fq = self.parse_fq_v2()
         else:
             fq = {} # empty
         if len(fq) == 0: # empty
-            raise ValueError('no fastq files found, check: fq_dir, ip, ip_fq1, ')
+            # raise ValueError('no fastq files found, check: fq_dir, ip, ip_fq1, ')
+            log.error('no fastq files found, check: fq_dir, ip, ip_fq1, ')
+            return {} # empty
         # loading config
         if file_exists(self.design):
             out = Config().load(self.design)
         else:
             out = {}
+        if not isinstance(fq, dict):
+            return None
         # update fq
         msg = ['='*80, 'build design']
         for k, v in fq.items():
@@ -189,6 +191,11 @@ class CnrRd(object):
             input_fq1 = v.get('input_fq1', None)
             input_fq2 = v.get('input_fq2', None)
             ip_name = fx_name(ip_fq1[0], fix_pe=True, fix_rep=True)
+            # fix for SE
+            if ip_fq2 is None:
+                ip_fq2 = [None]*len(ip_fq1)
+            if input_fq2 is None:
+                input_fq2 = [None]*len(input_fq1)
             # for ip
             msg.append('-'*80)
             msg.append(['[ip]', ip_name])
@@ -201,7 +208,7 @@ class CnrRd(object):
                 msg.append('{:>80}'.format('-'*76))
                 msg.append(['[input]', input_name])
                 for a, b in zip(input_fq1, input_fq2):
-                    msg.append('{:>60}'.format('-'*56))
+                    msg.append('{:>40}'.format('-'*36))
                     msg.extend([['fq1', a], ['fq2', b]])
             # status            
             msg.append('{:>20}'.format('-'*16))
@@ -231,12 +238,12 @@ def get_args():
     example = '\n'.join([
         'Examples:',
         '1. Generate design.yaml, with --fq-dir',
-        '$ python cnr_rd.py -d design.yaml --fq-dir data/raw_data --ip K9 --input IgG',
+        '$ python chipseq_rd.py -d design.yaml --fq-dir data/raw_data --ip K9 --input IgG',
         '2. Generate design.yaml, with -1 and -2',
-        '$ python cnr_rd.py -d design.yaml -1 *1.fq.gz -2 *2.fq.gz',
+        '$ python chipseq_rd.py -d design.yaml -1 *1.fq.gz -2 *2.fq.gz',
     ])
     parser = argparse.ArgumentParser(
-        prog='cnr_rd',
+        prog='chipseq_rd',
         description='Generate design',
         epilog=example,
         formatter_class=argparse.RawTextHelpFormatter)
@@ -248,6 +255,8 @@ def get_args():
         help='keyword of IP fastq file, auto-find read1/2')
     parser.add_argument('--input', nargs='+', dest='input', default=None,
         help='keyword of Input fastq file, auto-find read1/2')
+    parser.add_argument('--se', dest='as_se', action='store_true',
+        help='choose only fastq1 of PE reads')
         
     parser.add_argument('--ip-fq1', nargs='+', dest='ip_fq1', default=None,
         help='filepath or keyword of IP fastq file, read1 of PE')
@@ -264,7 +273,7 @@ def get_args():
 
 def main():
     args = vars(get_args().parse_args())
-    CnrRd(**args).run()
+    ChipseqRd(**args).run()
 
 
 if __name__ == '__main__':
