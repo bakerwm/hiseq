@@ -69,20 +69,29 @@ class ChipseqRd(object):
         else:
             log.warning('--fq-dir required')
             f_list = []
+        # check files
+        if len(f_list) < 2:
+            log.error('not enough fq files')
+            return None
         # check ip
         if not isinstance(self.ip, list):
+            log.error('unknown ip, expect list, got {}'.format(
+                type(self.ip).__name__))
             return None
         # check input
         if isinstance(self.input, str):
             self.input = [self.input] * len(self.ip)
         elif isinstance(self.input, list):
             if len(self.input) == 1:
-                self.input = [self.input[0]] * len(self.ip)
+                self.input = [self.input] * len(self.ip)
         else:
             log.error('--input expect str, list, got {}'.format(
                 type(self.input).__name__))
             return None
-        # split files input groups
+        # check wt mut equal
+        if not len(self.ip) == len(self.input):
+            log.error('ip, input not equal in length')
+            return None
         out = {}
         for ka, kb in zip(self.ip, self.input):
             # ip files
@@ -91,33 +100,28 @@ class ChipseqRd(object):
             ka_fq1 = [i for i in ka_fq if fx_name(i).endswith('_1')]
             ka_fq2 = [i for i in ka_fq if fx_name(i).endswith('_2')]
             ka_paired = check_fx_paired(ka_fq1, ka_fq2)
+            k_name = fx_name(ka_fq[0], fix_pe=True, fix_rep=True)
             # input files
             kb_fq = [i for i in f_list if kb in fx_name(i)]
             kb_fq = [i for i in kb_fq if file_exists(i)]
             kb_fq1 = [i for i in kb_fq if fx_name(i).endswith('_1')]
             kb_fq2 = [i for i in kb_fq if fx_name(i).endswith('_2')]
             kb_paired = check_fx_paired(kb_fq1, kb_fq2)
-            if len(ka_fq) > 0 and len(kb_fq) > 0:
-                if all([ka_paired, kb_paired]) and not self.as_se:
-                    k_name = fx_name(ka_fq[0], fix_pe=True, fix_rep=True)
-                    out.update({
-                        k_name: {
-                            'ip_fq1': ka_fq1,
-                            'ip_fq2': ka_fq2,
-                            'input_fq1': kb_fq1,
-                            'input_fq2': kb_fq2
-                        }
-                    })
-                else:
-                    k_name = fx_name(ka_fq[0], fix_pe=False, fix_rep=True)
-                    out.update({
-                        k_name: {
-                            'ip_fq1': ka_fq,
-                            'ip_fq2': None,
-                            'input_fq1': kb_fq,
-                            'input_fq2': None,
-                        }
-                    })
+            # as SE
+            if self.as_se or not all([ka_paired, kb_paired]):
+                if len(ka_fq1) == 0:
+                    ka_fq1 = ka_fq
+                if len(kb_fq1) == 0:
+                    kb_fq1 = kb_fq
+                ka_fq2 = kb_fq2 = None
+            out.update({
+                k_name: {
+                    'mut_fq1': ka_fq1,
+                    'mut_fq2': ka_fq2,
+                    'wt_fq1': kb_fq1,
+                    'wt_fq2': kb_fq2
+                }
+            })
         # output
         return out
             

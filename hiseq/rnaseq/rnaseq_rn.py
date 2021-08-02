@@ -19,7 +19,7 @@ from hiseq.rnaseq.utils import rnaseq_trim, rnaseq_align_spikein, \
     rnaseq_align_rRNA, rnaseq_align_genome, rnaseq_quant, rnaseq_merge_bam, \
     rnaseq_bam2bw, qc_trim_summary, qc_align_summary, qc_bam_cor, \
     qc_genebody_enrich
-from hiseq.utils.file import check_path, check_fx_paired, symlink_file, \
+from hiseq.utils.file import check_path, check_fx_args, check_fx_paired, symlink_file, \
     file_exists, file_abspath, file_prefix, fx_name, Genome
 from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \
     read_hiseq, list_hiseq_file, run_shell_cmd
@@ -205,10 +205,10 @@ class RnaseqRnConfig(object):
             self.fq1 = [self.fq1]
         if isinstance(self.fq2, str):
             self.fq2 = [self.fq2]
-        if not check_fx_args(fq1, fq2):
+        if not check_fx_args(self.fq1, self.fq2):
             raise ValueError('fq1, fq2 not valide, check above message')
-        self.fq1 = file_abspath(fq1)
-        self.fq2 = file_abspath(fq2)
+        self.fq1 = file_abspath(self.fq1)
+        self.fq2 = file_abspath(self.fq2)
         self.is_paired = check_fx_paired(self.fq1, self.fq2)
         # update rep_list
         snames = fx_name(self.fq1, fix_pe=self.is_paired, fix_unmap=True)

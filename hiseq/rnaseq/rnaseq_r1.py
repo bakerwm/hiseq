@@ -224,11 +224,11 @@ class RnaseqR1Config(object):
 
 
     def init_fq(self):        
-        if not check_fx_args(fq1, fq2):
+        if not check_fx_args(self.fq1, self.fq2):
             raise ValueError('fq1, fq2 not valide, check above message')
-        self.fq1 = file_abspath(fq1)
-        self.fq2 = file_abspath(fq2)
-        self.is_paired = check_fx_paired(fq1, fq2)
+        self.fq1 = file_abspath(self.fq1)
+        self.fq2 = file_abspath(self.fq2)
+        self.is_paired = check_fx_paired(self.fq1, self.fq2)
 
     
     # update: genome_size_file

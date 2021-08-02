@@ -14,6 +14,7 @@ search files by key words, from command line
 """
 
 import os
+import sys
 import argparse
 from hiseq.utils.file import file_abspath, file_exists, fx_name, list_fx, \
     check_fx_paired
@@ -68,51 +69,122 @@ class CnrRd(object):
         else:
             log.warning('--fq-dir required')
             f_list = []
+        # check files
+        if len(f_list) < 2:
+            log.error('not enough fq files')
+            return None
         # check ip
         if not isinstance(self.ip, list):
+            log.error('unknown ip, expect list, got {}'.format(
+                type(self.ip).__name__))
             return None
         # check input
         if self.input is None:
             self.input = [None] * len(self.ip)
-        elif isinstance(self.input, str):
+        if isinstance(self.input, str):
             self.input = [self.input] * len(self.ip)
         elif isinstance(self.input, list):
             if len(self.input) == 1:
-                self.input = [self.input[0]] * len(self.ip)
+                self.input = self.input * len(self.ip)
         else:
-            self.input = [None] * len(self.ip)
-        # split files input groups
+            log.error('--input expect str, list, got {}'.format(
+                type(self.input).__name__))
+            return None
+        # check wt mut equal
+        if not len(self.ip) == len(self.input):
+            log.error('ip, input not equal in length')
+            return None
         out = {}
         for ka, kb in zip(self.ip, self.input):
             # ip files
             ka_fq = [i for i in f_list if ka in fx_name(i)]
+            if len(ka_fq) == 0:
+                log.warning('fq not found for: [{}]'.format(ka))
+                continue
+            ka_fq = [i for i in ka_fq if file_exists(i)]
             ka_fq1 = [i for i in ka_fq if fx_name(i).endswith('_1')]
             ka_fq2 = [i for i in ka_fq if fx_name(i).endswith('_2')]
             ka_paired = check_fx_paired(ka_fq1, ka_fq2)
+            k_name = fx_name(ka_fq[0], fix_pe=True, fix_rep=True)
             # input files
-            if isinstance(kb, str):
+            if kb is None:
+                kb_fq = kb_fq1 = kb_fq2 = None
+                kb_paired = True # fake
+            else:
                 kb_fq = [i for i in f_list if kb in fx_name(i)]
+                kb_fq = [i for i in kb_fq if file_exists(i)]
                 kb_fq1 = [i for i in kb_fq if fx_name(i).endswith('_1')]
                 kb_fq2 = [i for i in kb_fq if fx_name(i).endswith('_2')]
                 kb_paired = check_fx_paired(kb_fq1, kb_fq2)
-            else:
-                kb_fq1 = kb_fq2 = None
-                kb_paired = True #
-            k_name = fx_name(ka_fq1[0], fix_pe=True, fix_rep=True)
-            # update or not
-            if all([ka_paired, kb_paired]):
-                out.update({
-                    k_name: {
-                        'ip_fq1': ka_fq1,
-                        'ip_fq2': ka_fq2,
-                        'input_fq1': kb_fq1,
-                        'input_fq2': kb_fq2
-                    }
-                })
-            else:
-                log.warning('not paired: {}'.format(k_name))
+            # as SE
+            if not all([ka_paired, kb_paired]):
+                if len(ka_fq1) == 0:
+                    ka_fq1 = ka_fq
+                if len(kb_fq1) == 0:
+                    kb_fq1 = kb_fq
+                ka_fq2 = kb_fq2 = None
+            out.update({
+                k_name: {
+                    'ip_fq1': ka_fq1,
+                    'ip_fq2': ka_fq2,
+                    'input_fq1': kb_fq1,
+                    'input_fq2': kb_fq2
+                }
+            })
         # output
         return out
+
+#         # check fq_dir
+#         if isinstance(self.fq_dir, str):
+#             f_list = list_fx(self.fq_dir)
+#         else:
+#             log.warning('--fq-dir required')
+#             f_list = []
+#         # check ip
+#         if not isinstance(self.ip, list):
+#             return None
+#         # check input
+#         if self.input is None:
+#             self.input = [None] * len(self.ip)
+#         elif isinstance(self.input, str):
+#             self.input = [self.input] * len(self.ip)
+#         elif isinstance(self.input, list):
+#             if len(self.input) == 1:
+#                 self.input = [self.input[0]] * len(self.ip)
+#         else:
+#             self.input = [None] * len(self.ip)
+#         # split files input groups
+#         out = {}
+#         for ka, kb in zip(self.ip, self.input):
+#             # ip files
+#             ka_fq = [i for i in f_list if ka in fx_name(i)]
+#             ka_fq1 = [i for i in ka_fq if fx_name(i).endswith('_1')]
+#             ka_fq2 = [i for i in ka_fq if fx_name(i).endswith('_2')]
+#             ka_paired = check_fx_paired(ka_fq1, ka_fq2)
+#             # input files
+#             if isinstance(kb, str):
+#                 kb_fq = [i for i in f_list if kb in fx_name(i)]
+#                 kb_fq1 = [i for i in kb_fq if fx_name(i).endswith('_1')]
+#                 kb_fq2 = [i for i in kb_fq if fx_name(i).endswith('_2')]
+#                 kb_paired = check_fx_paired(kb_fq1, kb_fq2)
+#             else:
+#                 kb_fq1 = kb_fq2 = None
+#                 kb_paired = True #
+#             k_name = fx_name(ka_fq1[0], fix_pe=True, fix_rep=True)
+#             # update or not
+#             if all([ka_paired, kb_paired]):
+#                 out.update({
+#                     k_name: {
+#                         'ip_fq1': ka_fq1,
+#                         'ip_fq2': ka_fq2,
+#                         'input_fq1': kb_fq1,
+#                         'input_fq2': kb_fq2
+#                     }
+#                 })
+#             else:
+#                 log.warning('not paired: {}'.format(k_name))
+#         # output
+#         return out
             
     
     def parse_fq_v2(self):
@@ -188,6 +260,9 @@ class CnrRd(object):
             ip_fq2 = v.get('ip_fq2', None)
             input_fq1 = v.get('input_fq1', None)
             input_fq2 = v.get('input_fq2', None)
+            if ip_fq1 is None:
+                log.error('ip_fq1 not found: {}'.format(k))
+                continue
             ip_name = fx_name(ip_fq1[0], fix_pe=True, fix_rep=True)
             # for ip
             msg.append('-'*80)

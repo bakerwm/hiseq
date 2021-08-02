@@ -154,7 +154,7 @@ class CnrRxConfig(object):
             'threads': 1,
             'parallel_jobs': 1,
             'overwrite': False,
-            'binsize': 10,
+            'binsize': 50,
             'genome_size': 0,
             'genome_size_file': 0,
             'rmdup': True, # key

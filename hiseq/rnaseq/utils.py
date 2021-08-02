@@ -237,13 +237,6 @@ def rnaseq_trim(x, hiseq_type='rnaseq_r1'):
     # do-the-trimming
     fq1, fq2 = a.raw_fq_list
     clean_fq1, clean_fq2 = a.clean_fq_list # output
-    # update for SE;
-    # possible, fq2 == 'None', in toml format!? 
-    # saved as yaml, instead
-    if fq2 == 'None':
-        fq2 = None
-    if clean_fq2 == 'None':
-        clean_fq2 = None
     # whether to trim or not
     if a.trimmed:
         symlink(fq1, clean_fq1)
@@ -262,9 +255,12 @@ def rnaseq_trim(x, hiseq_type='rnaseq_r1'):
         }
         trim = TrimR1(**args_local)
         trim.run()
-        # copy files
-        symlink_file(trim.clean_fq1, clean_fq1)
-        symlink_file(trim.clean_fq2, clean_fq2)
+        ## copy files
+        if a.is_paired:
+            symlink_file(trim.clean_fq1, clean_fq1)
+            symlink_file(trim.clean_fq2, clean_fq2)
+        else:
+            symlink_file(trim.clean_fq, clean_fq1)
         symlink_file(trim.trim_json, a.trim_json)
 
 

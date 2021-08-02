@@ -429,7 +429,7 @@ def cnr_bw_compare(x, hiseq_type='rx'):
         log.error('cnr_bw_compare() failed, only support for rx')
         return None
     bw_compare(a.ip_bw, a.input_bw, a.bw, 'subtract',
-        threads=a.threads, binsize=10)
+        threads=a.threads, binsize=50)
     # log.error('get_ip_over_input_bw() failed, see {}'.format(
     #           self.bw_dir))
     
@@ -467,7 +467,7 @@ def cnr_bam_to_bw(x, hiseq_type='_r1'):
         'bam': a.bam,
         'prefix': a.smp_name,
         'outdir': a.bw_dir,
-        'binsize': a.binsize,
+        'binsize': a.binsize, # default: 50
         'strandness': 0, # non-strandness
         'genome': a.genome,
         'scaleFactor': scale,
@@ -661,8 +661,9 @@ def qc_tss_enrich_tool(x, hiseq_type='r1', bw_type='r1',
     upstream = kwargs.get('upstream', 1000)
     downstream = kwargs.get('downstream', 1000)
     regionbody = kwargs.get('regionbody', 2000)
-    binsize = kwargs.get('binSize', 10)
-    # -b 2000 -a 2000 --binSize 10
+#     binsize = kwargs.get('binSize', 10)
+    binsize = 500 # force
+    # -b 2000 -a 2000 --binSize 500
     arg_body = '-b {} -a {} --binSize {}'.format(
         upstream, downstream, binsize)
     # add genebody for scale-regions
@@ -903,7 +904,7 @@ def qc_bam_cor(x, hiseq_type='rn', bam_type='r1'):
         'prefix': '06.bam_cor',
         'threads': a.threads,
         'overwrite': a.overwrite,
-        'binsize': a.binsize,
+        'binsize': 500, # a.binsize,
     }
     if file_exists(a.bam_cor_heatmap_png) and not a.overwrite:
         log.info('qc_bam_cor() skipped, file exists')

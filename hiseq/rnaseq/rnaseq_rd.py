@@ -58,73 +58,66 @@ class RnaseqRd(object):
         self.fq_dir = file_abspath(self.fq_dir)
 
 
-    def parse_fq_v1(self):
-        """
-        Version-1:
-        parse fastq files by keyword
-        fq-dir
-        ip (required)
-        input (optional)
+#     def parse_fq_v1(self):
+#         """
+#         Version-1:
+#         parse fastq files by keyword
+#         fq-dir
+#         wt (required)
+#         mutant (required)
         
-        return: dict (groups)
-        """
-        # check fq_dir
-        if isinstance(self.fq_dir, str):
-            f_list = list_fx(self.fq_dir)
-        else:
-            log.warning('--fq-dir required')
-            f_list = []
-        # check ip
-        if not isinstance(self.ip, list):
-            return None
-        # check input
-        if isinstance(self.input, str):
-            self.input = [self.input] * len(self.ip)
-        elif isinstance(self.input, list):
-            if len(self.input) == 1:
-                self.input = [self.input[0]] * len(self.ip)
-        else:
-            log.error('--input expect str, list, got {}'.format(
-                type(self.input).__name__))
-            return None
-        # split files input groups
-        out = {}
-        for ka, kb in zip(self.ip, self.input):
-            # ip files
-            ka_fq = [i for i in f_list if ka in fx_name(i)]
-            ka_fq = [i for i in ka_fq if file_exists(i)]
-            ka_fq1 = [i for i in ka_fq if fx_name(i).endswith('_1')]
-            ka_fq2 = [i for i in ka_fq if fx_name(i).endswith('_2')]
-            ka_paired = check_fx_paired(ka_fq1, ka_fq2)
-            # input files
-            kb_fq = [i for i in f_list if kb in fx_name(i)]
-            kb_fq = [i for i in kb_fq if file_exists(i)]
-            kb_fq1 = [i for i in kb_fq if fx_name(i).endswith('_1')]
-            kb_fq2 = [i for i in kb_fq if fx_name(i).endswith('_2')]
-            kb_paired = check_fx_paired(kb_fq1, kb_fq2)
-            if len(ka_fq) > 0 and len(kb_fq) > 0:
-                if all([ka_paired, kb_paired]) and not self.as_se:
-                    k_name = fx_name(ka_fq[0], fix_pe=True, fix_rep=True)
-                    out.update({
-                        k_name: {
-                            'mut_fq1': ka_fq1,
-                            'mut_fq2': ka_fq2,
-                            'wt_fq1': kb_fq1,
-                            'wt_fq2': kb_fq2,
-                        }
-                    })
-                else:
-                    k_name = fx_name(ka_fq[0], fix_pe=False, fix_rep=True)
-                    out.update({
-                        k_name: {
-                            'mut_fq1': ka_fq1,
-                            'mut_fq2': None,
-                            'wt_fq1': kb_fq1,
-                            'wt_fq2': None,
-                        }
-                    })
-        # output
-        return out
+#         return: dict (groups)
+#         """
+#         # check fq_dir
+#         if isinstance(self.fq_dir, str):
+#             f_list = list_fx(self.fq_dir)
+#         else:
+#             log.warning('--fq-dir required')
+#             f_list = []
+#         # check wt
+#         if not isinstance(self.wt, list):
+#             return None
+#         # check mutant
+#         if not isinstance(self.mutant, list):
+#             return None
+#         # split files input groups
+#         out = {}
+#         for ka, kb in zip(self.ip, self.input):
+#             # ip files
+#             ka_fq = [i for i in f_list if ka in fx_name(i)]
+#             ka_fq = [i for i in ka_fq if file_exists(i)]
+#             ka_fq1 = [i for i in ka_fq if fx_name(i).endswith('_1')]
+#             ka_fq2 = [i for i in ka_fq if fx_name(i).endswith('_2')]
+#             ka_paired = check_fx_paired(ka_fq1, ka_fq2)
+#             # input files
+#             kb_fq = [i for i in f_list if kb in fx_name(i)]
+#             kb_fq = [i for i in kb_fq if file_exists(i)]
+#             kb_fq1 = [i for i in kb_fq if fx_name(i).endswith('_1')]
+#             kb_fq2 = [i for i in kb_fq if fx_name(i).endswith('_2')]
+#             kb_paired = check_fx_paired(kb_fq1, kb_fq2)
+#             if len(ka_fq) > 0 and len(kb_fq) > 0:
+#                 if all([ka_paired, kb_paired]) and not self.as_se:
+#                     k_name = fx_name(ka_fq[0], fix_pe=True, fix_rep=True)
+#                     out.update({
+#                         k_name: {
+#                             'mut_fq1': ka_fq1,
+#                             'mut_fq2': ka_fq2,
+#                             'wt_fq1': kb_fq1,
+#                             'wt_fq2': kb_fq2,
+#                         }
+#                     })
+#                 else:
+#                     k_name = fx_name(ka_fq[0], fix_pe=False, fix_rep=True)
+#                     out.update({
+#                         k_name: {
+#                             'mut_fq1': ka_fq1,
+#                             'mut_fq2': None,
+#                             'wt_fq1': kb_fq1,
+#                             'wt_fq2': None,
+#                         }
+#                     })
+#         # output
+#         return out
                     
         
     def parse_fq_v1(self):
@@ -143,19 +136,29 @@ class RnaseqRd(object):
         else:
             log.warning('--fq-dir required')
             f_list = []
+        # check files
+        if len(f_list) < 2:
+            log.error('not enough fq files')
+            return None
         # check mut
         if not isinstance(self.mut, list):
+            log.error('unknown mut, expect list, got {}'.format(
+                type(self.mut).__name__))
             return None
         # check wt
-        if self.wt is None:
-            self.wt = [None] * len(self.mut)
-        elif isinstance(self.wt, str):
+        if isinstance(self.wt, str):
             self.wt = [self.wt] * len(self.mut)
         elif isinstance(self.wt, list):
             if len(self.wt) == 1:
                 self.wt = [self.wt[0]] * len(self.mut)
         else:
-            self.wt = [None] * len(self.mut)
+            log.error('unknown wt, expect list, got {}'.format(
+                type(self.wt).__name__))
+            return None
+        # check wt mut equal
+        if not len(self.mut) == len(self.wt):
+            log.error('wt, mut not equal in length')
+            return None
         # split files wt groups
         out = {}
         for ka, kb in zip(self.mut, self.wt):
@@ -163,32 +166,28 @@ class RnaseqRd(object):
             ka_fq = [i for i in f_list if ka in fx_name(i)]
             ka_fq1 = [i for i in ka_fq if fx_name(i).endswith('_1')]
             ka_fq2 = [i for i in ka_fq if fx_name(i).endswith('_2')]
-            ka_paired = check_fx_paired(ka_fq1, ka_fq2) 
+            ka_paired = check_fx_paired(ka_fq1, ka_fq2)
+            k_name = fx_name(ka_fq[0], fix_pe=True, fix_rep=True)
             # wt files
-            if isinstance(kb, str):
-                kb_fq = [i for i in f_list if kb in fx_name(i)]
-                kb_fq1 = [i for i in kb_fq if fx_name(i).endswith('_1')]
-                kb_fq2 = [i for i in kb_fq if fx_name(i).endswith('_2')]
-                kb_paired = check_fx_paired(kb_fq1, kb_fq2)
-            else:
-                kb_fq1 = kb_fq2 = None
-                kb_paired = True #
-            k_name = fx_name(ka_fq1[0], fix_pe=True, fix_rep=True)
-            # update or not
-            # force to SE
-            if self.as_se:
+            kb_fq = [i for i in f_list if kb in fx_name(i)]
+            kb_fq1 = [i for i in kb_fq if fx_name(i).endswith('_1')]
+            kb_fq2 = [i for i in kb_fq if fx_name(i).endswith('_2')]
+            kb_paired = check_fx_paired(kb_fq1, kb_fq2)
+            # as SE
+            if self.as_se or not all([ka_paired, kb_paired]):
+                if len(ka_fq1) == 0:
+                    ka_fq1 = ka_fq
+                if len(kb_fq1) == 0:
+                    kb_fq1 = kb_fq
                 ka_fq2 = kb_fq2 = None
-            if all([ka_paired, kb_paired]):
-                out.update({
-                    k_name: {
-                        'mut_fq1': ka_fq1,
-                        'mut_fq2': ka_fq2,
-                        'wt_fq1': kb_fq1,
-                        'wt_fq2': kb_fq2
-                    }
-                })
-            else:
-                log.warning('not paired: {}'.format(k_name))
+            out.update({
+                k_name: {
+                    'mut_fq1': ka_fq1,
+                    'mut_fq2': ka_fq2,
+                    'wt_fq1': kb_fq1,
+                    'wt_fq2': kb_fq2
+                }
+            })
         # output
         return out
             
@@ -202,35 +201,21 @@ class RnaseqRd(object):
         wt (optional)
         
         return: dict (groups)
-        """
-        # mut
-        if isinstance(self.mut_fq1, list):
-            mut_paired = check_fx_paired(self.mut_fq1, self.mut_fq2)
-        else:
-            mut_paired = False
-            log.warning('--mut-fq1 expect list, got {}'.format(
-                type(self.mut_fq1).__name__))
-        # wt (optional)
-        if isinstance(self.wt_fq1, list):
-            wt_paired = check_fx_paired(self.wt_fq1, self.wt_fq2)
-        else:
-            wt_paired = True
-            self.wt_fq1 = self.wt_fq2 = None # force
-        # group
-        if self.as_se:
+        """        
+        mut_paired = check_fx_paired(self.mut_fq1, self.mut_fq2)
+        wt_paired = check_fx_paired(self.wt_fq1, self.wt_fq2)
+        k_name = fx_name(self.mut_fq1[0], fix_pe=True, fix_rep=True)
+        # as SE
+        if self.as_se or not all([mut_paired, wt_paired]):
             self.mut_fq2 = self.wt_fq2 = None
-        if all([mut_paired, wt_paired]):
-            k_name = fx_name(self.mut_fq1[0], fix_pe=True, fix_rep=True)
-            out = {
-                k_name: {
-                'mut_fq1': self.mut_fq1,
-                'mut_fq2': self.mut_fq2,
-                'wt_fq1': self.wt_fq1,
-                'wt_fq2': self.wt_fq2
-                }
+        out = {
+            k_name: {
+            'mut_fq1': self.mut_fq1,
+            'mut_fq2': self.mut_fq2,
+            'wt_fq1': self.wt_fq1,
+            'wt_fq2': self.wt_fq2
             }
-        else:
-            out = None
+        }
         return out
 
                 

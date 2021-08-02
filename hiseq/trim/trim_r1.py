@@ -31,7 +31,7 @@ import pandas as pd
 import pyfastx
 from xopen import xopen
 from hiseq.utils.seq import Fastx
-from hiseq.utils.file import check_path, file_exists, file_abspath, \
+from hiseq.utils.file import check_path, check_fx_args, file_exists, file_abspath, \
     check_fx, check_fx_paired, copy_file, symlink_file, remove_file, fx_name
 from hiseq.utils.utils import log, update_obj, Config, run_shell_cmd
 from hiseq.trim.cutadapt import Cutadapt
@@ -106,47 +106,21 @@ class TrimR1(object):
         Config().dump(self.__dict__.copy(), self.config_yaml)
 
 
-    def init_fq(self): # se or pe
-        c1 = isinstance(self.fq1, str)
-        c1q = check_fx(self.fq1) # force
-        if self.fq2 is None or self.fq2 == 'None':
-            c2 = c2q = c2pe = False
-            c2x = True
-            self.fq2 = None
-            self.rmdup_fq1, self.rmdup_fq2 = (self.rmdup_fq, None)
-            self.cut2_fq1, self.cut2_fq2 = (self.cut2_fq, None)
-            self.clean_fq1, self.clean_fq2 = (self.clean_fq, None)
-        else:
-            c2 = isinstance(self.fq2, str)
-            c2q = check_fx(self.fq2) # force
-            c2pe = check_fx_paired(self.fq1, self.fq2)
-            c2x = all([c2, c2q, c2pe])
-        # out
-        c0 = all([c1, c1q, c2x])
-        # show message
-        msg = '\n'.join([
-            '='*80,
-            'Run TrimR1() with parameters:',
-            '{:>14} : {}'.format('fq1', self.fq1),
-            '{:>14} : {}'.format('fq2', self.fq2),
-            '-'*40,
-            '{:>14} : {}'.format('fq1 [str]', c1),
-            '{:>14} : {}'.format('fq1 [fastq]', c1q),
-            '{:>14} : {}'.format('fq2 [str]', c2),
-            '{:>14} : {}'.format('fq2 [fastq]', c2q),
-            '{:>14} : {}'.format('fq [paired]', c2pe),
-            '{:>14} : {}'.format('rmdup', self.rmdup),
-            '{:>14} : {}'.format('cut after trim', self.cut_after_trim),
-            '-'*40,
-            'Status: {}'.format(c0),
-            '='*80,
-        ])
-        print(msg)
-        if not c0:
-            raise ValueError('fq1, fq2 no valid')
+    def init_fq(self):
+        """
+        required:
+        1. fq1:str, fq2:str/None
+        2. paired
+        """
+        if not check_fx_args(self.fq1, self.fq2):
+            raise ValueError('fq1, fq2 not valide, check above message')
         self.fq1 = file_abspath(self.fq1)
         self.fq2 = file_abspath(self.fq2)
-        
+        self.is_paired = check_fx_paired(self.fq1, self.fq2)
+        # auto: sample names
+        if not isinstance(self.smp_name, str):
+            self.smp_name = fx_name(self.fq1, fix_pe=self.is_paired, fix_unmap=True)
+
         
     def init_files(self):
         self.project_name = self.smp_name
