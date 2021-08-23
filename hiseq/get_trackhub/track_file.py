@@ -213,13 +213,14 @@ class TrackFile(object):
                 for m, n in d_mapping.items():
                     # iterate, groups
                     # 2h, 4h, ... (in dimX['mapping'])
-                    if m in self.fname:
+                    if str(m) in self.fname:
                         subgroup[d_name] = m
                         break # stop iteration
                 # check mapping
                 if subgroup.get(d_name, None) is None:
                     log.error('subgroup_list not found in file: {}, {}'.format(
                         self.fname, list(d_mapping.keys())))
+                    print('!A-5', d_name, self.s)
                     raise ValueError('subgroups failed')
         # format:
         # subgroup = {'stage': '2h', 'gene': 'geneA'}
@@ -286,7 +287,6 @@ class TrackFile(object):
         else:
             fish = 'Scarus_hoefleri'
         # output colors
-        print('!AAAA-1', fish, colorPal)
         return color_d.get(fish, c1)[:n]
 
 
@@ -351,10 +351,18 @@ class TrackFile(object):
         """
         if colorDim is None:
             colorDim = self.colorDim
-        if not colorDim in self.subgroups:
+        try:
+            if not colorDim in self.subgroups:
+                colorDim = 'dimX'
+        except:
+            print('!A-1, file: {}'.format(self.s))
             colorDim = 'dimX'
         # self.subgroups is the subgroups structure {dimX: , dimY: , ...}
         # extract the mapping from the colorDim (dimX)
+        ttt = self.subgroups.get(colorDim, {})
+        if ttt is None:
+            print('!A-2', ttt)
+            sys.exit()
         g_mapping = self.subgroups.get(colorDim, {}).get('mapping', {})
         # assign colors to each groups in mapping
         g_list = list(g_mapping.keys()) # 2h, 4h, ...

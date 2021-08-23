@@ -56,25 +56,27 @@ class Rnaseq(object):
         'build_design': False,
         'design': None,
         })
-        if len(self.fq_groups) > 1:
-            i['parallel_jobs'] = 1 # force
+#         if len(self.fq_groups) > 1:
+#             i['parallel_jobs'] = 1 # force
         args_local = self.__dict__.copy()
         args_local.update(i)
         RnaseqRx(**args_local).run()
 
 
-    def run_multiple_rx(self):
+    def run_multiple_rx(self): # !!!! rx -> parallel_jobs=1
         # load fq groups
         self.fq_groups = Config().load(self.design)
         if len(self.fq_groups) == 0:
             raise ValueError('no data in design: {}'.format(self.design))
         # run multiple in parallel
-        if self.parallel_jobs > 1 and len(self.fq_groups) > 1:
-            with Pool(processes=self.parallel_jobs) as pool:
-                pool.map(self.run_single_rx, self.fq_groups.values())
-        else:
-            for i in list(self.fq_groups.values()):
-                self.run_single_rx(i)
+        for i in list(self.fq_groups.values()):
+            self.run_single_rx(i)
+#         if self.parallel_jobs > 1 and len(self.fq_groups) > 1:
+#             with Pool(processes=self.parallel_jobs) as pool:
+#                 pool.map(self.run_single_rx, self.fq_groups.values())
+#         else:
+#             for i in list(self.fq_groups.values()):
+#                 self.run_single_rx(i)
         
         
     def run(self):
@@ -101,6 +103,8 @@ class RnaseqConfig(object):
             'mut_fq2': None,
             'wt_fq1': None,
             'wt_fq2': None,
+            'threads': 4,
+            'parallel_jobs': 1
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'rnaseq_ra'

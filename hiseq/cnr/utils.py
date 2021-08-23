@@ -302,7 +302,6 @@ def cnr_align_genome(x, hiseq_type='_r1'):
         'verbose': False,
         'extra_para': align_extra, # specific for CnR
     }
-#     args_local.update(args_init)
     args_local = args_init
     if file_exists(a.bam) and not a.overwrite:
         log.info('cnr_align_genome() skipped, file exists: {}'.format(a.bam))
@@ -322,13 +321,11 @@ def cnr_align_genome(x, hiseq_type='_r1'):
     # remove PCRdup
     if a.rmdup:
         if file_exists(a.bam_raw):
-            # if file_exists(a.bam) and not a.overwrite:
             if check_file(a.bam, check_empty=True) and not a.overwrite:
                 log.info('rmdup() skipped, file exists: {}'.format(
                     a.bam))
             else:
                 Bam(a.bam_raw).rmdup(outfile=a.bam)
-                # Bam(a.bam).index()
     else:
         symlink_file(a.bam_raw, a.bam)
     s = cnr_r1_norm_scale(x, hiseq_type, by_spikein=False)
@@ -360,13 +357,11 @@ def cnr_merge_bam(x, hiseq_type='_rn'):
     # rmdup
     if a.rmdup:
         if file_exists(a.bam_raw):
-#             if file_exists(a.bam) and not a.overwrite:
             if check_file(a.bam, check_empty=True) and not a.overwrite:
                 log.info('rmdup() skipped, file exists: {}'.format(
                     a.bam))
             else:
                 Bam(a.bam_raw).rmdup(a.bam)
-                # Bam(a.bam).index()
     else:
         symlink_file(a.bam_raw, a.bam)
     # check-point
@@ -555,7 +550,7 @@ def qc_align_summary(x, hiseq_type='r1'):
     Organize the alignment:
 
     output:
-    name, total, map, unique, multi, spikein, rRNA, unmap
+    name, total, map, unique, multi, spikein, rRNA, unmap, dup, nodup
     """
     a = read_hiseq(x, hiseq_type) # for general usage
     if not a.is_hiseq:

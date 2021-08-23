@@ -32,15 +32,107 @@ import os
 import sys
 import pathlib
 import argparse
+from multiprocessing import Pool
 from hiseq.align.align import Align
+from hiseq.rnaseq.rnaseq_rd import RnaseqRd
 from hiseq.rnaseq.rnaseq_rp import RnaseqRp
 from hiseq.rnaseq.utils import deseq_salmon
-from hiseq.utils.file import check_path, check_fx_paired, symlink_file, \
-    file_exists, file_abspath, file_prefix, fx_name, Genome
-from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \
-    read_hiseq, list_hiseq_file, run_shell_cmd
+from hiseq.utils.file import (check_fx_args, check_path, check_fx_paired, 
+    symlink_file, file_exists, file_abspath, file_prefix, fx_name, Genome)
+from hiseq.utils.utils import (log, update_obj, Config, get_date, init_cpu,
+    read_hiseq, list_hiseq_file, run_shell_cmd)
 from hiseq.utils.bam import Bam
 from hiseq.align.align_index import AlignIndex
+
+
+class RnaseqSalmonPipe(object):
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+
+
+    def init_args(self):
+        args_local = RnaseqSalmonPipeConfig(**self.__dict__)
+        self = update_obj(self, args_local.__dict__, force=True)
+
+
+    def run_single_rx(self, i):
+        i = {
+            k:v for k,v in i.items() if k in \
+            ['mut_fq1', 'mut_fq2', 'wt_fq1', 'wt_fq2']
+        }
+        # update outdir
+        wt_name = fx_name(i['wt_fq1'][0], fix_pe=True, fix_rep=True)
+        mut_name = fx_name(i['mut_fq1'][0], fix_pe=True, fix_rep=True)
+        smp_name = '{}.vs.{}'.format(wt_name, mut_name)
+        i.update({
+        'build_design': False,
+        'design': None,
+        'outdir': os.path.join(self.outdir, smp_name)
+        })
+        if len(self.fq_groups) > 1:
+            i['parallel_jobs'] = 1 # force
+        args_local = self.__dict__.copy()
+        args_local.update(i)
+        RnaseqSalmon(**args_local).run()
+
+
+    def run_multiple_rx(self):
+        # load fq groups
+        self.fq_groups = Config().load(self.design)
+        if len(self.fq_groups) == 0:
+            raise ValueError('no data in design: {}'.format(self.design))
+        # run multiple in parallel
+        if self.parallel_jobs > 1 and len(self.fq_groups) > 1:
+            with Pool(processes=self.parallel_jobs) as pool:
+                pool.map(self.run_single_rx, self.fq_groups.values())
+        else:
+            for i in list(self.fq_groups.values()):
+                self.run_single_rx(i)
+        
+        
+    def run(self):
+        if self.build_design:
+            RnaseqRd(**self.__dict__).run()
+        else:
+            if AlignIndex(self.salmon_index).is_valid():
+                self.run_multiple_rx()
+            else:
+                log.error('salmon_index not valid: {}'.format(self.salmon_index))
+
+
+class RnaseqSalmonPipeConfig(object):
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+
+
+    def init_args(self):
+        args_init = {
+            'build_design': False,
+            'design': None, # required
+            'fq_dir': None,
+            'mut': None,
+            'wt': None,
+            'mut_fq1': None,
+            'mut_fq2': None,
+            'wt_fq1': None,
+            'wt_fq2': None,
+            'salmon_index': None,
+            'genome': None,
+            'threads': 4,
+            'parallel_jobs': 1
+        }
+        self = update_obj(self, args_init, force=False)
+        self.hiseq_type = 'rnaseq_ra'
+        if self.outdir is None:
+            self.outdir = str(pathlib.Path.cwd())
+        self.outdir = file_abspath(self.outdir)
+        self.threads, self.parallel_jobs = init_cpu(self.threads,
+            self.parallel_jobs)
+        if not isinstance(self.design, str):
+            raise ValueError('--design, expect str, got {}'.format(
+                type(self.design).__name__))
 
 
 class RnaseqSalmon(object):
@@ -72,7 +164,7 @@ class RnaseqSalmon(object):
         # quant
         self.run_salmon_rn() # multiple
         #deseq        
-        salmon_deseq(self.project_dir, 'rx')
+        deseq_salmon(self.project_dir, 'rx')
         #report
         RnaseqRp(self.project_dir).run()
 
@@ -130,7 +222,7 @@ class RnaseqSalmonConfig(object):
                 type(fq1).__name__))
         if not check_fx_args(fq1, fq2):
             raise ValueError('fq1, fq2 not valid')
-        return (file_abspath(fq1), file_abspath(fq2), c2p)
+        return (file_abspath(fq1), file_abspath(fq2), check_fx_paired(fq1, fq2))
                 
 
     def init_index(self):
@@ -236,23 +328,57 @@ def get_args():
         description='run rnaseq_salmon',
         epilog=example,
         formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument('-x', dest='salmon_index', required=True,
-        help='The path to salmon index')
-    parser.add_argument('-m1', '--mut-fq1', nargs='+', required=True,
-        dest='mut_fq1',
-        help='read1 files, (or read1 of PE reads) of treatment/mutant samples')
-    parser.add_argument('-m2', '--mut-fq2', nargs='+', required=False,
-        dest='mut_fq2',
-        help='read2 files, (or read2 of PE reads) of treatment/mutant samples')
-    parser.add_argument('-w1', '--wt-fq1', nargs='+', required=True,
-        dest='wt_fq1',
-        help='read1 files, (or read1 of PE reads) of control/wt samples')
-    parser.add_argument('-w2', '--wt-fq2', nargs='+', required=False,
-        dest='wt_fq2',
-        help='read2 files, (or read2 of PE reads) of control/wt samples')
+    parser.add_argument('-b', '--build-design', dest='build_design',
+        action='store_true',
+        help='generate design.yaml, with --fq-dir, or fq1/fq2')
+    parser.add_argument('-d', '--design', required=True,
+        help='The file saving fastq files config; generated by rnaseq_rd.py')
+    # for design
+    parser.add_argument('-r', '--fq-dir', dest='fq_dir', default=None,
+        help='directory of fastq files, for --build-design')
+    parser.add_argument('--mut', nargs='+', default=None,
+        help='keyword of mut fastq file, auto-find read1/2')
+    parser.add_argument('--wt', nargs='+', dest='wt', default=None,
+        help='keyword of wt fastq file, auto-find read1/2')
+    parser.add_argument('--se', dest='as_se', action='store_true',
+        help='choose only fastq1 for PE reads')
+     # details
+    parser.add_argument('--mut-fq1', nargs='+', dest='mut_fq1', default=None,
+        help='filepath or keyword of mut fastq file, read1 of PE')
+    parser.add_argument('--mut-fq2', nargs='+', dest='mut_fq2', default=None,
+        help='filepath or keyword of mut fastq file, read2 of PE')
+    parser.add_argument('--wt-fq1', nargs='+', dest='wt_fq1', 
+        default=None,
+        help='filepath or keyword of wt fastq file, read1 of PE')
+    parser.add_argument('--wt-fq2', nargs='+', dest='wt_fq2',
+        default=None,
+        help='filepath or keyword of wt fastq file, read2 of PE')
+    
+    # required arguments
     parser.add_argument('-o', '--outdir', default=None,
         help='The directory to save results, default, \
         current working directory.')
+    parser.add_argument('-x', dest='salmon_index', required=False,
+        help='The path to salmon index')
+    parser.add_argument('-g', '--genome', default=None,
+        choices=['dm3', 'dm6', 'hg19', 'hg38', 'mm9', 'mm10'],
+        help='Reference genome : dm3, dm6, hg19, hg38, mm10, default: hg38')
+    
+#     parser.add_argument('-m1', '--mut-fq1', nargs='+', required=True,
+#         dest='mut_fq1',
+#         help='read1 files, (or read1 of PE reads) of treatment/mutant samples')
+#     parser.add_argument('-m2', '--mut-fq2', nargs='+', required=False,
+#         dest='mut_fq2',
+#         help='read2 files, (or read2 of PE reads) of treatment/mutant samples')
+#     parser.add_argument('-w1', '--wt-fq1', nargs='+', required=True,
+#         dest='wt_fq1',
+#         help='read1 files, (or read1 of PE reads) of control/wt samples')
+#     parser.add_argument('-w2', '--wt-fq2', nargs='+', required=False,
+#         dest='wt_fq2',
+#         help='read2 files, (or read2 of PE reads) of control/wt samples')
+#     parser.add_argument('-o', '--outdir', default=None,
+#         help='The directory to save results, default, \
+#         current working directory.')
     
     # optional arguments - 0
     parser.add_argument('-mn', '--mut-name', dest='mut_name', default=None,
@@ -265,10 +391,6 @@ def get_args():
     # optional arguments - 1
     parser.add_argument('--overwrite', action='store_true',
         help='if spcified, overwrite exists file')
-    parser.add_argument('-g', '--genome', default=None, 
-        help='The name of the genome, [dm6, hg38, mm10]')
-    
-    # extra:
     parser.add_argument('-p', '--threads', default=1, type=int,
         help='Number of threads for each job, default [1]')
     parser.add_argument('-j', '--parallel-jobs', default=1, type=int,
@@ -279,7 +401,8 @@ def get_args():
 
 def main():
     args = vars(get_args().parse_args())
-    RnaseqSalmon(**args).run()
+#     RnaseqSalmon(**args).run()
+    RnaseqSalmonPipe(**args).run()
 
 
 if __name__ == '__main__':

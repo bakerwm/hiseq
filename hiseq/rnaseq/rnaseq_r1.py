@@ -10,13 +10,13 @@ import sys
 import pathlib
 import argparse
 from hiseq.rnaseq.rnaseq_rp import RnaseqRp
-from hiseq.rnaseq.utils import rnaseq_trim, rnaseq_align_spikein, \
-    rnaseq_align_rRNA, rnaseq_align_genome, rnaseq_quant, rnaseq_bam2bw, \
-    qc_trim_summary, qc_align_summary, qc_genebody_enrich
-from hiseq.utils.file import check_path, check_fx_paired, symlink_file, \
-    file_exists, file_abspath, file_prefix, fx_name, Genome, check_fx_args
-from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \
-    read_hiseq, is_supported, print_dict
+from hiseq.rnaseq.utils import (rnaseq_trim, rnaseq_align_spikein,
+    rnaseq_align_rRNA, rnaseq_align_genome, rnaseq_quant, rnaseq_bam2bw,
+    qc_trim_summary, qc_align_summary, qc_genebody_enrich)
+from hiseq.utils.file import (check_path, check_fx_paired, symlink_file,
+    file_exists, file_abspath, file_prefix, fx_name, Genome, check_fx_args)
+from hiseq.utils.utils import (log, update_obj, Config, get_date, init_cpu,
+    read_hiseq, is_supported, print_dict)
 from hiseq.align.align_index import AlignIndex, check_index_args, fetch_index
 
 

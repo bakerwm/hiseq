@@ -43,6 +43,7 @@ from pathlib import Path # cwd
 import argparse
 from multiprocessing import Pool
 from hiseq.utils.seq import Fastx
+from hiseq.align.align_rp import AlignRp
 from hiseq.utils.utils import update_obj, Config, get_date, read_hiseq, \
     is_supported
 from hiseq.utils.file import check_path, file_abspath, file_prefix, \
@@ -131,6 +132,9 @@ class AlignRx(object):
                 pool.map(self.run_single_fx, range(len(self.fq1)))
         else:
             [self.run_single_fx(i) for i in range(len(self.fq1))]
+        # add project_dir
+        self.project_dir = self.outdir
+        AlignRp(**self.__dict__).run()
 
 
 class AlignRn(object):
@@ -202,6 +206,7 @@ class AlignRn(object):
             })
         # combine stat
         self.wrap_stat()
+        AlignRp(**self.__dict__).run()
 
 
 class AlignR1(object):

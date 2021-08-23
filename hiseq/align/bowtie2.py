@@ -83,6 +83,8 @@ def parse_bowtie2(x):
                     is_paired = True
                 elif 'aligned concordantly 0 times' in line:
                     unmapped = n
+                elif 'aligned 0 times' in line:
+                    unmapped = n
                 elif 'aligned concordantly exactly 1 time' in line:
                     unique = n
                 elif 'aligned concordantly >1 times' in line:

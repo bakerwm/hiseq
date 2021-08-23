@@ -426,12 +426,11 @@ def rnaseq_align_genome(x, hiseq_type='r1'):
         'smp_name': a.smp_name,
         'genome': a.genome,
         'genome_index': a.genome_index,
-        # overwrite args: begin # 
         'spikein': None,
         'spikein_index': None,
         'to_rRNA': False,
         'rRNA_index': None,
-        'extra_index': None,
+        'extra_index': a.extra_index,
         # overwrite args: end # 
         'keep_tmp': a.keep_tmp,
         'unique_only': True,
@@ -804,7 +803,7 @@ def qc_bam_cor(x, hiseq_type='rn', bam_type='r1'):
         'prefix': '06.bam_cor',
         'threads': a.threads,
         'overwrite': a.overwrite,
-        'binsize': a.binsize,
+        'binsize': 500, # a.binsize,
     }
     if file_exists(a.bam_cor_heatmap_png) and not a.overwrite:
         log.info('qc_bam_cor() skipped, file exists')
@@ -819,7 +818,6 @@ def qc_bam_cor(x, hiseq_type='rn', bam_type='r1'):
 ## function for tss,genebody enrich: for general hiseq purpose
 ##
 ## computematrix, plotProfile from deeptools
-##
 def qc_tss_enrich_tool(x, hiseq_type='r1', bw_type='r1',
                        subcmd='reference-point', **kwargs):
     """
@@ -838,11 +836,11 @@ def qc_tss_enrich_tool(x, hiseq_type='r1', bw_type='r1',
         return None
     arg_bed = '-R {}'.format(bed)
     # default values
-    # -b 2000 -a 2000 --binSize 10
+    # -b 2000 -a 2000 --binSize 500
     upstream = kwargs.get('upstream', 1000)
     downstream = kwargs.get('downstream', 1000)
     regionbody = kwargs.get('regionbody', 2000)
-    binsize = kwargs.get('binSize', 10)
+    binsize = kwargs.get('binSize', 500)
     # -b 2000 -a 2000 --binSize 10
     arg_body = '-b {} -a {} --binSize {}'.format(
         upstream, downstream, binsize)
@@ -986,134 +984,3 @@ def qc_genebody_enrich(x, hiseq_type='r1', bw_type='r1', **kwargs):
                 log.error('qc_genebody_enrich() failed, see: {}'.format(
                     a.genebody_enrich_matrix_log))
 
-
-# def qc_genebody_enrich(x, hiseq_type='r1', bw_type='r1'):
-#     """
-#     Calculate the Genebody enrichment
-
-#     Parameters
-#     ----------
-#     x:  str
-#         The project dir of hiseq
-        
-#     hiseq_type:  str
-#         The hiseq type of `x`, options: ['r1', 'rn', 'rx']
-#         default: ['r1']
-        
-#     bw_type:  str
-#         The hiseq type of bigWig file, options: ['r1', 'rn', 'rx']
-#         default: ['r1']
-        
-#     $ computeMatrix scale-regions -R gene.bed -S f.bigWig -o mat.gz
-#     $ plotProfile -m mat.gz -o gene_body.png
-#     """
-#     a = read_hiseq(x, hiseq_type) # for general usage
-#     if not a.is_hiseq:
-#         log.error('qc_genebody_enrich() failed, not a hiseq dir: {}'.format(x))
-#         return None
-#     # r1
-#     arg_bw = ''
-#     arg_label = ''
-#     arg_title = ''
-#     per_group = ''
-#     if a.is_hiseq_r1:
-#         if a.hiseq_type.startswith('rnaseq_'):
-#             arg_bw = ' '.join([a.bw_fwd, a.bw_rev])
-#             arg_label = '--samplesLabel {} {}'.format('fwd', 'rev')
-#             arg_title = '--plotTitle {}'.format(a.smp_name)
-#             per_group = '--perGroup'
-#         else:
-#             arg_bw = a.bw
-#             arg_label = '--samplesLabel {}'.format(a.smp_name)
-#             per_group = '' # plotProfile
-#     elif a.is_hiseq_rn:
-#         if a.hiseq_type.startswith('rnaseq'):
-#             b1 = list_hiseq_file(x, 'bw_fwd', 'r1')
-#             b2 = list_hiseq_file(x, 'bw_rev', 'r1')
-#             n1 = list_hiseq_file(x, 'smp_name', 'rn')            
-#             n2 = list_hiseq_file(x, 'smp_name', 'rn')
-#             n1 = [i.replace(a.smp_name+'_', '') for i in n1]
-#             n2 = [i.replace(a.smp_name+'_', '') for i in n2]
-#             n_list = [i+k for i in n1 + n2 for k in ['_fwd', '_rev']]
-#             bw_list = [a.bw_fwd, a.bw_rev] + b1 + b2
-#             n_list = ['merge_fwd', 'merge_rev'] + n_list
-#             arg_bw = ' '.join(bw_list)
-#             arg_label = '--samplesLabel {}'.format(' '.join(n_list))
-#             arg_title = '--plotTitle {}'.format(a.smp_name)
-#         else:            
-#             bw_list = list_hiseq_file(x, 'bw', 'r1')
-#             smp_name = list_hiseq_file(x, 'smp_name', 'r1') # multi
-#             smp_name = [i.replace(a.smp_name+'_', '') for i in smp_name]
-#             # add merge
-#             bw_list.insert(0, a.bw)
-#             smp_name.insert(0, a.smp_name)
-#             # prepare args
-#             arg_bw = ' '.join(bw_list)
-#             arg_label = '--samplesLabel {}'.format(' '.join(smp_name))
-#             per_group = '--perGroup' # plotProfile
-#     elif a.is_hiseq_rx:
-#         if a.hiseq_type in ['rnaseq_rx']:
-#             # mut, wt
-#             bw_list = [a.mut_bw_fwd, a.mut_bw_rev, a.wt_bw_fwd, a.wt_bw_rev]
-#             arg_bw = ' '.join(bw_list)
-#             # shorter name
-#             s = find_longest_common_str(a.mut_name, a.wt_name)
-#             s1 = a.mut_name.replace(s, '')
-#             s2 = a.wt_name.replace(s, '')
-#             ss = '{}.vs.{}'.format(s1, s2)
-#             smp_name = [s1+'.fwd', s1+'.rev', s2+'.fwd', s2+'.rev']
-#             arg_label = '--samplesLabel {}'.format(' '.join(smp_name))
-#             per_group = '--perGroup' # plotProfile
-#         elif a.hiseq_type in ['chipseq_rx', 'cnr_rx', 'cnt_rx']:
-#             # ip, input
-#             bw_list = [a.ip_bw, a.input_bw, a.bw]
-#             arg_bw = ' '.join(bw_list)
-#             # shorter name
-#             s = find_longest_common_str(a.ip_name, a.input_name)
-#             s1 = a.ip_name.replace(s, '')
-#             s2 = a.input_name.replace(s, '')
-#             ss = '{}.vs.{}'.format(s1, s2)
-#             smp_name = [s1, s2, ss]
-#             arg_label = '--samplesLabel {}'.format(' '.join(smp_name))
-#             per_group = '--perGroup' # plotProfile
-#         else:
-#             pass
-#     else:
-#         log.error('qc_genebody_enrich() failed, unknown hiseq dir: {}'.format(x))
-#     # check point
-#     if arg_bw == '':
-#         return None
-#     # command
-#     cmd = ' '.join([
-#         '{}'.format(shutil.which('computeMatrix')),
-#         'scale-regions',
-#         '-R {}'.format(getattr(a, 'gene_bed', None)),
-#         '-S {}'.format(arg_bw),
-#         arg_label,
-#         '-o {}'.format(a.genebody_enrich_matrix),
-#         '-b 2000 -a 2000 --regionBodyLength 2000',
-#         '--binSize 10 --sortRegions descend --skipZeros',
-#         '--smartLabels',
-#         '-p {}'.format(a.threads),
-#         '2> {}'.format(a.genebody_enrich_matrix_log),
-#         '&& {}'.format(shutil.which('plotProfile')),
-#         arg_title,
-#         '-m {}'.format(a.genebody_enrich_matrix),
-#         '-o {}'.format(a.genebody_enrich_png),
-#         '--dpi 300',
-#         per_group,
-#     ])
-#     if file_exists(a.genebody_enrich_png) and not a.overwrite:
-#         log.info('qc_genebody_enrich() skipped, file exists: {}'.format(
-#             a.genebody_enrich_png))
-#     else:
-#         if not file_exists(getattr(a, 'gene_bed', None)):
-#             log.error('qc_tss() skipped, gene_bed not found')
-#         else:
-#             with open(a.genebody_enrich_cmd, 'wt') as w:
-#                 w.write(cmd + '\n')
-#             try:
-#                 run_shell_cmd(cmd)
-#             except:
-#                 log.error('qc_genebody_enrich() failed, see: {}'.format(
-#                     a.genebody_enrich_matrix_log))

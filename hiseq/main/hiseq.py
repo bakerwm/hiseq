@@ -27,6 +27,10 @@ from hiseq.cnr.cnr import get_args as add_cnr_args
 from hiseq.rnaseq.rnaseq import Rnaseq
 from hiseq.rnaseq.rnaseq import get_args as add_rnaseq_args
 
+from hiseq.rnaseq.rnaseq_salmon import RnaseqSalmonPipe
+from hiseq.rnaseq.rnaseq_salmon import get_args as add_rnaseq_salmon_args
+
+
 from hiseq.chipseq.chipseq import Chipseq
 from hiseq.chipseq.chipseq import get_args as add_chipseq_args
 
@@ -42,7 +46,7 @@ from hiseq.align.align import get_args as add_align_args
 
 
 # sub-modules-1
-from hiseq.bam2bw.bam2bw import Bam2bw
+from hiseq.bam2bw.bam2bw import Bam2bwRn
 from hiseq.bam2bw.bam2bw import get_args as add_bam2bw_args
 
 from hiseq.utils.bam import Bam2cor, Bw2cor
@@ -133,6 +137,7 @@ class Hiseq(object):
         rnaseq       RNAseq pipeline
         rnaseq2      RNAseq pipeline, simplify version
         chipseq      ChIPseq pipeline
+        rnaseq_salmon RNAseq pipeline using Salmon+DESeq2
 
         sheet        Preparing sample_sheet.csv for demx/demx2
         demx         Demultiplexing reads (P7, barcode) from single Lane
@@ -239,7 +244,7 @@ class Hiseq(object):
         Convert bam to bw files
         """
         args = self.init_args(add_bam2bw_args())
-        Bam2bw(**args_local).run()
+        Bam2bwRn(**args).run()
 
 
     def bam2cor(self):
@@ -397,6 +402,14 @@ class Hiseq(object):
         args = self.init_args(add_rnaseq_args())
         Rnaseq(**args).run()
 
+        
+    def rnaseq_salmon(self):
+        """
+        RNA-seq pipeline, using salmon
+        """
+        args = self.init_args(add_rnaseq_salmon_args())
+        RnaseqSalmonPipe(**args).run()
+        
 
 #     def rnaseq2(self):
 #         """

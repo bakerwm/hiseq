@@ -19,8 +19,11 @@ import argparse
 from Levenshtein import distance
 from hiseq.utils.seq import Fastx
 from hiseq.utils.utils import update_obj, Config, log, run_shell_cmd
-from hiseq.utils.file import check_fx, check_file, check_path, file_abspath, \
-    file_exists, fx_name, symlink_file, copy_file, remove_file, check_fx_args
+from hiseq.utils.file import (
+    check_fx, check_file, check_path, check_fx_args, 
+    file_exists, file_abspath, fx_name, 
+    symlink_file, copy_file, remove_file
+)
 from hiseq.align.align_index import AlignIndex
 # from hiseq.align.utils import check_fx_args, AlignReader
 
@@ -94,7 +97,6 @@ def parse_bowtie(x):
         'multi': multi,
         'unmap': unmapped,
         }
-        
 
 
 class BowtieConfig(object):
@@ -319,31 +321,29 @@ def get_args():
         epilog=example,
         formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('-1', '--fq1', required=True,
-                        help='Fasta/q file, read1 of PE, or SE read')
-    parser.add_argument('-2', '--fq2', required=False, default=None,
-                        help='Fasta/q file, read2 of PE, or SE read, optional')
-    parser.add_argument('-x', '--index', required=True,
-                        help='The alignment index for bowtie')
-    parser.add_argument('-o', '--outdir', default=None,
-                        help='Directory saving results, default: [cwd]')
+        help='Fasta/q file, read1 of PE, or SE read')
+    parser.add_argument('-2', '--fq2', required=False, default=None, 
+        help='Fasta/q file, read2 of PE, or SE read, optional')
+    parser.add_argument('-x', '--index', required=True, 
+        help='The alignment index for bowtie')
+    parser.add_argument('-o', '--outdir', default=None, 
+        help='Directory saving results, default: [cwd]')
     parser.add_argument('-in', '--index-name', default=None, dest='index_name',
-                        help='The name of the index')
+        help='The name of the index')
     parser.add_argument('-n', '--smp-name', default=None, dest='smp_name',
-                        help='The name of the sample')
+        help='The name of the sample')
     parser.add_argument('-p', '--threads', default=1, 
-                        help='Number of threads, default: [1]')
+        help='Number of threads, default: [1]')
     parser.add_argument('-w', '--overwrite', action='store_true',
-                        help='Overwrite the exist files')
+        help='Overwrite the exist files')
     parser.add_argument('-u', '--unique-only', action='store_true',
-                        dest='unique_only', 
-                        help='Report unique mapped reads only')
+        dest='unique_only', help='Report unique mapped reads only')
     parser.add_argument('-l', '--largs-insert', action='store_true',
-                        dest='large_insert',
-                        help='For large insert, use: -X 1000 --chunkmbs 128')
+        dest='large_insert', help='For large insert, use: -X 1000 --chunkmbs 128')
     parser.add_argument('--clean', dest='keep_tmp', action='store_false',
-                        help='Clean temp files')
+        help='Clean temp files')
     parser.add_argument('-X', '--extra-para', dest='extra_para', default=None,
-                        help='Add extra parameters, eg: "-X 2000"')
+        help='Add extra parameters, eg: "-X 2000"')
     return parser
 
 
@@ -356,3 +356,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+# EOF

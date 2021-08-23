@@ -68,8 +68,14 @@ class RnaseqRn(object):
         
 
     def run_multi_fx(self):
-        for i in range(len(self.fq1)):
-            self.run_single_fx(i)
+#         for i in range(len(self.fq1)):
+#             self.run_single_fx(i)
+        if self.parallel_jobs > 1 and len(self.fq1) > 1:
+            with Pool(processes=self.parallel_jobs) as pool:
+                pool.map(self.run_single_fx, range(len(self.fq1)))
+        else:
+            for i in range(len(self.fq1)):
+                self.run_single_fx(i)
 
         
     def run(self):
@@ -107,6 +113,8 @@ class RnaseqRnConfig(object):
             'binsize': 10,
             'genome_size': 0,
             'genome_size_file': None,
+            'gene_bed': None,
+            'gene_gtf': None,
             'genome': None,
             'genome_index': None,
             'spikein': None,

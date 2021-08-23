@@ -8,8 +8,6 @@
   - STAR    : .unmap.1.fastq
 ###############
 
-
-
 AlignConfig() : init arguments, determine alignment type, tools, idnex, ...
 
 AlignFqSingle() : 1 fastq to N index

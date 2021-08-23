@@ -523,6 +523,8 @@ def get_args():
         help='output directory to save results')
     parser.add_argument('-l', '--labels', nargs='+', default=None,
         help='label of the bam files')
+    parser.add_argument('-s', '--strandness', action='store_true',
+        help='Check strandness for bam files')
     parser.add_argument('--se', dest='as_se', action='store_true',
         help='Treat BAM file as SE, calculate the read size')
     parser.add_argument('-p', '--threads', default=4, type=int,

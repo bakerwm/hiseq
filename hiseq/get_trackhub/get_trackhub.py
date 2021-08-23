@@ -445,9 +445,9 @@ class TrackHub():
         # convert hub_txt to hub_url
         self.hub_url = HttpServer(s=self.hub_txt, **self.__dict__).to_url()
         # save hub_url to hub.yaml
-        hub_toml = self.remote_hub_dir + '/hub.toml'
+        hub_yaml = self.remote_hub_dir + '/hub.yaml'
         hub_dict = {'hub_url': self.hub_url}
-        Config().dump(hub_dict, hub_toml)
+        Config().dump(hub_dict, hub_yaml)
         return self.hub_url
 
 
@@ -471,12 +471,12 @@ class TrackHub():
         self.get_hub_url() # self.
         # trackhub_url
         self.trackhub_url = HubUrl(**self.__dict__).trackhub_url()
-        # save hub_url to hub.toml
-        hub_toml = self.remote_hub_dir + '/hub.toml'
+        # save hub_url to hub.yaml
+        hub_yaml = self.remote_hub_dir + '/hub.yaml'
         hub_dict = {'hub_url': self.hub_url, 'trackhub_url': self.trackhub_url}
-        Config().dump(hub_dict, hub_toml)
+        Config().dump(hub_dict, hub_yaml)
         # target files
-        print('>> find hub_txt: {}'.format(hub_toml))
+        print('>> find hub_txt: {}'.format(hub_yaml))
         return self.trackhub_url
 
 
@@ -502,13 +502,13 @@ class TrackHubConfig(object):
     1. directory structure:
     data_dir
       |- dirA
-      |   |- subgroups.toml
+      |   |- subgroups.yaml
       |   |- bw, bb files
       |
       |- dirB
-      |   |- subgroups.toml
+      |   |- subgroups.yaml
       |   |- bw, bb files
-    2. template of subgroups.toml
+    2. template of subgroups.yaml
     dimX:
       label: stage
       mapping:
@@ -540,7 +540,7 @@ class TrackHubConfig(object):
         HubUrl args,
         """
         args_init = {
-            'config': None, # toml, for global args
+            'config': None, # yaml, for global args
             'data_dir': None,
             'remote_dir': None,
             'hub_name': None,
@@ -563,9 +563,8 @@ class TrackHubConfig(object):
             'validate_url': False
         }
         self = update_obj(self, args_init, force=False)
-        # update from config # !!!! loading args from config.toml
+        # update from config # !!!! loading args from config.yaml
         if file_exists(self.config):
-#             args_config = toml2dict(self.config)
             args_config = Config().load(self.config)
             self = update_obj(self, args_config, force=True)
         # label
@@ -613,16 +612,16 @@ class TrackHubConfig(object):
     def init_files(self):
         """Parsing files from "data_dir"
 
-        split files into group (composite) if contains subgroups.toml file
+        split files into group (composite) if contains subgroups.yaml file
 
         directory structure:
         dirA
           |- dirB
-          |   |- subgroups.toml
+          |   |- subgroups.yaml
           |   |- bw, bb files
           |
           |- dirC
-          |   |- subgroups.toml
+          |   |- subgroups.yaml
           |   |- bw, bb files
 
         files in dirB, into compositeTrack1
@@ -631,7 +630,7 @@ class TrackHubConfig(object):
         Support only 2-level directory structure:
         """
         # 1st-level: data_dir
-        subgrp_toml = os.path.join(self.data_dir, 'subgroups.toml')
+        subgrp_yaml = os.path.join(self.data_dir, 'subgroups.yaml')
         g_lv1 = self.parse_group_files(data_dir=self.data_dir,
             grp_name=self.hub_name)
         d_grp = {}
@@ -650,38 +649,38 @@ class TrackHubConfig(object):
         # check
         if len(d_grp) == 0:
             msg = '\n'.join([
-                'bigWig files or subgroups.toml not found.',
+                'bigWig files or subgroups.yaml not found.',
                 'Check files in: [{}]'.format(self.data_dir)
             ])
             log.error(msg)
             sys.exit(1)
-            raise ValueError('bigWig files and subgroups.toml not found: \
+            raise ValueError('bigWig files and subgroups.yaml not found: \
                 check directory {}'.format(self.data_dir))
         self.subgroups_list = d_grp
 
 
     def parse_group_files(self, data_dir, grp_name=None):
-        """Make sure 'subgroups.toml' exists in the dir, "s/"
+        """Make sure 'subgroups.yaml' exists in the dir, "s/"
         Parameter:
         ----------
         s : str
             The directory with bw/bg files
         grp : str
-            A toml file, specify the subgroups for the track files in the dir
+            A yaml file, specify the subgroups for the track files in the dir
         return: dict{
             name: '',
-            subgroups: "d/subgroups.toml",
+            subgroups: "d/subgroups.yaml",
             bw_files: [...],
             bb_files: [...]
         else:
         return: None
         Directory structure:
         |- data_dir
-        |   |- subgroups.toml
+        |   |- subgroups.yaml
         |   |- bw_files/
         |   |- bb_files/
 
-        # if bw_files, subgroups.toml exists
+        # if bw_files, subgroups.yaml exists
         """
         d_grp = None
         # init_dir
@@ -689,7 +688,7 @@ class TrackHubConfig(object):
             if os.path.isdir(data_dir):
                 if not isinstance(grp_name, str):
                     grp_name = os.path.basename(data_dir)
-                subgrp_lv1 = os.path.join(data_dir, 'subgroups.toml')
+                subgrp_lv1 = os.path.join(data_dir, 'subgroups.yaml')
                 if file_exists(subgrp_lv1):
                     # files: level=1
                     f_lv1 = [i for i in list_dir(data_dir)

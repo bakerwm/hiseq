@@ -22,6 +22,7 @@ optional
 1. --rm-untrim, --save-too-short, ...
 """
 
+from hiseq.trim.trim_rp import TrimRp
 from hiseq.utils.utils import update_obj
 from hiseq.trim.trim_rn import TrimRn, get_args
 
@@ -36,6 +37,7 @@ class Trim(object):
     def run(self):
 #         TrimRn(**self.__dict__).run()
         self.rn.run()
+        TrimRp(**self.__dict__).run()
 
 
 def main():

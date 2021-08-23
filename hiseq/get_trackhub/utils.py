@@ -2,7 +2,7 @@
 # -*- coding:utf-8 -*-
 
 """
-Generate config.toml template
+Generate config.yaml template
 """
 
 import os
@@ -11,10 +11,10 @@ from hiseq.utils.utils import log, Config, get_date
 
 
 def trackhub_config_template():
-    """Generate config.toml template
+    """Generate config.yaml template
     set default values
-    save args to file: config_template.toml
-    save subgroups to file: subgroups_ytemplate.toml
+    save args to file: config_template.yaml
+    save subgroups to file: subgroups_ytemplate.yaml
     """
     default_args = {
         'hub_name': 'tracks',
@@ -57,13 +57,13 @@ def trackhub_config_template():
         }
     }
     # default files
-    config_f = 'config_template.toml'
-    subgroups_f = 'subgroups_template.toml'
+    config_f = 'config_template.yaml'
+    subgroups_f = 'subgroups_template.yaml'
     Config().dump(default_args, config_f)
     Config().dump(default_subgroups, subgroups_f)
     # show message
-    cf = '{:>16s} : {}'.format('config.tomll', config_f),
-    gf = '{:>16s} : {}'.format('subgroups.toml', subgroups_f),
+    cf = '{:>16s} : {}'.format('config.yamll', config_f),
+    gf = '{:>16s} : {}'.format('subgroups.yaml', subgroups_f),
     msg = '\n'.join([
         '{}'.format('#'*80),
         '# {:<77s}#'.format('Mini-tutorial [run_trackhub]'),
@@ -73,11 +73,11 @@ def trackhub_config_template():
         '# {:<77s}#'.format(str(gf)),
         '# {:<77s}#'.format(''),
         '# {:<77s}#'.format('2. Move the toml files to {data_dir}'),
-        '# {:<77s}#'.format('$ mv subgroups.toml {data_dir}/subgroups.toml'),
-        '# {:<77s}#'.format('$ mv config.toml {data_dir}/config.toml'),
+        '# {:<77s}#'.format('$ mv subgroups.yaml {data_dir}/subgroups.yaml'),
+        '# {:<77s}#'.format('$ mv config.yaml {data_dir}/config.yaml'),
         '# {:<77s}#'.format(''),
         '# {:<77s}#'.format('Update the toml files, according to your data'),
-        '# {:<77s}#'.format('Required fields - config.toml'),
+        '# {:<77s}#'.format('Required fields - config.yaml'),
         '# {:<77s}#'.format('  - data_dir        # absolute path'),
         '# {:<77s}#'.format('  - genome          # dm6'),
         '# {:<77s}#'.format('  - label_rm_list   # string, removed from label'),
@@ -88,11 +88,11 @@ def trackhub_config_template():
         '# {:<77s}#'.format('  - http_root_dir   # /data/public/upload, as above'),
         '# {:<77s}#'.format('  - http_root_url   # null, parse IP of HTTP server'),
         '# {:<77s}#'.format(''),
-        '# {:<77s}#'.format('Required fields - subgroups.toml'),
+        '# {:<77s}#'.format('Required fields - subgroups.yaml'),
         '# {:<77s}#'.format('  - mapping'),
         '# {:<77s}#'.format(''),
         '# {:<77s}#'.format('3. Generating trackhub files'),
-        '# {:<77s}#'.format('$ hiseq run_trackhub -c {data_dir}/config.toml'),
+        '# {:<77s}#'.format('$ hiseq run_trackhub -c {data_dir}/config.yaml'),
         '# {:<77s}#'.format(''),
         '# {:<77s}#'.format('4. Find the hub.txt file'),
         '# {:<77s}#'.format('{remote_dir}/hub_name/{hub_name}_hub.txt'),

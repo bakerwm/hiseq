@@ -23,6 +23,39 @@ from hiseq.utils.utils import log, Config, run_shell_cmd, get_date, update_obj
 from hiseq.utils.bam import Bam
 
 
+
+class Bam2bwRn(object):
+    def __init__(self, **kwargs):
+        self = update_obj(self, kwargs, force=True)
+        self.init_args()
+        
+    
+    def init_args(self):
+        args_init = {
+            'bam': None,
+            'scaleFactor': 1.0,
+        }
+        self = update_obj(self, args_init, force=False)
+        if isinstance(self.bam, str):
+            self.bam = [self.bam]
+        if isinstance(self.scaleFactor, float):
+            self.scaleFactor = [self.scaleFactor]*len(self.bam)
+        elif isinstance(self.scaleFactor, list) and len(self.scaleFactor) == len(self.bam):
+            pass # all float ?
+        else:
+            log.warning('illegal scaleFactor: {}'.format(self.scaleFactor))
+            self.scaleFactor = [1.0]*len(self.bam)
+        
+        
+    def run(self):
+        for bam, sf in zip(self.bam, self.scaleFactor):
+            bname = file_prefix(bam)
+            subdir = os.path.join(self.outdir, bname)
+            args_local = self.__dict__.copy()
+            args_local.update({'bam': bam, 'scaleFactor': sf, 'outdir': subdir})
+            Bam2bw(**args_local).run()
+
+
 # solution-1: BAM -> bg -> bw
 class Bam2bw(object):
     """
@@ -163,7 +196,6 @@ class Bam2bw(object):
 
 
     def run_rev(self):
-        # bedtools cmd
         cmd = ' '.join([
             '{} -b {} -o {}'.format(self.bamcoverage, self.bam, self.bw_rev),
             '--binSize {}'.format(self.binsize), 
@@ -180,7 +212,6 @@ class Bam2bw(object):
         
 
     def run_non(self):
-        # bedtools cmd
         cmd = ' '.join([
             '{} -b {} -o {}'.format(self.bamcoverage, self.bam, self.bw),
             '--binSize {}'.format(self.binsize),
@@ -268,7 +299,7 @@ def get_args():
         help='set binSize for bigWig, default: [50]')
     parser.add_argument('-g', '--genome', default=None,
         help='choose genome for the bam file, default: [None]')
-    parser.add_argument('--scaleFactor', nargs='+', type=float, default=[1.0],
+    parser.add_argument('--scaleFactor', nargs='+', type=float, default=1.0,
         help='The scaling factor, default: [1.0]')
     parser.add_argument('--normalizeUsing', default='None',
         choices=['RPGC', 'RPKM', 'CPM', 'BPM', 'None'],
@@ -288,7 +319,7 @@ def get_args():
 
 def main():
     args = vars(get_args().parse_args())
-    Bam2bw(**args).run()
+    Bam2bwRn(**args).run()
 
 
 if __name__ == '__main__':

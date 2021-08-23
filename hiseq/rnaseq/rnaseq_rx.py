@@ -63,7 +63,7 @@ class RnaseqRx(object):
             'fq1': self.mut_fq1,
             'fq2': self.mut_fq2,
             'smp_name': self.mut_name,
-            'parallel_jobs': 1,
+            'parallel_jobs': self.parallel_jobs,
         })
         RnaseqRn(**args_mut).run()
         # for wt
@@ -112,7 +112,7 @@ class RnaseqRx(object):
             'mut_fq2': self.mut_fq2,
             'wt_fq1': self.wt_fq1,
             'wt_fq2': self.wt_fq2,
-            'extra_index': self.salmon_index,
+            'salmon_index': self.salmon_index,
             'outdir': self.salmon_dir,
             'threads': self.threads,
             'genome': self.genome,
@@ -157,6 +157,8 @@ class RnaseqRxConfig(object):
             'binsize': 10,
             'genome_size': 0,
             'genome_size_file': None,
+            'gene_bed': None,
+            'gene_gtf': None,
             'genome': None,
             'genome_index': None,
             'spikein': None,
@@ -164,6 +166,7 @@ class RnaseqRxConfig(object):
             'to_rRNA': False,
             'rRNA_index': None,
             'extra_index': None,
+            'salmon_index': None,
             'threads': 1,
             'parallel_jobs': 1,
             'overwrite': False,
