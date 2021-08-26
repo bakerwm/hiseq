@@ -165,7 +165,7 @@ def list_hiseq_dir(x, hiseq_type='r1'):
     a = read_hiseq(x)
     out = []
     if a.is_hiseq:
-        if hiseq_type == 'r1':
+        if hiseq_type.endswith('r1'):
             if a.is_hiseq_r1:
                 out.append(x)
             elif a.is_hiseq_rn:
@@ -188,7 +188,7 @@ def list_hiseq_dir(x, hiseq_type='r1'):
                     out = r1a + r1b
             else:
                 pass
-        elif hiseq_type == 'rn':
+        elif hiseq_type.endswith('rn'):
             if a.is_hiseq_rn:
                 out.append(x)
             elif a.is_hiseq_rx:
@@ -206,7 +206,7 @@ def list_hiseq_dir(x, hiseq_type='r1'):
                         pass
             else:
                 pass
-        elif hiseq_type == 'rx':
+        elif hiseq_type.endswith('rx'):
             if a.is_hiseq_rx:
                 out.append(x)
         else:

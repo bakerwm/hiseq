@@ -18,17 +18,19 @@ from hiseq.align.align import Align
 from hiseq.bam2bw.bam2bw import Bam2bw, bw_compare
 from hiseq.cnr.callpeak import CallPeak
 from hiseq.fragsize.fragsize import BamFragSize, BamFragSizeR1
-from hiseq.utils.file import list_file, list_dir, check_file, \
-    check_path, copy_file, symlink_file, remove_file, fx_name, \
-    file_exists, file_abspath, file_prefix, file_nrows
+from hiseq.utils.file import (
+    list_file, list_dir, check_file, check_path, copy_file, symlink_file, 
+    remove_file, fx_name, file_exists, file_abspath, file_prefix, file_nrows
+)
 from hiseq.utils.bam import Bam, Bam2cor, Bam2fingerprint
 from hiseq.utils.bed import PeakIDR, BedOverlap, PeakFRiP
-from hiseq.utils.utils import log, update_obj, Config, get_date, \
-    read_hiseq, list_hiseq_file, run_shell_cmd, \
-    find_longest_common_str
+from hiseq.utils.utils import (
+    log, update_obj, Config, get_date, read_hiseq, list_hiseq_file, 
+    run_shell_cmd, find_longest_common_str
+)
 
 
-def cnr_rn_norm_scale(x, hiseq_type='rn', by_spikein=False, norm=1000000):
+def hiseq_norm_scale(x, hiseq_type='_r1', by_spikein=False, norm=1000000):
     """
     Parameters
     ---------
@@ -36,25 +38,21 @@ def cnr_rn_norm_scale(x, hiseq_type='rn', by_spikein=False, norm=1000000):
         The path to CnrRn() dir, hiseq_type=cnr_rn
 
     cal the norm scale: combine rep_list
-    1. spikein (total mapped, unique+multi)
-    2. genome (total mapped, unique+multi)
+    (fragments in bam files: reads, paired-reads)
+    bam.count
     """
     a = read_hiseq(x, hiseq_type) # for general usage
     if not a.is_hiseq:
-        log.error('cnr_r1_norm_scale() skipped, not a cnr_rn dir: {}'.format(x))
+        log.error('hiseq_norm_scale() skipped, not a hiseq dir: {}'.format(x))
     out = None
-    # require two files: {spikein|align}_scale_json, {spikein|align}_json
     sj = a.align_scale_json
     # direct to r1
     if file_exists(sj):
         d = Config().load(sj)
         out = d
     else:
-        m = 0
-        for r1 in list_hiseq_file(x, 'align_scale_json', 'r1'):
-            d = Config().load(r1)
-            if isinstance(d, dict):
-                m += d.get('map', 0)
+        bam = a.spikein_bam if by_spikein else a.bam
+        m = Bam(bam).count(reads=False) # paired
         try:
             s1 = round(norm / m, 4)
         except ZeroDivisionError as e:
@@ -73,62 +71,12 @@ def cnr_rn_norm_scale(x, hiseq_type='rn', by_spikein=False, norm=1000000):
     return out
 
 
-def cnr_r1_norm_scale(x, hiseq_type='r1', by_spikein=False, norm=1000000):
-    """
-    Parameters
-    ---------
-    x: str
-        The path to hiseq_r1 directory
-
-    cal the norm scale:
-    1. spikein (total mapped, unique+multi)
-    2. genome (total mapped, unique+multi)
-
-    output:
-    dict{'norm':, 'map':, 'scale':, 'smp_name':, 'is_spikein':}
-    """
-    a = read_hiseq(x, hiseq_type) # for general usage
-    if not a.is_hiseq:
-        log.error('cnr_r1_norm_scale() skipped, not a cnr_r1 dir: {}'.format(x))
-        return None
-    out = None
-    # require two files: {spikein|align}_scale_json, {spikein|align}_json
-    sj = a.align_scale_json
-    j = a.spikein_json if by_spikein else a.align_json
-    # load data
-    if file_exists(sj):
-        d = Config().load(sj)
-        out = d
-    elif file_exists(j):
-        d = Config().load(j)
-        m = d.get('map', 0)
-        try:
-            s1 = round(norm / m, 4)
-        except ZeroDivisionError as e:
-            log.error(e)
-            s1 = 1.0
-        # save to sj
-        dx = {
-            'smp_name': a.smp_name,
-            'is_spikein': by_spikein,
-            'map': m,
-            'norm': norm,
-            'scale': s1,
-        }
-        Config().dump(dx, sj)
-        out = dx
-    else:
-        log.error('cnr_r1_norm_scale() failed')
-    return out
-
-
 ################################################################################
 ## main ##
 #
 # cnr_trim 
 # cnr_align_spikein
 # cnr_align_genome
-#
 def cnr_trim(x, hiseq_type='r1'):
     """
     Parameters
@@ -170,36 +118,30 @@ def cnr_trim(x, hiseq_type='r1'):
             'recursive': a.recursive,
             'parallel_jobs': 1 # do not allowed > 1 !!!!
         }
-        # trim = TrimR1(**args_local)
         trim = TrimR1(**args_local)
         trim.run()
         ## copy files
         symlink_file(trim.clean_fq1, clean_fq1)
         symlink_file(trim.clean_fq2, clean_fq2)
         symlink_file(trim.trim_json, a.trim_json)
-        
-    
 
-#
+        
 def cnr_align_spikein(x, hiseq_type='_r1'):
     """
     Parameters
     ---------
     x: str
         The path to CnrR1() dir, hiseq_type=cnr_r1
-
     Align reads to reference genome, using bowtie2
-
     --sensitive --local -X 2000  # --devotail
-
     samtools view -bhS -f 2 -F 1804
-
     exclude: -F
         4    0x4    Read unmapped,
         8    0x8    Mate unmapped,
         256  0x100  Not primary alignment,
         512  0x200  Reads fails platform quality checks,
         1024 0x400  Read is PCR or optical duplicate
+    : do not rmdup :
     """
     a = read_hiseq(x, hiseq_type) # for general usage
     if not a.is_hiseq:
@@ -232,7 +174,6 @@ def cnr_align_spikein(x, hiseq_type='_r1'):
         'verbose': False,
         'extra_para': align_extra, # specific for Cnr
     }
-#     args_local.update(args_init)
     args_local = args_init
     if file_exists(a.spikein_bam) and not a.overwrite:
         log.info('cnr_align_spikein() skipped, file exists: {}'.format(
@@ -251,7 +192,7 @@ def cnr_align_spikein(x, hiseq_type='_r1'):
             symlink_file(t.unmap1, a.unmap1)
             symlink_file(t.unmap2, a.unmap2)
     # calculate norm scale
-    s = cnr_r1_norm_scale(x, hiseq_type, by_spikein=True)
+    s = hiseq_norm_scale(x, hiseq_type=hiseq_type, by_spikein=True)
 
 
 def cnr_align_genome(x, hiseq_type='_r1'):
@@ -260,16 +201,11 @@ def cnr_align_genome(x, hiseq_type='_r1'):
     ---------
     x: str
         The path to CnrR1() dir, hiseq_type=cnr_r1
-
     Align reads to reference genome, using bowtie2
-
-    --sensitive --local -X 2000  # --devotail
-
+    --sensitive --local -I 10 -X 700  # --no-mixed --no-discordant --devotail
     samtools view -bhS -f 2 -F 1804
-
     ######
     cnr: "-I 10 -X 700"
-
     exclude: -F
         4    0x4    Read unmapped,
         8    0x8    Mate unmapped,
@@ -328,8 +264,7 @@ def cnr_align_genome(x, hiseq_type='_r1'):
                 Bam(a.bam_raw).rmdup(outfile=a.bam)
     else:
         symlink_file(a.bam_raw, a.bam)
-    s = cnr_r1_norm_scale(x, hiseq_type, by_spikein=False)
-
+    s = hiseq_norm_scale(x, hiseq_type=hiseq_type, by_spikein=False)
 
 
 def cnr_merge_bam(x, hiseq_type='_rn'):
@@ -367,8 +302,53 @@ def cnr_merge_bam(x, hiseq_type='_rn'):
     # check-point
     if not file_exists(a.bam):
         raise ValueError('cnr_merge_bam() failed, see: {}'.format(a.bam_dir))
+    # save align_json
+    d = {'name': a.smp_name}
+    for aj in list_hiseq_file(x, 'align_json', 'r1'):
+        da = Config().load(aj)
+        d.update({
+            'index': da.get('index', None),
+            'unique_only': da.get('unique_only', False),
+            'total': d.get('total', 0) + da.get('total', 0),
+            'map': d.get('map', 0) + da.get('map', 0),
+            'unique': d.get('unique', 0) + da.get('unique', 0),
+            'multi': d.get('multi', 0) + da.get('multi', 0)
+        })
+    Config().dump(d, a.align_json)
     # calculate norm scale
-    s = cnr_rn_norm_scale(x, hiseq_type='rn')
+    s = hiseq_norm_scale(x, hiseq_type=hiseq_type, by_spikein=False) # to genome
+
+
+def hiseq_pcr_dup(x, hiseq_type='r1'):
+    """
+    Organize the PCR dup rate:
+    total: align_json {'map'}
+    nodup: align_scale_json {'map'}
+    name total nodup dup
+    """
+    a = read_hiseq(x, hiseq_type) # for general usage
+    if not a.is_hiseq:
+        log.error('qc_dup_summary() skipped, not a rnaseq_r1 dir: {}'.format(x))
+        return None
+    # name total nodup dup
+    out = None
+    j1 = list_hiseq_file(x, 'align_json', hiseq_type)
+    j2 = list_hiseq_file(x, 'align_scale_json', hiseq_type)
+    if isinstance(j1, list) and isinstance(j2, list):
+        d1 = Config().load(j1[0])
+        d2 = Config().load(j2[0])
+        out = {
+            'name': d1.get('name'),
+            'total': d1.get('map', 0),
+            'nodup': d2.get('map', 0),
+            'dup': d1.get('map', 0) - d2.get('map', 0)
+        }
+        out['dup_pct'] = round(out['dup']/out['total'], 4)
+        # Config().dump(out, a.dup_summary_json)
+        Config().dump(out, a.pcr_dup_json)
+    else:
+        log.warning('qc_dup_summary() skipped')
+    return out
     
     
 def cnr_call_peak(x, hiseq_type='r1'):
@@ -424,11 +404,9 @@ def cnr_bw_compare(x, hiseq_type='rx'):
         log.error('cnr_bw_compare() failed, only support for rx')
         return None
     bw_compare(a.ip_bw, a.input_bw, a.bw, 'subtract',
-        threads=a.threads, binsize=50)
-    # log.error('get_ip_over_input_bw() failed, see {}'.format(
-    #           self.bw_dir))
-    
-    
+        threads=a.threads, binsize=100)
+
+
 def get_mito_count(x):
     """
     Count reads on chrM (MT), ...
@@ -447,17 +425,16 @@ def get_mito_count(x):
     return n_mt
 
 
-
-def cnr_bam_to_bw(x, hiseq_type='_r1'):
+def hiseq_bam2bw(x, hiseq_type='_r1'):
+    """
+    cnr_bam_to_bw()
+    Check the scale only for : TE/Genome
+    normalizeUsing: RPGC, CPM
+    """
     a = read_hiseq(x, hiseq_type) # for general usage
     if not a.is_hiseq:
-        log.error('cnr_bam_to_bw() skipped, not a cnr_r1 dir: {}'.format(x))
-    d = Config().load(a.align_scale_json)
-    if isinstance(d, dict):
-        scale = d.get('scale', 1.0)
-    else:
-        log.error('Could not found: {}'.format(a.align_scale_json))
-        scale = 1.0
+        log.error('hiseq_bam_to_bw() skipped, not a hiseq dir: {}'.format(x))
+        return None
     args = {
         'bam': a.bam,
         'prefix': a.smp_name,
@@ -465,15 +442,13 @@ def cnr_bam_to_bw(x, hiseq_type='_r1'):
         'binsize': a.binsize, # default: 50
         'strandness': 0, # non-strandness
         'genome': a.genome,
-        'scaleFactor': scale,
+        'scaleFactor': 1.0, # force
         'overwrite': a.overwrite,
-        'genome_size': a.genome_size,
+        'genome_size': a.genome_size
     }
     Bam2bw(**args).run()
 
-
-
-
+    
 ################################################################################
 ## Quality control matrix for CnRseq analysis
 #
@@ -548,7 +523,7 @@ def qc_trim_summary(x, hiseq_type='r1'):
 def qc_align_summary(x, hiseq_type='r1'):
     """
     Organize the alignment:
-
+    add pcr_dup: a.pcr_dup_json
     output:
     name, total, map, unique, multi, spikein, rRNA, unmap, dup, nodup
     """
@@ -564,6 +539,13 @@ def qc_align_summary(x, hiseq_type='r1'):
         n_total = sp.get('total', 0) if isinstance(sp, dict) else 0
     else:
         n_sp = 0
+    # pcr_dup
+    if file_exists(a.pcr_dup_json):
+        sd = Config().load(a.pcr_dup_json)
+        n_dup = sd.get('dup', 0)
+        n_nodup  = sd.get('nodup', 0)
+    else:
+        n_dup = n_nodup = 0
     # name, total, map, unique, multi, unmap
     if file_exists(a.align_json):
         df = Config().load(a.align_json)
@@ -572,7 +554,9 @@ def qc_align_summary(x, hiseq_type='r1'):
         df.update({
             'total': n_total,
             'spikein': n_sp,
-            'chrM': get_mito_count(a.bam)
+            'chrM': get_mito_count(a.bam),
+            'dup': n_dup,
+            'nodup': n_nodup,
         })
         Config().dump(df, a.align_summary_json)
     else:
@@ -601,7 +585,6 @@ def qc_lendist(x, hiseq_type='r1'):
             log.error('qc_lendist() failed, {}'.format(a.lendist_csv))
 
 
-
 def qc_frip(x, hiseq_type='r1'):
     a = read_hiseq(x, hiseq_type) # for general usage
     if not a.is_hiseq:
@@ -626,8 +609,6 @@ def qc_frip(x, hiseq_type='r1'):
         except:
             log.error('PeakFRiP() failed, see: {}'.format(a.frip_json))
 
-            
-            
 
 ################################################################################
 ## function for tss,genebody enrich: for general hiseq purpose
@@ -656,9 +637,8 @@ def qc_tss_enrich_tool(x, hiseq_type='r1', bw_type='r1',
     upstream = kwargs.get('upstream', 1000)
     downstream = kwargs.get('downstream', 1000)
     regionbody = kwargs.get('regionbody', 2000)
-#     binsize = kwargs.get('binSize', 10)
-    binsize = 500 # force
-    # -b 2000 -a 2000 --binSize 500
+    binsize = 10 # force
+    # -b 2000 -a 2000 --binSize 50
     arg_body = '-b {} -a {} --binSize {}'.format(
         upstream, downstream, binsize)
     # add genebody for scale-regions
@@ -863,9 +843,9 @@ def qc_genebody_enrich(x, hiseq_type='r1', bw_type='r1', **kwargs):
             except:
                 log.error('qc_genebody_enrich() failed, see: {}'.format(
                     a.genebody_enrich_matrix_log))
+
+
 ################################################################################
-
-
 def qc_bam_cor(x, hiseq_type='rn', bam_type='r1'):
     """
     Parameters
@@ -1020,6 +1000,102 @@ def qc_bam_fingerprint(x, hiseq_type='rn', bam_type='r1'):
             Bam2fingerprint(**args).run()
         else:
             log.error('qc_bam_fingerprint() failed, peak files not exists')
+
+        
+################################################################################
+# def cnr_rn_norm_scale(x, hiseq_type='rn', by_spikein=False, norm=1000000):
+#     """
+#     Parameters
+#     ---------
+#     x: str
+#         The path to CnrRn() dir, hiseq_type=cnr_rn
+
+#     cal the norm scale: combine rep_list
+#     1. spikein (total mapped, unique+multi)
+#     2. genome (total mapped, unique+multi)
+#     """
+#     a = read_hiseq(x, hiseq_type) # for general usage
+#     if not a.is_hiseq:
+#         log.error('cnr_r1_norm_scale() skipped, not a cnr_rn dir: {}'.format(x))
+#     out = None
+#     # require two files: {spikein|align}_scale_json, {spikein|align}_json
+#     sj = a.align_scale_json
+#     # direct to r1
+#     if file_exists(sj):
+#         d = Config().load(sj)
+#         out = d
+#     else:
+#         m = 0
+# #         for r1 in list_hiseq_file(x, 'align_scale_json', 'r1'):
+# #             d = Config().load(r1)
+# #             if isinstance(d, dict):
+# #                 m += d.get('map', 0)
+#         bam = a.spikein_bam if by_spikein else a.bam
+#         m = Bam(bam).count(reads=False) # paired
+#         try:
+#             s1 = round(norm / m, 4)
+#         except ZeroDivisionError as e:
+#             log.error(e)
+#             s1 = 1.0
+#         # save to sj
+#         d = {
+#             'smp_name': a.smp_name,
+#             'is_spikein': by_spikein,
+#             'norm': norm,
+#             'map': m,
+#             'scale': s1
+#         }
+#         Config().dump(d, sj)
+#         out = d
+#     return out
+
+
+# def cnr_r1_norm_scale(x, by_spikein=False, norm=1000000):
+#     """
+#     Parameters
+#     ---------
+#     x: str
+#         The path to hiseq_r1 directory
+#     cal the norm scale:
+#     1. spikein (total mapped, unique+multi)
+#     2. genome (total mapped, unique+multi)
+#     output:
+#     dict{'norm':, 'map':, 'scale':, 'smp_name':, 'is_spikein':}
+    
+#     fix: use bam count
+#     """
+#     a = read_hiseq(x, hiseq_type='_r1') # for general usage
+#     if not a.is_hiseq:
+#         log.error('cnr_r1_norm_scale() skipped, not a cnr_r1 dir: {}'.format(x))
+#         return None
+#     out = None
+#     # require two files: {spikein|align}_scale_json, {spikein|align}_json
+#     sj = a.align_scale_json
+#     # load data
+#     if file_exists(sj):
+#         d = Config().load(sj)
+#         out = d
+#     elif file_exists(j):
+#         bam = a.spikein_bam if by_spikein else a.bam
+#         m = Bam(bam).count(reads=False) # paired
+#         try:
+#             s1 = round(norm / m, 4)
+#         except ZeroDivisionError as e:
+#             log.error(e)
+#             s1 = 1.0
+#         # save to sj
+#         dx = {
+#             'smp_name': a.smp_name,
+#             'is_spikein': by_spikein,
+#             'map': m,
+#             'norm': norm,
+#             'scale': s1,
+#         }
+#         Config().dump(dx, sj)
+#         out = dx
+#     else:
+#         log.error('cnr_r1_norm_scale() failed')
+#     return out
 
             
 ################################################################################

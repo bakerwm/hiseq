@@ -16,8 +16,9 @@ search files by key words, from command line
 import os
 import sys
 import argparse
-from hiseq.utils.file import file_abspath, file_exists, fx_name, list_fx, \
-    check_fx_paired
+from hiseq.utils.file import (
+    file_abspath, file_exists, fx_name, list_fx, check_fx_paired
+)
 from hiseq.utils.utils import log, update_obj, Config, get_date
 
 

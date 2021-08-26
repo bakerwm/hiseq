@@ -15,14 +15,21 @@ import argparse
 from multiprocessing import Pool
 from hiseq.cnr.cnr_r1 import CnrR1
 from hiseq.cnr.cnr_rp import CnrRp
-from hiseq.cnr.utils import (cnr_trim, cnr_align_genome, cnr_merge_bam,
-    cnr_align_spikein, cnr_call_peak, cnr_bam_to_bw, qc_trim_summary,
-    qc_align_summary, qc_lendist, qc_frip, qc_bam_cor, qc_peak_idr, 
-    qc_tss_enrich, qc_genebody_enrich, qc_peak_overlap, qc_bam_fingerprint)
-from hiseq.utils.file import (check_fx_args, check_path, check_fx_paired, symlink_file,
-    file_exists, file_abspath, file_prefix, fx_name, Genome, list_dir)
-from hiseq.utils.utils import (log, update_obj, Config, get_date, init_cpu,
-    read_hiseq, list_hiseq_file, run_shell_cmd)
+from hiseq.cnr.utils import (
+    hiseq_bam2bw, hiseq_pcr_dup,
+    cnr_trim, cnr_align_genome, cnr_merge_bam, cnr_align_spikein, 
+    cnr_call_peak, qc_trim_summary, qc_align_summary,
+    qc_lendist, qc_frip, qc_bam_cor, qc_peak_idr, qc_tss_enrich, 
+    qc_genebody_enrich, qc_peak_overlap, qc_bam_fingerprint
+)
+from hiseq.utils.file import (
+    check_fx_args, check_path, check_fx_paired, symlink_file, file_exists,
+    file_abspath, file_prefix, fx_name, Genome, list_dir
+)
+from hiseq.utils.utils import (
+    log, update_obj, Config, get_date, init_cpu, read_hiseq, list_hiseq_file,
+    run_shell_cmd
+)
 from hiseq.utils.bam import Bam
 from hiseq.align.align_index import AlignIndex, check_index_args
 
@@ -48,8 +55,9 @@ class CnrRn(object):
 
     def run_pipe_rn(self): # for rep_list > 1
         cnr_merge_bam(self.project_dir, 'rn')
+        hiseq_pcr_dup(self.project_dir, '_rn')
         cnr_call_peak(self.project_dir, 'rn')
-        cnr_bam_to_bw(self.project_dir, 'rn')
+        hiseq_bam2bw(self.project_dir, '_rn')
         cnr_call_peak(self.project_dir, 'rn')
         # qc_trim(self.project_dir, 'rn')
         # qc_align(self.project_dir, 'rn')
@@ -280,7 +288,7 @@ class CnrRnConfig(object):
             'trim_json': trim_prefix+'.trim.json',
             
             # align files
-            'align_scale_json': align_prefix+'.scale.json',
+            # 'align_scale_json': align_prefix+'.scale.json',
             'align_stat': align_prefix+'.align.stat',
             'align_json': align_prefix+'.align.json',
             'align_flagstat': align_prefix+'.align.flagstat',
@@ -291,6 +299,7 @@ class CnrRnConfig(object):
             'spikein_json': spikein_prefix+'.align.json',
             'spikein_flagstat': spikein_prefix+'.align.flagstat',
             'align_scale_json': self.bam_dir + '/' + 'scale.json',
+            'pcr_dup_json': self.bam_dir + '/' + 'pcr_dup.json',
             'align_flagstat': self.align_dir + '/' + self.smp_name + '.flagstat',
             'align_stat': self.align_dir + '/' + self.smp_name + '.bowtie2.stat',
             'align_json': self.align_dir + '/' + self.smp_name + '.bowtie2.json',
@@ -299,6 +308,7 @@ class CnrRnConfig(object):
             # qc files
             'trim_summary_json':self.qc_dir +  '/00.trim_summary.json',
             'align_summary_json': self.qc_dir + '/01.alignment_summary.json',
+            'dup_summary_json': os.path.join(self.qc_dir, '01.pcr_dup_summary.json'),
             'lendist_csv': self.qc_dir + '/02.length_distribution.csv',
             'lendist_txt': self.qc_dir + '/02.length_distribution.txt',
             'lendist_pdf': self.qc_dir + '/02.length_distribution.pdf',

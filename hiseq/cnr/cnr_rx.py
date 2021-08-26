@@ -16,13 +16,20 @@ import argparse
 from multiprocessing import Pool
 from hiseq.cnr.cnr_rn import CnrRn
 from hiseq.cnr.cnr_rp import CnrRp
-from hiseq.utils.file import check_fx_args, check_path, symlink_file, file_abspath, \
-    file_prefix, file_exists, check_fx_paired, fx_name, Genome
-from hiseq.utils.utils import (log, update_obj, Config, get_date, init_cpu,
-    print_dict, read_hiseq, find_longest_common_str)
-from hiseq.cnr.utils import (cnr_bam_to_bw, cnr_call_peak, cnr_merge_bam, 
-    qc_lendist, qc_frip, qc_bam_cor, qc_peak_idr, qc_peak_overlap,
-    qc_bam_fingerprint, qc_tss_enrich, qc_genebody_enrich, cnr_bw_compare)
+from hiseq.utils.file import (
+    check_fx_args, check_path, symlink_file, file_abspath, file_prefix,
+    file_exists, check_fx_paired, fx_name, Genome
+)
+from hiseq.utils.utils import (
+    log, update_obj, Config, get_date, init_cpu, print_dict, read_hiseq,
+    find_longest_common_str
+)
+from hiseq.cnr.utils import (
+    hiseq_bam2bw,
+    cnr_call_peak, cnr_merge_bam, qc_lendist, qc_frip, 
+    qc_bam_cor, qc_peak_idr, qc_peak_overlap, qc_bam_fingerprint, 
+    qc_tss_enrich, qc_genebody_enrich, cnr_bw_compare
+)
 from hiseq.align.align_index import AlignIndex, check_index_args
 
 

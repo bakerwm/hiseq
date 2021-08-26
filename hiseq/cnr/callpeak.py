@@ -8,8 +8,9 @@ Call peaks using MACS2 or SEACR
 import os
 import re
 import shutil
-from hiseq.utils.file import check_path, file_exists, file_abspath, \
-    file_prefix, Genome, remove_file
+from hiseq.utils.file import (
+    check_path, file_exists, file_abspath, file_prefix, Genome, remove_file
+)
 from hiseq.utils.utils import log, update_obj, Config, get_date, run_shell_cmd
 from hiseq.utils.bam import Bam
 

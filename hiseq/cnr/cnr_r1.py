@@ -47,21 +47,25 @@ Quality control
 4. alignment pct (>90%)
 5. peaks ()
 6. enrichment of motif 
-7. 
-
 """
 
 
 import os
 import sys
 from hiseq.cnr.cnr_rp import CnrRp
-from hiseq.cnr.utils import (cnr_trim, cnr_align_genome,  cnr_align_spikein,
-    cnr_call_peak, cnr_bam_to_bw, qc_trim_summary, qc_align_summary, 
-    qc_lendist, qc_frip, qc_tss_enrich, qc_genebody_enrich)
-from hiseq.utils.file import (check_fx_args, check_path, check_fx_paired, symlink_file,
-    file_abspath, file_prefix, fx_name, Genome)
-from hiseq.utils.utils import (log, update_obj, Config, get_date, init_cpu,
-    read_hiseq)
+from hiseq.cnr.utils import (
+    hiseq_bam2bw, hiseq_pcr_dup,
+    cnr_trim, cnr_align_genome,  cnr_align_spikein, cnr_call_peak, 
+    qc_trim_summary, qc_align_summary, qc_lendist, 
+    qc_frip, qc_tss_enrich, qc_genebody_enrich
+)
+from hiseq.utils.file import (
+    check_fx_args, check_path, check_fx_paired, symlink_file, file_abspath,
+    file_prefix, fx_name, Genome
+)
+from hiseq.utils.utils import (
+    log, update_obj, Config, get_date, init_cpu, read_hiseq
+)
 from hiseq.align.align_index import AlignIndex, check_index_args
 
 
@@ -86,8 +90,9 @@ class CnrR1(object):
         if isinstance(self.spikein_index, str):
             cnr_align_spikein(self.project_dir, '_r1')
         cnr_align_genome(self.project_dir, '_r1')
+        hiseq_pcr_dup(self.project_dir, '_r1')
         cnr_call_peak(self.project_dir, '_r1')
-        cnr_bam_to_bw(self.project_dir, '_r1')
+        hiseq_bam2bw(self.project_dir, '_r1')
         if isinstance(self.spikein_index, str):
             cnr_align_spikein(self.project_dir, '_r1')
         # qc
@@ -251,7 +256,8 @@ class CnrR1Config(object):
             'trim_json': trim_prefix+'.trim.json',
             
             # align files (genome)
-            'align_scale_json': align_prefix+'.scale.json',
+            'align_scale_json': self.bam_dir + '/' + 'scale.json',
+            'pcr_dup_json': self.bam_dir + '/' + 'pcr_dup.json',
             'align_stat': align_prefix+'.align.stat',
             'align_json': align_prefix+'.align.json',
             'align_flagstat': align_prefix+'.align.flagstat',
@@ -270,6 +276,7 @@ class CnrR1Config(object):
             # qc
             'trim_summary_json': os.path.join(self.qc_dir, '00.trim_summary.json'),
             'align_summary_json': os.path.join(self.qc_dir, '01.alignment_summary.json'),
+            'dup_summary_json': os.path.join(self.qc_dir, '01.pcr_dup_summary.json'),
             'lendist_csv': self.qc_dir + '/02.length_distribution.fragsize.csv',
             'lendist_txt': self.qc_dir + '/02.length_distribution.txt',
             'lendist_pdf': self.qc_dir + '/02.length_distribution.fragsize.pdf',

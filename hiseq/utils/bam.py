@@ -36,9 +36,9 @@ import pysam
 import pybedtools
 from shutil import which
 from hiseq.utils.utils import log, update_obj, get_date, Config, run_shell_cmd
-from hiseq.utils.file import check_path, check_file, file_exists, file_abspath, \
-    file_prefix, read_lines
-
+from hiseq.utils.file import (
+    check_path, check_file, file_exists, file_abspath, file_prefix, read_lines
+)
 
 
 class Bam(object):
@@ -93,10 +93,14 @@ class Bam(object):
         pass
 
 
-    def count(self):
+    def count(self, reads=True):
         """Using samtools view -c"""
         x = pysam.view('-c', self.bam)
-        return int(x.strip())
+        n = int(x.strip())
+        if not reads:
+            if self.is_paired():
+                n = int(n / 2)
+        return n
 
 
     def to_bed(self, outfile=None):
