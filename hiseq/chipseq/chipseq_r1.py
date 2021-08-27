@@ -44,15 +44,18 @@ Quality control
 import os
 import sys
 from hiseq.chipseq.chipseq_rp import ChipseqRp
-from hiseq.chipseq.utils import chipseq_trim, chipseq_align_genome, \
-    chipseq_align_spikein, chipseq_call_peak, chipseq_bam_to_bw, \
-    qc_trim_summary, qc_align_summary, qc_lendist, qc_frip, \
+from hiseq.chipseq.utils import (
+    hiseq_bam2bw, hiseq_pcr_dup,
+    chipseq_trim, chipseq_align_genome, chipseq_align_spikein, 
+    chipseq_call_peak, qc_trim_summary, qc_align_summary, qc_lendist, qc_frip,
     qc_tss_enrich, qc_genebody_enrich
+)
 from hiseq.utils.file import check_fx_args, check_fx_paired, check_path, \
-    symlink_file, file_abspath, file_prefix, fx_name, Genome
+    symlink_file, file_abspath, file_prefix, fx_name
 from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \
     read_hiseq
 from hiseq.align.align_index import AlignIndex, check_index_args
+from hiseq.utils.genome import Genome
 
 
 class ChipseqR1(object):
@@ -76,8 +79,9 @@ class ChipseqR1(object):
         if isinstance(self.spikein_index, str):
             chipseq_align_spikein(self.project_dir, '_r1')
         chipseq_align_genome(self.project_dir, '_r1')
+        hiseq_pcr_dup(self.project_dir, '_r1')
         chipseq_call_peak(self.project_dir, '_r1')
-        chipseq_bam_to_bw(self.project_dir, '_r1')
+        hiseq_bam2bw(self.project_dir, '_r1')
         if isinstance(self.spikein_index, str):
             chipseq_align_spikein(self.project_dir, '_r1')
         # qc
@@ -141,6 +145,8 @@ class ChipseqR1Config(object):
         if self.outdir is None:
             self.outdir = str(pathlib.Path.cwd())
         self.outdir = file_abspath(self.outdir)
+        if self.gene_bed is None:
+            self.gene_bed = Genome(self.genome).gene_bed('ensembl')
         self.init_cut()
         self.init_fq()
         self.init_index()
@@ -183,7 +189,7 @@ class ChipseqR1Config(object):
         if isinstance(self.extra_index, str):
             self.genome_size_file = AlignIndex(self.extra_index).index_size(out_file=True)
         elif isinstance(self.genome, str):
-            self.genome_size_file = Genome(self.genome).get_fasize()
+            self.genome_size_file = Genome(self.genome).fasize()
         else:
             raise ValueError('--genome or --extra-index; required')
 
@@ -238,7 +244,8 @@ class ChipseqR1Config(object):
             'trim_json': trim_prefix+'.trim.json',
             
             # align files (genome)
-            'align_scale_json': align_prefix+'.scale.json',
+            'align_scale_json': self.bam_dir + '/' + 'scale.json',
+            'pcr_dup_json': self.bam_dir + '/' + 'pcr_dup.json',
             'align_stat': align_prefix+'.align.stat',
             'align_json': align_prefix+'.align.json',
             'align_flagstat': align_prefix+'.align.flagstat',

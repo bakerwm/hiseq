@@ -21,17 +21,23 @@ from multiprocessing import Pool
 from hiseq.rnaseq.rnaseq_r1 import RnaseqR1
 from hiseq.rnaseq.rnaseq_rn import RnaseqRn
 from hiseq.rnaseq.rnaseq_rp import RnaseqRp
-from hiseq.rnaseq.utils import rnaseq_trim, rnaseq_align_spikein, \
-    rnaseq_align_rRNA, rnaseq_align_genome, rnaseq_quant, rnaseq_bam2bw, \
-    rnaseq_deseq, qc_trim_summary, qc_align_summary, qc_bam_cor, \
-    qc_genebody_enrich  # , salmon_align, salmon_deseq
+from hiseq.rnaseq.utils import (
+    rnaseq_trim, rnaseq_align_spikein, rnaseq_align_rRNA, rnaseq_align_genome,
+    rnaseq_quant, rnaseq_bam2bw, rnaseq_deseq, qc_trim_summary, 
+    qc_align_summary, qc_bam_cor, qc_genebody_enrich
+)
 from hiseq.rnaseq.rnaseq_salmon import RnaseqSalmon
-from hiseq.utils.file import check_path, check_fx_paired, symlink_file, \
-    file_exists, file_abspath, file_prefix, fx_name, Genome, check_fx_args
-from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \
-    read_hiseq, list_hiseq_file, run_shell_cmd
+from hiseq.utils.file import (
+    check_path, check_fx_paired, symlink_file, file_exists, file_abspath, 
+    file_prefix, fx_name, check_fx_args
+)
+from hiseq.utils.utils import (
+    log, update_obj, Config, get_date, init_cpu, read_hiseq, list_hiseq_file,
+    run_shell_cmd
+)
 from hiseq.utils.bam import Bam
 from hiseq.align.align_index import AlignIndex, check_index_args
+from hiseq.utils.genome import Genome
 
 
 
@@ -180,6 +186,10 @@ class RnaseqRxConfig(object):
         self.outdir = file_abspath(os.path.expanduser(self.outdir))
         self.threads, self.parallel_jobs = init_cpu(self.threads,
             self.parallel_jobs)
+        if self.gene_bed is None:
+            self.gene_bed = Genome(self.genome).gene_bed('ensembl')
+        if self.gene_gtf is None:
+            self.gene_gtf = Genome(self.genome).gene_gtf('ensembl')
         self.mut_fq1, self.mut_fq2, self.mut_is_paired = self.init_fq(self.mut_fq1, self.mut_fq2)
         self.wt_fq1, self.wt_fq2, self.wt_is_paired = self.init_fq(self.wt_fq1, self.wt_fq2)
         # paired-end
@@ -205,7 +215,7 @@ class RnaseqRxConfig(object):
         if isinstance(self.extra_index, str):
             self.genome_size_file = AlignIndex(self.extra_index).index_size(out_file=True)
         elif isinstance(self.genome, str):
-            self.genome_size_file = Genome(self.genome).get_fasize()
+            self.genome_size_file = Genome(self.genome).fasize()
         else:
             raise ValueError('--genome or --extra-index; required')
 

@@ -16,15 +16,22 @@ import argparse
 from multiprocessing import Pool
 from hiseq.chipseq.chipseq_rn import ChipseqRn
 from hiseq.chipseq.chipseq_rp import ChipseqRp
-from hiseq.utils.file import check_fx_args, check_fx_paired, check_path, \
-    symlink_file, file_abspath, file_prefix, file_exists, fx_name, Genome
-from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \
-    print_dict, read_hiseq, find_longest_common_str
-from hiseq.chipseq.utils import chipseq_bam_to_bw, chipseq_call_peak, chipseq_merge_bam, \
-    qc_lendist, qc_frip, \
-    qc_bam_cor, qc_peak_idr, qc_peak_overlap, qc_bam_fingerprint, \
-    qc_tss_enrich, qc_genebody_enrich, chipseq_bw_compare
+from hiseq.utils.file import (
+    check_fx_args, check_fx_paired, check_path, symlink_file, file_abspath,
+    file_prefix, file_exists, fx_name
+)
+from hiseq.utils.utils import (
+    log, update_obj, Config, get_date, init_cpu, print_dict, read_hiseq,
+    find_longest_common_str
+)
+from hiseq.chipseq.utils import (
+    hiseq_bam2bw, 
+    chipseq_call_peak, chipseq_merge_bam, qc_lendist, qc_frip, qc_bam_cor,
+    qc_peak_idr, qc_peak_overlap, qc_bam_fingerprint, qc_tss_enrich, 
+    qc_genebody_enrich, chipseq_bw_compare
+)
 from hiseq.align.align_index import AlignIndex, check_index_args
+from hiseq.utils.genome import Genome
 
 
 class ChipseqRx(object):
@@ -223,7 +230,7 @@ class ChipseqRxConfig(object):
         if isinstance(self.extra_index, str):
             self.genome_size_file = AlignIndex(self.extra_index).index_size(out_file=True)
         elif isinstance(self.genome, str):
-            self.genome_size_file = Genome(self.genome).get_fasize()
+            self.genome_size_file = Genome(self.genome).fasize()
         else:
             raise ValueError('--genome or --extra-index; required')
 

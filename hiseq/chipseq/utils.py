@@ -18,43 +18,41 @@ from hiseq.align.align import Align
 from hiseq.bam2bw.bam2bw import Bam2bw, bw_compare
 from hiseq.chipseq.callpeak import CallPeak
 from hiseq.fragsize.fragsize import BamFragSize, BamFragSizeR1
-from hiseq.utils.file import list_file, list_dir, check_file, \
-    check_path, copy_file, symlink_file, remove_file, fx_name, \
-    file_exists, file_abspath, file_prefix, file_nrows
 from hiseq.utils.bam import Bam, Bam2cor, Bam2fingerprint
 from hiseq.utils.bed import PeakIDR, BedOverlap, PeakFRiP
-from hiseq.utils.utils import log, update_obj, Config, get_date, \
-    read_hiseq, list_hiseq_file, run_shell_cmd, \
+from hiseq.utils.file import (
+    list_file, list_dir, check_file, check_path, copy_file, symlink_file, 
+    remove_file, fx_name, file_exists, file_abspath, file_prefix, file_nrows
+)
+from hiseq.utils.utils import (
+    log, update_obj, Config, get_date, read_hiseq, list_hiseq_file, run_shell_cmd, 
     find_longest_common_str
+)
 
 
-def chipseq_rn_norm_scale(x, hiseq_type='rn', by_spikein=False, norm=1000000):
+def hiseq_norm_scale(x, hiseq_type='_r1', by_spikein=False, norm=1000000):
     """
     Parameters
     ---------
     x: str
-        The path to ChipseqRn() dir, hiseq_type=chipseq_rn
+        The path to CnrRn() dir, hiseq_type=cnr_rn
 
     cal the norm scale: combine rep_list
-    1. spikein (total mapped, unique+multi)
-    2. genome (total mapped, unique+multi)
+    (fragments in bam files: reads, paired-reads)
+    bam.count
     """
     a = read_hiseq(x, hiseq_type) # for general usage
     if not a.is_hiseq:
-        log.error('chipseq_r1_norm_scale() skipped, not a chipseq_rn dir: {}'.format(x))
+        log.error('hiseq_norm_scale() skipped, not a hiseq dir: {}'.format(x))
     out = None
-    # require two files: {spikein|align}_scale_json, {spikein|align}_json
     sj = a.align_scale_json
     # direct to r1
     if file_exists(sj):
         d = Config().load(sj)
         out = d
     else:
-        m = 0
-        for r1 in list_hiseq_file(x, 'align_scale_json', 'r1'):
-            d = Config().load(r1)
-            if isinstance(d, dict):
-                m += d.get('map', 0)
+        bam = a.spikein_bam if by_spikein else a.bam
+        m = Bam(bam).count(reads=False) # paired
         try:
             s1 = round(norm / m, 4)
         except ZeroDivisionError as e:
@@ -70,55 +68,6 @@ def chipseq_rn_norm_scale(x, hiseq_type='rn', by_spikein=False, norm=1000000):
         }
         Config().dump(d, sj)
         out = d
-    return out
-
-
-def chipseq_r1_norm_scale(x, hiseq_type='r1', by_spikein=False, norm=1000000):
-    """
-    Parameters
-    ---------
-    x: str
-        The path to hiseq_r1 directory
-
-    cal the norm scale:
-    1. spikein (total mapped, unique+multi)
-    2. genome (total mapped, unique+multi)
-
-    output:
-    dict{'norm':, 'map':, 'scale':, 'smp_name':, 'is_spikein':}
-    """
-    a = read_hiseq(x, hiseq_type) # for general usage
-    if not a.is_hiseq:
-        log.error('chipseq_r1_norm_scale() skipped, not a chipseq_r1 dir: {}'.format(x))
-        return None
-    out = None
-    # require two files: {spikein|align}_scale_json, {spikein|align}_json
-    sj = a.align_scale_json
-    j = a.spikein_json if by_spikein else a.align_json
-    # load data
-    if file_exists(sj):
-        d = Config().load(sj)
-        out = d
-    elif file_exists(j):
-        d = Config().load(j)
-        m = d.get('map', 0)
-        try:
-            s1 = round(norm / m, 4)
-        except ZeroDivisionError as e:
-            log.error(e)
-            s1 = 1.0
-        # save to sj
-        dx = {
-            'smp_name': a.smp_name,
-            'is_spikein': by_spikein,
-            'map': m,
-            'norm': norm,
-            'scale': s1,
-        }
-        Config().dump(dx, sj)
-        out = dx
-    else:
-        log.error('chipseq_r1_norm_scale() failed')
     return out
 
 
@@ -251,7 +200,7 @@ def chipseq_align_spikein(x, hiseq_type='_r1'):
             symlink_file(t.unmap1, a.unmap1)
             symlink_file(t.unmap2, a.unmap2)
     # calculate norm scale
-    s = chipseq_r1_norm_scale(x, hiseq_type, by_spikein=True)
+    s = hiseq_norm_scale(x, hiseq_type=hiseq_type, by_spikein=True)
 
 
 def chipseq_align_genome(x, hiseq_type='_r1'):
@@ -328,7 +277,7 @@ def chipseq_align_genome(x, hiseq_type='_r1'):
                 # Bam(a.bam).index()
     else:
         symlink_file(a.bam_raw, a.bam)
-    s = chipseq_r1_norm_scale(x, hiseq_type, by_spikein=False)
+    s = hiseq_norm_scale(x, hiseq_type=hiseq_type, by_spikein=False)
 
 
 def chipseq_merge_bam(x, hiseq_type='_rn'):
@@ -367,8 +316,53 @@ def chipseq_merge_bam(x, hiseq_type='_rn'):
     # check-point
     if not file_exists(a.bam):
         raise ValueError('chipseq_merge_bam() failed, see: {}'.format(a.bam_dir))
+    # save align_json
+    d = {'name': a.smp_name}
+    for aj in list_hiseq_file(x, 'align_json', 'r1'):
+        da = Config().load(aj)
+        d.update({
+            'index': da.get('index', None),
+            'unique_only': da.get('unique_only', False),
+            'total': d.get('total', 0) + da.get('total', 0),
+            'map': d.get('map', 0) + da.get('map', 0),
+            'unique': d.get('unique', 0) + da.get('unique', 0),
+            'multi': d.get('multi', 0) + da.get('multi', 0)
+        })
+    Config().dump(d, a.align_json)
     # calculate norm scale
-    s = chipseq_rn_norm_scale(x, hiseq_type='rn')
+    s = hiseq_norm_scale(x, hiseq_type=hiseq_type, by_spikein=False) # to genome
+
+
+def hiseq_pcr_dup(x, hiseq_type='r1'):
+    """
+    Organize the PCR dup rate:
+    total: align_json {'map'}
+    nodup: align_scale_json {'map'}
+    name total nodup dup
+    """
+    a = read_hiseq(x, hiseq_type) # for general usage
+    if not a.is_hiseq:
+        log.error('qc_dup_summary() skipped, not a rnaseq_r1 dir: {}'.format(x))
+        return None
+    # name total nodup dup
+    out = None
+    j1 = list_hiseq_file(x, 'align_json', hiseq_type)
+    j2 = list_hiseq_file(x, 'align_scale_json', hiseq_type)
+    if isinstance(j1, list) and isinstance(j2, list):
+        d1 = Config().load(j1[0])
+        d2 = Config().load(j2[0])
+        out = {
+            'name': d1.get('name'),
+            'total': d1.get('map', 0),
+            'nodup': d2.get('map', 0),
+            'dup': d1.get('map', 0) - d2.get('map', 0)
+        }
+        out['dup_pct'] = round(out['dup']/out['total'], 4)
+        # Config().dump(out, a.dup_summary_json)
+        Config().dump(out, a.pcr_dup_json)
+    else:
+        log.warning('qc_dup_summary() skipped')
+    return out
     
     
 def chipseq_call_peak(x, hiseq_type='r1'):
@@ -444,27 +438,26 @@ def get_mito_count(x):
     return n_mt
 
 
-def chipseq_bam_to_bw(x, hiseq_type='_r1'):
+def hiseq_bam2bw(x, hiseq_type='_r1'):
+    """
+    cnr_bam_to_bw()
+    Check the scale only for : TE/Genome
+    normalizeUsing: RPGC, CPM
+    """
     a = read_hiseq(x, hiseq_type) # for general usage
     if not a.is_hiseq:
-        log.error('chipseq_bam_to_bw() skipped, not a chipseq_r1 dir: \
-            {}'.format(x))
-    d = Config().load(a.align_scale_json)
-    if isinstance(d, dict):
-        scale = d.get('scale', 1.0)
-    else:
-        log.error('Could not found: {}'.format(a.align_scale_json))
-        scale = 1.0
+        log.error('hiseq_bam_to_bw() skipped, not a hiseq dir: {}'.format(x))
+        return None
     args = {
         'bam': a.bam,
         'prefix': a.smp_name,
         'outdir': a.bw_dir,
-        'binsize': 10,
+        'binsize': a.binsize, # default: 50
         'strandness': 0, # non-strandness
         'genome': a.genome,
-        'scaleFactor': scale,
+        'scaleFactor': 1.0, # force
         'overwrite': a.overwrite,
-        'genome_size': a.genome_size,
+        'genome_size': a.genome_size
     }
     Bam2bw(**args).run()
 
@@ -559,6 +552,13 @@ def qc_align_summary(x, hiseq_type='r1'):
         n_total = sp.get('total', 0) if isinstance(sp, dict) else 0
     else:
         n_sp = 0
+    # pcr_dup
+    if file_exists(a.pcr_dup_json):
+        sd = Config().load(a.pcr_dup_json)
+        n_dup = sd.get('dup', 0)
+        n_nodup  = sd.get('nodup', 0)
+    else:
+        n_dup = n_nodup = 0
     # name, total, map, unique, multi, unmap
     if file_exists(a.align_json):
         df = Config().load(a.align_json)
@@ -567,7 +567,9 @@ def qc_align_summary(x, hiseq_type='r1'):
         df.update({
             'total': n_total,
             'spikein': n_sp,
-            'chrM': get_mito_count(a.bam)
+            'chrM': get_mito_count(a.bam),
+            'dup': n_dup,
+            'nodup': n_nodup,
         })
         Config().dump(df, a.align_summary_json)
     else:
@@ -644,11 +646,11 @@ def qc_tss_enrich_tool(x, hiseq_type='r1', bw_type='r1',
         return None
     arg_bed = '-R {}'.format(bed)
     # default values
-    # -b 2000 -a 2000 --binSize 100
+    # -b 2000 -a 2000 --binSize 10
     upstream = kwargs.get('upstream', 1000)
     downstream = kwargs.get('downstream', 1000)
     regionbody = kwargs.get('regionbody', 2000)
-    binsize = kwargs.get('binSize', 100)
+    binsize = kwargs.get('binSize', 10)
     # -b 2000 -a 2000 --binSize 10
     arg_body = '-b {} -a {} --binSize {}'.format(
         upstream, downstream, binsize)

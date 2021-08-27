@@ -25,12 +25,15 @@ import pybedtools
 from shutil import which
 from itertools import combinations
 from itertools import count
-from hiseq.utils.utils import convert_image, log, update_obj, Config, \
-    run_shell_cmd
-from hiseq.utils.file import check_path, file_exists, file_nrows, file_prefix, \
-    remove_file, Genome, read_lines
+from hiseq.utils.utils import (
+    convert_image, log, update_obj, Config, run_shell_cmd
+)
+from hiseq.utils.file import (
+    check_path, file_exists, file_nrows, file_prefix, remove_file, read_lines
+)
 from hiseq.utils.bam import Bam
 from hiseq.utils.featurecounts import FeatureCounts
+from hiseq.utils.genome import Genome
 
 
 def bed_to_saf(file_in, file_out):
@@ -538,7 +541,7 @@ class PeakFRiP(object):
         check_path(self.outdir, create_dirs=True)
         # get gsize file
         if isinstance(self.genome, str):
-            self.gsize = Genome(self.genome).get_fasize()
+            self.gsize = Genome(self.genome).fasize()
         
 
     def run_bedtools(self):

@@ -10,14 +10,21 @@ import sys
 import pathlib
 import argparse
 from hiseq.rnaseq.rnaseq_rp import RnaseqRp
-from hiseq.rnaseq.utils import (rnaseq_trim, rnaseq_align_spikein,
-    rnaseq_align_rRNA, rnaseq_align_genome, rnaseq_quant, rnaseq_bam2bw,
-    qc_trim_summary, qc_align_summary, qc_genebody_enrich)
-from hiseq.utils.file import (check_path, check_fx_paired, symlink_file,
-    file_exists, file_abspath, file_prefix, fx_name, Genome, check_fx_args)
-from hiseq.utils.utils import (log, update_obj, Config, get_date, init_cpu,
-    read_hiseq, is_supported, print_dict)
+from hiseq.rnaseq.utils import (
+    rnaseq_trim, rnaseq_align_spikein, rnaseq_align_rRNA, rnaseq_align_genome,
+    rnaseq_quant, rnaseq_bam2bw, qc_trim_summary, qc_align_summary, 
+    qc_genebody_enrich
+)
+from hiseq.utils.file import (
+    check_path, check_fx_paired, symlink_file, file_exists, file_abspath, 
+    file_prefix, fx_name, check_fx_args
+)
+from hiseq.utils.utils import (
+    log, update_obj, Config, get_date, init_cpu, read_hiseq, is_supported, 
+    print_dict
+)
 from hiseq.align.align_index import AlignIndex, check_index_args, fetch_index
+from hiseq.utils.genome import Genome
 
 
 class RnaseqR1(object):
@@ -97,6 +104,10 @@ class RnaseqR1Config(object):
         if self.outdir is None:
             self.outdir = str(pathlib.Path.cwd())
         self.outdir = file_abspath(self.outdir)
+        if self.gene_bed is None:
+            self.gene_bed = Genome(self.genome).gene_bed('ensembl')
+        if self.gene_gtf is None:
+            self.gene_gtf = Genome(self.genome).gene_gtf('ensembl')
         self.init_fq()
         if not isinstance(self.smp_name, str):
             self.smp_name = fx_name(self.fq1, fix_pe=self.is_paired, fix_unmap=True)
@@ -240,7 +251,7 @@ class RnaseqR1Config(object):
         if isinstance(self.extra_index, str):
             self.genome_size_file = AlignIndex(self.extra_index).index_size(out_file=True)
         elif isinstance(self.genome, str):
-            self.genome_size_file = Genome(self.genome).get_fasize()
+            self.genome_size_file = Genome(self.genome).fasize()
         else:
             raise ValueError('--genome or --extra-index; required')
 

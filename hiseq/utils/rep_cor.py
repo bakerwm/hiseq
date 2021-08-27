@@ -15,6 +15,7 @@ import pysam
 import pybedtools
 from collections import OrderedDict
 from hiseq.utils.helper import *
+from hiseq.utils.genome import Genome
 
 
 # def bed2gtf(infile, outfile):
@@ -50,7 +51,7 @@ def cal_FRiP(inbed, inbam, genome="dm6"):
     bam = pysam.AlignmentFile(inbam)
     total = bam.mapped
 
-    gsize = Genome(genome).get_fasize()
+    gsize = Genome(genome).fasize()
     tmp = os.path.basename(inbed) + '.count.tmp'
     # reads in peak
     p = "sort -k1,1 -k2,2n {} | \

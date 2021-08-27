@@ -15,16 +15,23 @@ import argparse
 from multiprocessing import Pool
 from hiseq.chipseq.chipseq_r1 import ChipseqR1
 from hiseq.chipseq.chipseq_rp import ChipseqRp
-from hiseq.chipseq.utils import chipseq_trim, chipseq_align_genome, chipseq_merge_bam, \
-    chipseq_align_spikein, chipseq_call_peak, chipseq_bam_to_bw, \
-    qc_trim_summary, qc_align_summary, qc_lendist, qc_frip, \
-    qc_bam_cor, qc_peak_idr, qc_tss_enrich, qc_genebody_enrich, \
-     qc_peak_overlap, qc_bam_fingerprint
-from hiseq.utils.file import check_path, check_fx_args, check_fx_paired, symlink_file, \
-    file_exists, file_abspath, file_prefix, fx_name, Genome, list_dir
-from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \
-    read_hiseq, list_hiseq_file, run_shell_cmd
+from hiseq.chipseq.utils import (
+    hiseq_bam2bw, hiseq_pcr_dup,
+    chipseq_trim, chipseq_align_genome, chipseq_merge_bam, 
+    chipseq_align_spikein, chipseq_call_peak, qc_trim_summary, 
+    qc_align_summary, qc_lendist, qc_frip, qc_bam_cor, qc_peak_idr,
+    qc_tss_enrich, qc_genebody_enrich, qc_peak_overlap, qc_bam_fingerprint
+)
+from hiseq.utils.file import (
+    check_path, check_fx_args, check_fx_paired, symlink_file, file_exists, 
+    file_abspath, file_prefix, fx_name, list_dir
+)
+from hiseq.utils.utils import (
+    log, update_obj, Config, get_date, init_cpu, read_hiseq, list_hiseq_file,
+    run_shell_cmd
+)
 from hiseq.utils.bam import Bam
+from hiseq.utils.genome import Genome
 from hiseq.align.align_index import AlignIndex, check_index_args
 
 
@@ -49,8 +56,9 @@ class ChipseqRn(object):
 
     def run_pipe_rn(self): # for rep_list > 1
         chipseq_merge_bam(self.project_dir, 'rn')
+        hiseq_pcr_dup(self.project_dir, '_rn')
         chipseq_call_peak(self.project_dir, 'rn')
-        chipseq_bam_to_bw(self.project_dir, 'rn')
+        hiseq_bam2bw(self.project_dir, '_rn')
         chipseq_call_peak(self.project_dir, 'rn')
         qc_lendist(self.project_dir, 'rn')
         qc_frip(self.project_dir, 'rn')
@@ -230,7 +238,7 @@ class ChipseqRnConfig(object):
         if isinstance(self.extra_index, str):
             self.genome_size_file = AlignIndex(self.extra_index).index_size(out_file=True)
         elif isinstance(self.genome, str):
-            self.genome_size_file = Genome(self.genome).get_fasize()
+            self.genome_size_file = Genome(self.genome).fasize()
         else:
             raise ValueError('--genome or --extra-index; required')
 
@@ -279,7 +287,9 @@ class ChipseqRnConfig(object):
             'trim_json': trim_prefix+'.trim.json',
             
             # align files
-            'align_scale_json': align_prefix+'.scale.json',
+            'align_scale_json': self.bam_dir + '/' + 'scale.json',
+            'pcr_dup_json': self.bam_dir + '/' + 'pcr_dup.json',
+            # 'align_scale_json': align_prefix+'.scale.json',
             'align_stat': align_prefix+'.align.stat',
             'align_json': align_prefix+'.align.json',
             'align_flagstat': align_prefix+'.align.flagstat',

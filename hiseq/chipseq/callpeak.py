@@ -9,9 +9,10 @@ import os
 import re
 import shutil
 from hiseq.utils.file import check_path, file_exists, file_abspath, \
-    file_prefix, Genome, remove_file
+    file_prefix, remove_file
 from hiseq.utils.utils import log, update_obj, Config, get_date, run_shell_cmd
 from hiseq.utils.bam import Bam
+from hiseq.utils.genome import Genome
 
 
 class CallPeak(object):
@@ -84,7 +85,7 @@ class CallPeak(object):
         }
         if isinstance(self.genome, str):
             self.genome_size = g.get(self.genome, 0)
-            self.genome_size_file = Genome(genome=self.genome).get_fasize()
+            self.genome_size_file = Genome(genome=self.genome).fasize()
             if self.genome_size is None:
                 raise ValueError('unknown genome: {}'.format(self.genome))
         elif isinstance(self.genome_size, int):
@@ -117,8 +118,6 @@ class CallPeak(object):
             'seacr_stderr': self.outdir + '/' + self.prefix + '.seacr.stderr',
         }
         self = update_obj(self, default_files, force=True) # key
-        ## genome_size
-        # self.genome_size_file = Genome(genome=self.genome).get_fasize()
         
 
     def run_macs2(self):

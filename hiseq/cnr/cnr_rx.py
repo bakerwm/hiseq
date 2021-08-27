@@ -18,7 +18,7 @@ from hiseq.cnr.cnr_rn import CnrRn
 from hiseq.cnr.cnr_rp import CnrRp
 from hiseq.utils.file import (
     check_fx_args, check_path, symlink_file, file_abspath, file_prefix,
-    file_exists, check_fx_paired, fx_name, Genome
+    file_exists, check_fx_paired, fx_name
 )
 from hiseq.utils.utils import (
     log, update_obj, Config, get_date, init_cpu, print_dict, read_hiseq,
@@ -30,6 +30,7 @@ from hiseq.cnr.utils import (
     qc_bam_cor, qc_peak_idr, qc_peak_overlap, qc_bam_fingerprint, 
     qc_tss_enrich, qc_genebody_enrich, cnr_bw_compare
 )
+from hiseq.utils.genome import Genome
 from hiseq.align.align_index import AlignIndex, check_index_args
 
 
@@ -213,7 +214,7 @@ class CnrRxConfig(object):
         if isinstance(self.extra_index, str):
             self.genome_size_file = AlignIndex(self.extra_index).index_size(out_file=True)
         elif isinstance(self.genome, str):
-            self.genome_size_file = Genome(self.genome).get_fasize()
+            self.genome_size_file = Genome(self.genome).fasize()
         else:
             raise ValueError('--genome or --extra-index; required')
 
@@ -339,7 +340,7 @@ def get_args():
         help='Reference genome : dm3, dm6, hg19, hg39, mm9, mm10, default: dm6')
     parser.add_argument('-x', '--extra-index', dest="extra_index",
         help='Provide alignment index (bowtie2)')
-    parser.add_argument('--gene-bed', dest='gene_bed', default=None,
+    parser.add_argument('--bed', '--gene-bed', dest='gene_bed', default=None,
         help='The BED or GTF of genes, for TSS enrichment analysis')
     parser.add_argument('--trimmed', action='store_true',
         help='specify if input files are trimmed')

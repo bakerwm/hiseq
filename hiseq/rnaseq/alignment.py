@@ -107,7 +107,7 @@ from multiprocessing import Pool
 from Levenshtein import distance
 from hiseq.utils.seq import Fastx
 from hiseq.utils.helper import * # all help functions
-
+from hiseq.utils.genome import Genome
 
 def print_dict(d):
     d = collections.OrderedDict(sorted(d.items()))
@@ -585,7 +585,7 @@ class AlignConfig(object):
                         aligner=self.aligner).search(
                         genome=self.genome, group='genome')
                     self.genome_size_file = Genome(
-                        genome=self.genome).get_fasize()
+                        genome=self.genome).fasize()
                     if self.genome_size < 1:
                         with open(self.genome_size_file, 'rt') as r:
                             s = [i.strip().split('\t')[1] \

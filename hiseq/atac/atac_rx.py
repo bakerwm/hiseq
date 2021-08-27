@@ -15,7 +15,9 @@ import argparse
 from multiprocessing import Pool
 from hiseq.atac.atac_rn import AtacRn
 from hiseq.atac.atac_rp import AtacRp
-from hiseq.utils.file import check_path, symlink_file, file_abspath, file_prefix, file_exists
+from hiseq.utils.file import (
+    check_path, symlink_file, file_abspath, file_prefix, file_exists
+)
 from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu
 
 
@@ -83,13 +85,16 @@ class AtacRxConfig(object):
             'trimmed': False,
             'cut': False,
             'cut_to_length': 0,
-            'recursive': False
+            'recursive': False,
+            'gene_bed': None
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'atacseq_rx'
         if self.outdir is None:
             self.outdir = str(pathlib.Path.cwd())
         self.outdir = file_abspath(self.outdir)
+        if self.gene_bed is None:
+            self.gene_bed = Genome(self.genome).gene_bed('ensembl')
         self.threads, self.parallel_jobs = init_cpu(self.threads,
             self.parallel_jobs)
         if not file_exists(self.design):
@@ -154,7 +159,7 @@ def get_args():
         help='Reference genome : dm3, dm6, hg19, hg39, mm9, mm10, default: dm6')
     parser.add_argument('-x', '--extra-index', dest="extra_index",
         help='Provide alignment index (bowtie2)')
-    parser.add_argument('--gene-bed', dest='gene_bed', default=None,
+    parser.add_argument('--bed', '--gene-bed', dest='gene_bed', default=None,
         help='The BED or GTF of genes, for TSS enrichment analysis')
     parser.add_argument('--trimmed', action='store_true',
         help='specify if input files are trimmed')

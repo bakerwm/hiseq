@@ -21,9 +21,10 @@ from hiseq.atac.utils import atac_merge_bam, \
     qc_peak_idr, qc_peak_overlap, qc_bam_fingerprint, qc_tss_enrich, \
     qc_genebody_enrich    
 from hiseq.utils.file import check_path, check_fx_paired, symlink_file, \
-    file_exists, file_abspath, file_prefix, fx_name, Genome, list_dir
+    file_exists, file_abspath, file_prefix, fx_name, list_dir
 from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \
     read_hiseq, list_hiseq_file, run_shell_cmd
+from hiseq.utils.genome import Genome
 from hiseq.utils.bam import Bam
 from hiseq.align.align_index import AlignIndex, check_index_args
 
@@ -156,6 +157,7 @@ class AtacRnConfig(object):
             'rmdup': True, # key
             'genome': None,
             'genome_index': None,
+            'gene_bed': None,
             'extra_index': None,
             'spikein': None,
             'spikein_index': None,
@@ -176,6 +178,8 @@ class AtacRnConfig(object):
         if self.outdir is None:
             self.outdir = str(pathlib.Path.cwd())
         self.outdir = file_abspath(self.outdir)
+        if self.gene_bed is None:
+            self.gene_bed = Genome(self.genome).gene_bed('ensembl')
         self.init_cut()
         self.init_fx()
         self.init_files()
@@ -241,7 +245,7 @@ class AtacRnConfig(object):
         if isinstance(self.extra_index, str):
             self.genome_size_file = AlignIndex(self.extra_index).index_size(out_file=True)
         elif isinstance(self.genome, str):
-            self.genome_size_file = Genome(self.genome).get_fasize()
+            self.genome_size_file = Genome(self.genome).fasize()
         else:
             raise ValueError('--genome or --extra-index; required')
 

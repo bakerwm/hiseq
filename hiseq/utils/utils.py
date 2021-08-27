@@ -28,6 +28,7 @@ from hiseq.utils.file import file_exists, list_dir
 # from .helper import log
 # from .file import file_exists, file_abspath
 from difflib import SequenceMatcher
+from urllib import request
 
 
 
@@ -75,6 +76,8 @@ def is_supported(x=True, key=True, return_values=False):
       - supported_aligner
       - supported_genomes
       
+    Config file saved in: hiseq/bin/config.yaml
+
     Examples:
     >>> is_supported(key='supported_aligner', return_values=True) # [...]
     >>> is_supported(key='supported_genome', return_values=True) # [...]
@@ -82,7 +85,7 @@ def is_supported(x=True, key=True, return_values=False):
     >>> is_supported('dm6', 'supported_aligner') # False
     >>> is_supported('bowtie2', 'supported_aligner') # True
     >>> is_supported('bowtie2', 'supported_genome') # False
-    >>> is_supported('abc') # False      
+    >>> is_supported('abc') # False
     """
     pkg_dir = os.path.dirname(hiseq.__file__)
     hiseq_global_config = os.path.join(pkg_dir, 'bin', 'config.yaml')
@@ -955,3 +958,28 @@ def convert_image(x, out_fmt='PNG'):
         img.save(out_img, out_fmt)
 
         
+def download_file(url, file):
+    """
+    Download url and save to file
+    
+    from urllib import request
+    # Define the remote file to retrieve
+    remote_url = 'https://www.google.com/robots.txt'
+    # Define the local filename to save data
+    local_file = 'local_copy.txt'
+    # Download remote and save locally
+    request.urlretrieve(remote_url, local_file)
+    """
+    file_dir = os.path.dirname(file)
+    if not os.path.exists(file_dir):
+        log.error('dir not exists: {}'.format(file_dir))
+    elif os.path.exists(file):
+        log.error('file exists: {}'.format(file))
+    else:
+        try:
+            request.urlretrieve(url, file)
+        except:
+            log.error('failed downloading file: {}'.format(url))
+        if os.path.exists(file):
+            log.info('saving file: {}'.format(file))
+            

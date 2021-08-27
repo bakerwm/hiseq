@@ -11,8 +11,9 @@ import shutil
 import hiseq
 import argparse
 from hiseq.utils.file import file_exists, check_path
-from hiseq.utils.utils import log, update_obj, Config, get_date, \
-    run_shell_cmd, read_hiseq
+from hiseq.utils.utils import (
+    log, update_obj, Config, get_date, run_shell_cmd, read_hiseq
+)
 
 
 class ChipseqRp(object):

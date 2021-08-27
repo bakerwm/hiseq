@@ -15,7 +15,8 @@ from hiseq.atac.utils import atac_trim, atac_align_genome, \
     qc_trim_summary, qc_align_summary, qc_lendist, qc_frip, \
     qc_tss_enrich, qc_genebody_enrich
 from hiseq.utils.file import check_path, check_fx_paired, symlink_file, \
-    file_abspath, file_prefix, fx_name, Genome
+    file_abspath, file_prefix, fx_name
+from hiseq.utils.genome import Genome
 from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \
     read_hiseq
 from hiseq.align.align_index import AlignIndex, check_index_args
@@ -100,6 +101,8 @@ class AtacR1Config(object):
         if self.outdir is None:
             self.outdir = str(pathlib.Path.cwd())
         self.outdir = file_abspath(self.outdir)
+        if self.gene_bed is None:
+            self.gene_bed = Genome(self.genome).gene_bed('ensembl')
         self.init_cut()
         self.init_fx()
         self.init_files()
@@ -109,7 +112,7 @@ class AtacR1Config(object):
             self.threads,
             self.parallel_jobs)
 
-        
+
     def init_cut(self):
         """
         Cut the reads to specific length
@@ -147,7 +150,7 @@ class AtacR1Config(object):
         if isinstance(self.extra_index, str):
             self.genome_size_file = AlignIndex(self.extra_index).index_size(out_file=True)
         elif isinstance(self.genome, str):
-            self.genome_size_file = Genome(self.genome).get_fasize()
+            self.genome_size_file = Genome(self.genome).fasize()
         else:
             raise ValueError('--genome or --extra-index; required')
 

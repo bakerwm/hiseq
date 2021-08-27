@@ -61,12 +61,13 @@ from hiseq.cnr.utils import (
 )
 from hiseq.utils.file import (
     check_fx_args, check_path, check_fx_paired, symlink_file, file_abspath,
-    file_prefix, fx_name, Genome
+    file_prefix, fx_name
 )
 from hiseq.utils.utils import (
     log, update_obj, Config, get_date, init_cpu, read_hiseq
 )
 from hiseq.align.align_index import AlignIndex, check_index_args
+from hiseq.utils.genome import Genome
 
 
 class CnrR1(object):
@@ -157,6 +158,8 @@ class CnrR1Config(object):
         if self.outdir is None:
             self.outdir = str(pathlib.Path.cwd())
         self.outdir = file_abspath(self.outdir)
+        if self.gene_bed is None:
+            self.gene_bed = Genome(self.genome).gene_bed('ensembl')
         self.init_cut()
         self.init_fq()
         self.init_files()
@@ -201,7 +204,7 @@ class CnrR1Config(object):
         if isinstance(self.extra_index, str):
             self.genome_size_file = AlignIndex(self.extra_index).index_size(out_file=True)
         elif isinstance(self.genome, str):
-            self.genome_size_file = Genome(self.genome).get_fasize()
+            self.genome_size_file = Genome(self.genome).fasize()
         else:
             raise ValueError('--genome or --extra-index; required')
 
@@ -329,7 +332,7 @@ def get_args():
         help='Reference genome : dm3, dm6, hg19, hg39, mm9, mm10, default: dm6')
     parser.add_argument('-x', '--extra-index', dest="extra_index",
         help='Provide alignment index (bowtie2)')
-    parser.add_argument('--gene-bed', dest='gene_bed', default=None,
+    parser.add_argument('--bed', '--gene-bed', dest='gene_bed', default=None,
         help='The BED or GTF of genes, for TSS enrichment analysis')
     parser.add_argument('--is-ip', dest='is_ip', action='store_true',
         help='Is the IP sample')

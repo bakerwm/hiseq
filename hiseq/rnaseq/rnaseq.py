@@ -166,9 +166,9 @@ def get_args():
     parser.add_argument('-g', '--genome', default=None,
         choices=['dm3', 'dm6', 'hg19', 'hg38', 'mm9', 'mm10'],
         help='Reference genome : dm3, dm6, hg19, hg38, mm10, default: hg38')
-    parser.add_argument('--gtf', dest='gene_gtf', default=None,
+    parser.add_argument('--gtf', '--gene-gtf', dest='gene_gtf', default=None,
         help='The gtf file for quantification, defaut: genome.gtf (None)')
-    parser.add_argument('--bed', dest='gene_bed', default=None,
+    parser.add_argument('--bed', '--gene-bed', dest='gene_bed', default=None,
         help='The BED of genes')
 
     # optional arguments - 0

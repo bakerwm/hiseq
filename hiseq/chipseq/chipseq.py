@@ -133,7 +133,7 @@ def get_args():
         help='Reference genome : dm3, dm6, hg19, hg39, mm9, mm10, default: dm6')
     parser.add_argument('-x', '--extra-index', dest="extra_index",
         help='Provide alignment index (bowtie2)')
-    parser.add_argument('--gene-bed', dest='gene_bed', default=None,
+    parser.add_argument('--bed', '--gene-bed', dest='gene_bed', default=None,
         help='The BED or GTF of genes, for TSS enrichment analysis')
     parser.add_argument('--trimmed', action='store_true',
         help='Skip trimming, input reads are already trimmed')
