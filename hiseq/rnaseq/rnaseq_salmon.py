@@ -46,7 +46,7 @@ from hiseq.utils.utils import (
     run_shell_cmd
 )
 from hiseq.utils.bam import Bam
-from hiseq.align.align_index import AlignIndex
+from hiseq.align.align_index import AlignIndex, fetch_index
 
 
 class RnaseqSalmonPipe(object):
@@ -137,6 +137,11 @@ class RnaseqSalmonPipeConfig(object):
         if not isinstance(self.design, str):
             raise ValueError('--design, expect str, got {}'.format(
                 type(self.design).__name__))
+        # update salmon_index
+        if self.salmon_index is None and isinstance(self.genome, str):
+            si = fetch_index(self.genome, aligner='salmon')
+            if AlignIndex(si, 'salmon').is_valid():
+                self.salmon_index = si
 
 
 class RnaseqSalmon(object):
@@ -322,9 +327,10 @@ def get_args():
     example = '\n'.join([
         'Examples:',
         '1. support fastq input',
-        '$ python rnaseq_salmon.py --fq1 f1.fq.gz --fq2 f2.fq.gz -o results -g dm6',
+        '$ hiseq rnaseq_salmon -b -d design.json -r data --wt control --mut treatment',
+        '$ hiseq rnaseq_salmon -d design.json -g dm6 -o results',
         '2. for specific index',
-        '$ python rnaseq_salmon.py --fq1 f1.fq.gz --fq2 f2.fq.gz -o results -x bowtie2_index/te',
+        '$ hiseq rnaseq_salmon -d design.json -o results -x path-to-salmon-index',
     ])
     parser = argparse.ArgumentParser(
         prog='rnaseq_salmon',
@@ -364,7 +370,7 @@ def get_args():
     parser.add_argument('-x', dest='salmon_index', required=False,
         help='The path to salmon index')
     parser.add_argument('-g', '--genome', default=None,
-        choices=['dm3', 'dm6', 'hg19', 'hg38', 'mm9', 'mm10'],
+        # choices=['dm3', 'dm6', 'hg19', 'hg38', 'mm9', 'mm10'],
         help='Reference genome : dm3, dm6, hg19, hg38, mm10, default: hg38')
 
     # optional arguments - 0
@@ -378,8 +384,8 @@ def get_args():
     # optional arguments - 1
     parser.add_argument('--overwrite', action='store_true',
         help='if spcified, overwrite exists file')
-    parser.add_argument('-p', '--threads', default=1, type=int,
-        help='Number of threads for each job, default [1]')
+    parser.add_argument('-p', '--threads', default=4, type=int,
+        help='Number of threads for each job, default [4]')
     parser.add_argument('-j', '--parallel-jobs', default=1, type=int,
         dest='parallel_jobs',
         help='Number of jobs run in parallel, default: [1]')
@@ -388,7 +394,6 @@ def get_args():
 
 def main():
     args = vars(get_args().parse_args())
-#     RnaseqSalmon(**args).run()
     RnaseqSalmonPipe(**args).run()
 
 

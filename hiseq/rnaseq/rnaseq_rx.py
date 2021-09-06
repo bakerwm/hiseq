@@ -36,7 +36,7 @@ from hiseq.utils.utils import (
     run_shell_cmd
 )
 from hiseq.utils.bam import Bam
-from hiseq.align.align_index import AlignIndex, check_index_args
+from hiseq.align.align_index import AlignIndex, check_index_args, fetch_index
 from hiseq.utils.genome import Genome
 
 
@@ -123,10 +123,15 @@ class RnaseqRx(object):
             'threads': self.threads,
             'genome': self.genome,
         }
-        if AlignIndex(self.salmon_index).is_valid():
-            RnaseqSalmon(**args).run()
-        else:
-            log.warning('--salmon-index not valid, {}'.format(self.salmon_index))
+        if isinstance(self.salmon_index, str):
+            if AlignIndex(self.salmon_index).is_valid():
+                try:
+                    RnaseqSalmon(**args).run()
+                except ValueError as err:
+                    log.error(err)
+            else:
+                log.warning('--salmon-index not valid, {}'.format(
+                    self.salmon_index))
         
         
     def run(self):
@@ -211,6 +216,11 @@ class RnaseqRxConfig(object):
         index_list = check_index_args(**self.__dict__)
         if len(index_list) == 0:
             raise ValueError('no index found')
+        # update salmon index
+        if self.salmon_index is None:
+            si = fetch_index(self.genome, aligner='salmon')
+            if AlignIndex(si, 'salmon').is_valid():
+                self.salmon_index = si
         # update: genome_size_file          
         if isinstance(self.extra_index, str):
             self.genome_size_file = AlignIndex(self.extra_index).index_size(out_file=True)

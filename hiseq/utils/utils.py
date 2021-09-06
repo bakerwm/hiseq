@@ -114,7 +114,7 @@ def is_supported(x=True, key=True, return_values=False):
         for k,v in d.items():
             if key is True or key == k:
                 if x in v:
-                    log.info('{} is: {}'.format(x, k))
+#                     log.info('{} is: {}'.format(x, k))
                     out = True
                     break
                 else:

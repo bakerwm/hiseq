@@ -1,2 +1,0 @@
-supported_genomes = [ "dm3", "dm6", "mm10", "hg19", "hg38", "GRCh38",]
-supported_aligner = [ "bowtie", "bowtie2", "bwa", "STAR", "hisat2", "salmon",]

@@ -19,7 +19,6 @@ outdir/salmon
   - deseq
   - report
   - ...
-  
 """
 
 import os
@@ -164,7 +163,7 @@ def get_args():
         help='The directory to save results, default, \
         current working directory.')
     parser.add_argument('-g', '--genome', default=None,
-        choices=['dm3', 'dm6', 'hg19', 'hg38', 'mm9', 'mm10'],
+        # choices=['dm3', 'dm6', 'hg19', 'hg38', 'mm9', 'mm10'],
         help='Reference genome : dm3, dm6, hg19, hg38, mm10, default: hg38')
     parser.add_argument('--gtf', '--gene-gtf', dest='gene_gtf', default=None,
         help='The gtf file for quantification, defaut: genome.gtf (None)')
@@ -185,7 +184,7 @@ def get_args():
     parser.add_argument('--genome-index', dest="genome_index", default=None,
         help='align index of genome')
     parser.add_argument('-k', '--spikein', default=None,
-        choices=[None, 'dm3', 'hg19', 'hg38', 'mm10'],
+        # choices=[None, 'dm3', 'hg19', 'hg38', 'mm10'],
         help='Spike-in genome : dm3, hg19, hg38, mm10, default: None')
     parser.add_argument('--spikein-index', dest="spikein_index", default=None,
         help='align index of spikein')    

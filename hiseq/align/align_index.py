@@ -459,8 +459,15 @@ def check_index_args(**kwargs):
         group = None
     group_index_g = None
     group_index_sp = None
-    # level-1
-    if isinstance(index_list, list):
+    # top-level; genome,spikein, supported or not
+    if isinstance(genome, str) and not is_supported(genome, 'supported_genome'):
+        log.error('unknown genome, -g {}'.format(genome))
+        return []
+    elif isinstance(spikein, str) and not is_supported(spikein, 'supported_genome'):
+        log.error('unknown spikein, -k {}'.format(genome))
+        return []
+    # level-1: index_list
+    elif isinstance(index_list, list):
         pass
     else:
         index_list = [] # init

@@ -22,7 +22,10 @@ suppressPackageStartupMessages(library(DESeq2))
 suppressPackageStartupMessages(library(ggplot2))
 suppressPackageStartupMessages(library(patchwork))
 
-hiseqr::rnaseq_salmon_hub(project_dir)
+# run DESeq2
+# hiseqr::rnaseq_salmon_hub(project_dir)
+output <- file.path(project_dir, "deseq")
+hiseqr::hiseq_deseq(project_dir, output)
 if(run_go == 1) {
   genome <- list_hiseq_file(project_dir, "genome", "rx")
   hiseqr::rnaseq_enrich_hub(project_dir, organism = genome)

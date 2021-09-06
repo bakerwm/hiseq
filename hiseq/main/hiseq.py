@@ -134,9 +134,9 @@ class Hiseq(object):
 
         atac         ATACseq pipeline
         cnr          CUN&RUN pipeline
+        chipseq      ChIPseq pipeline
         rnaseq       RNAseq pipeline
         rnaseq2      RNAseq pipeline, simplify version
-        chipseq      ChIPseq pipeline
         rnaseq_salmon RNAseq pipeline using Salmon+DESeq2
 
         sheet        Preparing sample_sheet.csv for demx/demx2
@@ -214,6 +214,23 @@ class Hiseq(object):
         args = self.init_args(add_chipseq_args())
         Chipseq(**args).run()
         
+    
+
+    def rnaseq(self):
+        """
+        RNA-seq pipeline
+        """
+        args = self.init_args(add_rnaseq_args())
+        Rnaseq(**args).run()
+
+        
+    def rnaseq_salmon(self):
+        """
+        RNA-seq pipeline, using salmon
+        """
+        args = self.init_args(add_rnaseq_salmon_args())
+        RnaseqSalmonPipe(**args).run()
+
     
     def trim_smRNA(self):
         """
@@ -394,22 +411,6 @@ class Hiseq(object):
         args = self.init_args(add_deseq_pair_args())
         DeseqPair(**args).run()
 
-
-    def rnaseq(self):
-        """
-        RNA-seq pipeline
-        """
-        args = self.init_args(add_rnaseq_args())
-        Rnaseq(**args).run()
-
-        
-    def rnaseq_salmon(self):
-        """
-        RNA-seq pipeline, using salmon
-        """
-        args = self.init_args(add_rnaseq_salmon_args())
-        RnaseqSalmonPipe(**args).run()
-        
 
 #     def rnaseq2(self):
 #         """

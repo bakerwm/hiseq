@@ -5,9 +5,10 @@ supported_aligner:
 - STAR
 - hisat2
 - salmon
-supported_genomes:
+supported_genome:
 - dm3
 - dm6
+- dm6_te_piRC
 - mm10
 - hg19
 - hg38
