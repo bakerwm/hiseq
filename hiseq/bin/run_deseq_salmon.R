@@ -25,10 +25,10 @@ suppressPackageStartupMessages(library(patchwork))
 # run DESeq2
 # hiseqr::rnaseq_salmon_hub(project_dir)
 output <- file.path(project_dir, "deseq")
-hiseqr::hiseq_deseq(project_dir, output)
+hiseqr::hiseq_deseq(project_dir, outdir = output)
 if(run_go == 1) {
   genome <- list_hiseq_file(project_dir, "genome", "rx")
-  hiseqr::rnaseq_enrich_hub(project_dir, organism = genome)
+  # hiseqr::rnaseq_enrich_hub(project_dir, organism = genome)
 }
 
 

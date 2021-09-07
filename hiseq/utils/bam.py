@@ -114,22 +114,42 @@ class Bam(object):
         return outfile
 
 
-    def rmdup(self, outfile=None, overwrite=False):
+    def rmdup(self, outfile=None, overwrite=False, tools='picard'):
         """Remove duplicates using picard/sambamba
         sambamba markdup -r --overflow-list-size 800000 raw.bam rmdup.bam
-        picard MarkDuplicates  REMOVE_SEQUENCING_DUPLICATES=True I=in.bam O=outfile.bam
+        picard MarkDuplicates -REMOVE_DUPLICATES True -I in.bam -O outfile.bam -M metrix.txt
+        ## -REMOVE_SEQUENCING_DUPLICATES True
         """
         if outfile is None:
             outfile = os.path.splitext(self.bam)[0] + '.rmdup.bam'
-        sambamba = which('sambamba')
-        log_stderr = outfile + '.sambamba.log'
-        cmd = ' '.join([
-            '{} markdup -r'.format(which('sambamba')),
-            '-t {}'.format(2), #!! force to 2
-            '--overflow-list-size 1000000',
-            '--tmpdir={}'.format(tempfile.TemporaryDirectory().name),
-            '{} {} 2> {}'.format(self.bam, outfile, log_stderr),
-        ])
+        if tools == 'sambamba':
+            sambamba = which('sambamba')
+            log_stderr = outfile + '.sambamba.log'
+            cmd = ' '.join([
+                '{} markdup -r'.format(which('sambamba')),
+                '-t {}'.format(2), #!! force to 2
+                '--overflow-list-size 1000000',
+                '--tmpdir={}'.format(tempfile.TemporaryDirectory().name),
+                '{} {} 2> {}'.format(self.bam, outfile, log_stderr),
+            ])
+        elif tools == 'picard':
+            picard = which('picard')
+            log_stderr = outfile + '.picard.log'
+            metrics_file = outfile + '.metrics.txt'
+            cmd = ' '.join([
+                '{} MarkDuplicates'.format(which('picard')),
+                'REMOVE_DUPLICATES=True',
+                'I={} O={} M={}'.format(self.bam, outfile, metrics_file),
+                '2>{}'.format(log_stderr),
+                '&& samtools index {}'.format(outfile)
+            ])
+            # 'REMOVE_SEQUENCING_DUPLICATES=True',
+        else:
+            log.error(' '.join([
+                'rmdup(), unknown tools {}, '.format(tools),
+                'options: ["sambamba", "picard"]'
+            ]))
+            return None
         # save cmd
         cmd_txt = outfile.replace('.bam', '.cmd.sh')
         with open(cmd_txt, 'wt') as w:
