@@ -443,6 +443,7 @@ def hiseq_bam2bw(x, hiseq_type='_r1'):
         'strandness': 0, # non-strandness
         'genome': a.genome,
         'scaleFactor': 1.0, # force
+        'normalizeUsing': 'RPGC',
         'overwrite': a.overwrite,
         'genome_size': a.genome_size
     }

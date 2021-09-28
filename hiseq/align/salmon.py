@@ -34,12 +34,15 @@ def parse_salmon(x):
     """Wrapper salmon log
     
     # PE
-    [2021-04-28 00:55:01.228] [jointLog] [warning] Only 895980 fragments were mapped, but the number of burn-in fragments was set to 5000000.
+    Only 895980 fragments were mapped, but the number of burn-in fragments was set to 5000000.
+    Observed 1000000 total fragments (1000000 in most recent round)
+    # SE
+    Only 895979 fragments were mapped, but the number of burn-in fragments was set to 5000000.
     Observed 1000000 total fragments (1000000 in most recent round)
     
-    # SE
-    [2021-05-17 16:56:48.992] [jointLog] [warning] Only 895979 fragments were mapped, but the number of burn-in fragments was set to 5000000.
-    Observed 1000000 total fragments (1000000 in most recent round)
+    ## salmon version 1.4.0
+    Observed 10259420 total fragments
+    Counted 8,433,361 total reads in the equivalence classes
     
     unique, multiple, unmap, map, total
     """
@@ -52,10 +55,10 @@ def parse_salmon(x):
     if check_file(x, check_empty=True):
         with open(x) as r:
             for line in r:
-                p1 = re.search('(\d+) fragments were mapped', line)
+                p1 = re.search('Counted ([0-9,]+) total reads in the', line)
                 p2 = re.search('Observed (\d+) total fragments', line)
                 if p1:
-                    mapped = eval(p1.group(1))
+                    mapped = eval(p1.group(1).replace(',', ''))
                 elif p2:
                     total = eval(p2.group(1))
                 else:
