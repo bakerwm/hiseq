@@ -28,6 +28,7 @@ output <- file.path(project_dir, "deseq")
 hiseqr::hiseq_deseq(project_dir, outdir = output)
 if(run_go == 1) {
   genome <- list_hiseq_file(project_dir, "genome", "rx")
+  hiseq_enrich(project_dir)
   # hiseqr::rnaseq_enrich_hub(project_dir, organism = genome)
 }
 

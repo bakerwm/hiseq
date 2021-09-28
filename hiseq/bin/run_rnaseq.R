@@ -27,9 +27,11 @@ library(fishualize)
 library(ggthemes)
 library(clusterProfiler)
 
-hiseqr::rnaseq_hub(args[1]) # ctl_vs_exp = TRUE)
+# hiseqr::rnaseq_hub(args[1]) # ctl_vs_exp = TRUE)
+hiseqr::hiseq_deseq(args[1])
 if(run_go == 1) {
-  hiseqr::rnaseq_enrich_hub(args[1])
+  # hiseqr::rnaseq_enrich_hub(args[1])
+  hiseqr::hiseq_enrich(args[1])
 }
 
 ## END
