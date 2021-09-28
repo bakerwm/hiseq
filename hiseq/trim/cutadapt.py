@@ -245,6 +245,7 @@ class Cutadapt(object):
         arg_adapter_5 = '-g {}'.format(self.adapter5) if self.adapter5 else ''
         arg_Adapter_5 = '-G {}'.format(self.Adapter5) if self.Adapter5 else ''
         arg_rm_polyN = r'-a "A{50}" -a "C{50}" -a "G{50}" -a "T{50}"' if self.rm_polyN else ''
+        arg_cut_before_trim = '--cut {}'.format(self.cut_before_trim) if self.cut_before_trim else ''
         # adapter3
         ad3_list, _ = self.get_ad3()
         ad3_arg = ' '.join([
@@ -267,6 +268,7 @@ class Cutadapt(object):
             arg_too_short,
             arg_too_long,
             arg_cut_to_length,
+            arg_cut_before_trim,
             '-o {}'.format(self.clean_fq),
             '{}'.format(self.fq1),
             '1>{}'.format(self.log)
