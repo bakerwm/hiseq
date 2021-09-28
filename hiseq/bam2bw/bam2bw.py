@@ -301,7 +301,7 @@ def get_args():
         help='choose genome for the bam file, default: [None]')
     parser.add_argument('--scaleFactor', nargs='+', type=float, default=1.0,
         help='The scaling factor, default: [1.0]')
-    parser.add_argument('--normalizeUsing', default='None',
+    parser.add_argument('--normalizeUsing', default='RPGC',
         choices=['RPGC', 'RPKM', 'CPM', 'BPM', 'None'],
         help='Possible choices: RPKM, CPM, BPM, RPGC, None, default: [None] \
         see https://deeptools.readthedocs.io/en/latest/content/tools/bamCoverage.html, \
