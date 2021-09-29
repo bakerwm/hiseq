@@ -432,6 +432,9 @@ class LibStrand(object):
         c2 = isinstance(self.gtf, str)
         c2e = file_exists(self.gtf)
         self.file_is_ok = all([c1, c1e, c2, c2e])
+        # bam file indexed
+        if not file_exists(self.bam+'.bai'):
+            Bam(self.bam).index()
         if self.file_is_ok:
             self.bam_sub = Bam(self.bam).subset(self.size, self.outdir)
             self.bam_name = os.path.basename(self.bam)

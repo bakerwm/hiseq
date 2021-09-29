@@ -17,7 +17,7 @@ from hiseq.rnaseq.rnaseq_r1 import RnaseqR1
 from hiseq.rnaseq.rnaseq_rp import RnaseqRp
 from hiseq.rnaseq.utils import (
     rnaseq_trim, rnaseq_align_spikein, rnaseq_align_rRNA, rnaseq_align_genome,
-    rnaseq_quant, rnaseq_merge_bam, rnaseq_bam2bw, qc_trim_summary,
+    rnaseq_quant, hiseq_merge_bam, hiseq_bam2bw, qc_trim_summary,
     qc_align_summary, qc_bam_cor, qc_genebody_enrich
 )
 from hiseq.utils.file import (
@@ -44,8 +44,8 @@ class RnaseqRn(object):
 
 
     def run_pipe_rn(self): # for rep_list > 1
-        rnaseq_merge_bam(self.project_dir, 'rn')
-        rnaseq_bam2bw(self.project_dir, 'rn')
+        hiseq_merge_bam(self.project_dir, 'rn')
+        hiseq_bam2bw(self.project_dir, 'rn')
         rnaseq_quant(self.project_dir, 'rn')
         qc_genebody_enrich(self.project_dir, 'rn')
         qc_bam_cor(self.project_dir, 'rn')
@@ -130,6 +130,7 @@ class RnaseqRnConfig(object):
             'threads': 1,
             'parallel_jobs': 1,
             'overwrite': False,
+            'verbose': False,
             'norm_project': None,
         }
         self = update_obj(self, args_init, force=False)
@@ -189,7 +190,8 @@ class RnaseqRnConfig(object):
             'trim_json': trim_prefix+'.trim.json',
             
             # alignment
-            'align_scale_json': align_prefix+'.scale.json',
+            # 'align_scale_json': self.bam_dir + '/' + 'scale.json',
+            # 'align_scale_json': align_prefix+'.scale.json',
             'align_stat': align_prefix+'.align.stat',
             'align_json': align_prefix+'.align.json',
             'align_flagstat': align_prefix+'.align.flagstat',
@@ -200,7 +202,8 @@ class RnaseqRnConfig(object):
             'count_anti': count_prefix+'.anti.txt',     
             
             # qc
-            'align_scale_json': align_prefix+'.scale.json',
+            'align_scale_json': self.bam_dir + '/' + 'scale.json',
+            # 'align_scale_json': align_prefix+'.scale.json',
             'genebody_enrich_matrix': os.path.join(self.qc_dir, '05.genebody_enrich.mat.gz'),
             'genebody_enrich_matrix_log': os.path.join(self.qc_dir, '05.genebody_enrich.log'),
             'genebody_enrich_png': os.path.join(self.qc_dir, '05.genebody_enrich.png'),

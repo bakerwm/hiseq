@@ -23,7 +23,7 @@ from hiseq.rnaseq.rnaseq_rn import RnaseqRn
 from hiseq.rnaseq.rnaseq_rp import RnaseqRp
 from hiseq.rnaseq.utils import (
     rnaseq_trim, rnaseq_align_spikein, rnaseq_align_rRNA, rnaseq_align_genome,
-    rnaseq_quant, rnaseq_bam2bw, rnaseq_deseq, qc_trim_summary, 
+    rnaseq_quant, hiseq_bam2bw, rnaseq_deseq, qc_trim_summary, 
     qc_align_summary, qc_bam_cor, qc_genebody_enrich
 )
 from hiseq.rnaseq.rnaseq_salmon import RnaseqSalmon
@@ -94,6 +94,7 @@ class RnaseqRx(object):
                 c1 = list_hiseq_file(i, 'count_sens', j)
                 c2 = list_hiseq_file(i, 'count_anti', j)
                 [symlink_file(bam, self.bam_dir) for bam in b]
+                [symlink_file(bam+'.bai', self.bam_dir) for bam in b] # add bai
                 [symlink_file(bw, self.bw_dir) for bw in bw1+bw2]
                 [symlink_file(c, self.count_dir) for c in c1+c2]
 
@@ -108,30 +109,31 @@ class RnaseqRx(object):
         qc_genebody_enrich(self.project_dir, 'rx')
         qc_bam_cor(self.project_dir, 'rx')
         
-        
-    def run_salmon(self):
-        """
-        Run RNAseq with Salmon+DESeq2
-        """
-        args = {
-            'mut_fq1': self.mut_fq1,
-            'mut_fq2': self.mut_fq2,
-            'wt_fq1': self.wt_fq1,
-            'wt_fq2': self.wt_fq2,
-            'salmon_index': self.salmon_index,
-            'outdir': self.salmon_dir,
-            'threads': self.threads,
-            'genome': self.genome,
-        }
-        if isinstance(self.salmon_index, str):
-            if AlignIndex(self.salmon_index).is_valid():
-                try:
-                    RnaseqSalmon(**args).run()
-                except ValueError as err:
-                    log.error(err)
-            else:
-                log.warning('--salmon-index not valid, {}'.format(
-                    self.salmon_index))
+
+#     # to: hiseq rnaseq_salmon
+#     def run_salmon(self):
+#         """
+#         Run RNAseq with Salmon+DESeq2
+#         """
+#         args = {
+#             'mut_fq1': self.mut_fq1,
+#             'mut_fq2': self.mut_fq2,
+#             'wt_fq1': self.wt_fq1,
+#             'wt_fq2': self.wt_fq2,
+#             'salmon_index': self.salmon_index,
+#             'outdir': self.salmon_dir,
+#             'threads': self.threads,
+#             'genome': self.genome,
+#         }
+#         if isinstance(self.salmon_index, str):
+#             if AlignIndex(self.salmon_index).is_valid():
+#                 try:
+#                     RnaseqSalmon(**args).run()
+#                 except ValueError as err:
+#                     log.error(err)
+#             else:
+#                 log.warning('--salmon-index not valid, {}'.format(
+#                     self.salmon_index))
         
         
     def run(self):
@@ -144,8 +146,8 @@ class RnaseqRx(object):
         self.run_rx()
         # 4. generate report
         RnaseqRp(self.project_dir).run()
-        # 5. run salmon
-        self.run_salmon()
+#         # 5. run salmon
+#         self.run_salmon()
         
 
 class RnaseqRxConfig(object):
@@ -181,6 +183,7 @@ class RnaseqRxConfig(object):
             'threads': 1,
             'parallel_jobs': 1,
             'overwrite': False,
+            'verbose': False,
             'norm_project': None,
             'trimmed': False,
         }
@@ -216,11 +219,11 @@ class RnaseqRxConfig(object):
         index_list = check_index_args(**self.__dict__)
         if len(index_list) == 0:
             raise ValueError('no index found')
-        # update salmon index
-        if self.salmon_index is None:
-            si = fetch_index(self.genome, aligner='salmon')
-            if AlignIndex(si, 'salmon').is_valid():
-                self.salmon_index = si
+#         # update salmon index
+#         if self.salmon_index is None:
+#             si = fetch_index(self.genome, aligner='salmon')
+#             if AlignIndex(si, 'salmon').is_valid():
+#                 self.salmon_index = si
         # update: genome_size_file          
         if isinstance(self.extra_index, str):
             self.genome_size_file = AlignIndex(self.extra_index).index_size(out_file=True)

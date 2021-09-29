@@ -12,7 +12,7 @@ import argparse
 from hiseq.rnaseq.rnaseq_rp import RnaseqRp
 from hiseq.rnaseq.utils import (
     rnaseq_trim, rnaseq_align_spikein, rnaseq_align_rRNA, rnaseq_align_genome,
-    rnaseq_quant, rnaseq_bam2bw, qc_trim_summary, qc_align_summary, 
+    rnaseq_quant, hiseq_bam2bw, qc_trim_summary, qc_align_summary, 
     qc_genebody_enrich
 )
 from hiseq.utils.file import (
@@ -49,7 +49,7 @@ class RnaseqR1(object):
         rnaseq_align_rRNA(self.project_dir, 'r1')
         rnaseq_align_genome(self.project_dir, 'r1')
         rnaseq_quant(self.project_dir, 'r1')
-        rnaseq_bam2bw(self.project_dir, 'r1')
+        hiseq_bam2bw(self.project_dir, 'r1')
         # qc
         qc_trim_summary(self.project_dir, '_r1')
         qc_align_summary(self.project_dir, '_r1')
@@ -86,6 +86,7 @@ class RnaseqR1Config(object):
             'rRNA_index': None,
             'threads': 1,
             'overwrite': False,
+            'verbose': False,
             'binsize': 10,
             'genome_size': 0,
             'genome_size_file': None,
@@ -163,7 +164,8 @@ class RnaseqR1Config(object):
             'count_anti': count_prefix+'.anti.txt',           
             
             # align files (genome)
-            'align_scale_json': align_prefix+'.scale.json',
+            'align_scale_json': self.bam_dir + '/' + 'scale.json',
+            # 'align_scale_json': align_prefix+'.scale.json',
             'align_stat': align_prefix+'.align.stat',
             'align_json': align_prefix+'.align.json',
             'align_flagstat': align_prefix+'.align.flagstat',

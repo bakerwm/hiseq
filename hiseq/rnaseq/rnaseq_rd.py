@@ -18,8 +18,9 @@ search files by key words, from command line
 
 import os
 import argparse
-from hiseq.utils.file import file_abspath, file_exists, fx_name, list_fx, \
-    check_fx_paired
+from hiseq.utils.file import (
+    file_abspath, file_exists, fx_name, list_fx, list_dir, check_fx_paired
+)
 from hiseq.utils.utils import log, update_obj, Config, get_date
 
 
@@ -119,6 +120,25 @@ class RnaseqRd(object):
 #         # output
 #         return out
                     
+    def list_fq_files(self):
+        """
+        List fastq files, in dir or subdir (level-1)
+        """
+        # for fq_dir
+        if isinstance(self.fq_dir, str):
+            f_list = list_fx(self.fq_dir)
+        # for fq_dir/subdir
+        if len(f_list) < 2:
+            # search fastq files in subdirs
+            sub_dirs = list_dir(self.fq_dir, include_dir=True)
+            sub_files = [list_fx(i) for i in sub_dirs if os.path.isdir(i)]
+            f_list = [f for i in sub_files if isinstance(i, list) for f in i]
+            # f_list = [f for i in sub_dirs if os.path.isdir(i) for f in list_fx(i)]
+        if len(f_list) < 2:
+            log.error('not enough fq files: {}'.format(self.fq_dir))
+            return None
+        return f_list
+        
         
     def parse_fq_v1(self):
         """
@@ -130,16 +150,17 @@ class RnaseqRd(object):
         
         return: dict (groups)
         """
-        # check fq_dir
-        if isinstance(self.fq_dir, str):
-            f_list = list_fx(self.fq_dir)
-        else:
-            log.warning('--fq-dir required')
-            f_list = []
-        # check files
-        if len(f_list) < 2:
-            log.error('not enough fq files')
-            return None
+#         # check fq_dir
+#         if isinstance(self.fq_dir, str):
+#             f_list = list_fx(self.fq_dir)
+#         else:
+#             log.warning('--fq-dir required')
+#             f_list = []
+#         # check files
+#         if len(f_list) < 2:
+#             log.error('not enough fq files')
+#             return None
+        f_list = self.list_fq_files()
         # check mut
         if not isinstance(self.mut, list):
             log.error('unknown mut, expect list, got {}'.format(

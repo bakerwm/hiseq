@@ -26,6 +26,8 @@ library(patchwork)
 library(fishualize)
 library(ggthemes)
 library(clusterProfiler)
+library(DESeq2)
+library(Biobase)
 
 # hiseqr::rnaseq_hub(args[1]) # ctl_vs_exp = TRUE)
 hiseqr::hiseq_deseq(args[1])

@@ -103,7 +103,9 @@ class RnaseqConfig(object):
             'wt_fq1': None,
             'wt_fq2': None,
             'threads': 4,
-            'parallel_jobs': 1
+            'parallel_jobs': 1,
+            'overwrite': False,
+            'verbose': False,
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'rnaseq_ra'
