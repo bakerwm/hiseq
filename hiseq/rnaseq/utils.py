@@ -416,33 +416,7 @@ def hiseq_merge_bam(x, hiseq_type='_rn'):
     # calculate norm scale
     s = hiseq_norm_scale(x, hiseq_type=hiseq_type, by_spikein=False) # to genome
     
-    
-# def rnaseq_merge_bam(x, hiseq_type='rn'):
-#     a = read_hiseq(x, hiseq_type) # for general usage
-#     if not a.is_hiseq:
-#         log.error('rnaseq_merge_bam() skipped, not a rnaseq_rn dir: {}'.format(x))
-#         return None
-#     bam_list = list_hiseq_file(x, 'bam', 'r1')
-#     cmd = ' '.join([
-#         'samtools merge -',
-#         ' '.join(bam_list),
-#         '| samtools sort -o {} -'.format(a.bam),
-#         '&& samtools index {}'.format(a.bam)])
-#     if all(file_exists(bam_list)):
-#         # calculate norm scale
-#         s = rnaseq_rn_norm_scale(x, hiseq_type='rn')
-#         if file_exists(a.bam) and not a.overwrite:
-#             log.info('merge_bam() skipped, file exists: {}'.format(a.bam))
-#         else:
-#             try:
-#                 run_shell_cmd(cmd)
-#             except:
-#                 log.warning('merge_bam() failed.')
-#         # check-point
-#         if not file_exists(a.bam):
-#             log.error('rnaseq_merge_bam() failed, see: {}'.format(a.bam_dir))
-    
-        
+
         
 def rnaseq_quant(x, hiseq_type='r1'):
     """
@@ -530,29 +504,6 @@ def hiseq_bam2bw(x, hiseq_type='_r1'):
     }
     Bam2bw(**args).run()
 
-
-# def rnaseq_bam2bw(x, hiseq_type='r1'):
-#     a = read_hiseq(x, hiseq_type) # for general usage    
-#     if not a.is_hiseq:
-#         log.error('rnaseq_bam2bw() skipped, not a rnaseq_r1 dir: {}'.format(x))
-#         return None
-#     # load scale
-#     sj = Config().load(a.align_scale_json)
-#     s = sj.get('scale', 1.0)
-#     # strandness
-#     args = {
-#         'bam': a.bam if getattr(a, 'rmdup', False) else a.bam,
-#         'prefix': a.smp_name,
-#         'outdir': a.bw_dir,
-#         'binsize': a.binsize,
-#         'strandness': 12, # both: fwd and rev
-#         'genome': a.genome,
-#         'scaleFactor': s,
-#         'overwrite': a.overwrite,
-#         'genome_size': a.genome_size,
-#     }
-#     Bam2bw(**args).run()
-
     
 def rnaseq_deseq(x, hiseq_type='rx'):
     """
@@ -585,42 +536,6 @@ def rnaseq_deseq(x, hiseq_type='rx'):
             run_shell_cmd(cmd)
         except:
             log.warning('DESeq2 failed.')
-    
-
-# def salmon_align(x, hiseq_type='r1'):
-#     """
-#     pseudo_align_dir: salmon.
-#     Quantification + DEanalysis 
-#     aligner: salmon, kallisto
-#     deseq:   DESeq2
-
-#     required arguments:
-#     aligner: salmon|kallisto
-#         fq1
-#         fq2
-#         outdir
-#         index
-#         'index_name',
-#         'smp_name',
-#         'threads',
-#         'overwrite'
-#     """    
-#     a = read_hiseq(x, hiseq_type) # for general usage
-#     if not a.is_hiseq:
-#         log.error('rnaseq_salmon() skipped, not a rnaseq_r1 dir: {}'.format(x))
-#         return None
-#     fq1, fq2 = a.clean_fq_list
-#     args_init = {
-#         'aligner': 'salmon',
-#         'fq1': fq1,
-#         'fq2': fq2,
-#         'outdir': a.salmon_dir,
-#         'smp_name': a.smp_name,
-#         'genome': a.genome,
-#         'genome_index': a.genome_index,
-#     }
-#     args_local = args_init
-#     Align(**args_local).run()
 
     
 def deseq_salmon(x, hiseq_type='rx'):
@@ -718,34 +633,6 @@ def qc_trim_summary(x, hiseq_type='r1'):
     # save to new file
     Config().dump(d, a.trim_summary_json)
     return d
-
-
-# def qc_trim_summary(x, hiseq_type='r1'):
-#     """
-#     # format:
-#     # name, total, too_short, dup, too_short2, clean, percent
-    
-#     output:
-#     name, input, output, out_pct, rm_pct
-#     """
-#     a = read_hiseq(x, hiseq_type) # for general usage
-#     if not a.is_hiseq:
-#         log.error('qc_trim_summary() skipped, not a rnaseq_r1 dir: {}'.format(x))
-#     # option-1: trim_json
-#     trim_json = a.trim_json
-#     if file_exists(trim_json):
-#         df = Config().load(trim_json)
-#         d = {
-#             'name': a.smp_name,
-#             'input': df.get('total', 1),
-#             'output': df.get('clean', 0),
-#             'out_pct': df.get('clean', 0) / df.get('total', 1) * 100,
-#         }
-#         d['out_pct'] = round(d['out_pct'], 2)
-#         d['rm_pct'] = round(100.0 - d['out_pct'], 2)
-#     else:
-#         d = {}
-#     Config().dump(d, a.trim_summary_json)
 
 
 def qc_align_summary(x, hiseq_type='r1'):
@@ -1024,145 +911,3 @@ def qc_genebody_enrich(x, hiseq_type='r1', bw_type='r1', **kwargs):
                 log.error('qc_genebody_enrich() failed, see: {}'.format(
                     a.genebody_enrich_matrix_log))
 
-
-
-# def rnaseq_rn_norm_scale(x, hiseq_type='rn', by_spikein=False, norm=1000000):
-#     """
-#     Parameters
-#     ---------
-#     x: str
-#         The path to RnaseqR1() dir, hiseq_type=rnaseq_r1
-
-#     cal the norm scale: combine rep_list
-#     1. spikein (total mapped, unique+multi)
-#     2. genome (total mapped, unique+multi)
-#     """
-#     a = read_hiseq(x, hiseq_type) # for general usage
-#     out = None
-#     if a.is_hiseq:
-#         if by_spikein:
-#             # spikein
-#             if file_exists(a.spikein_scale_json):
-#                 d = Config().load(a.spikein_scale_json)
-#                 out = d.get('scale', 1.0)
-#             else:
-#                 # for r1
-#                 sp_map = 0 # default
-#                 for i in list_hiseq_dir(x, 'r1'):
-#                     i_r = read_hiseq(i, 'r1')
-#                     i_d = Config().load(i_r.spikein_scale_json) # map
-#                     sp_map += i_d.get('map', 0) # unique+multi
-#                 try:
-#                     sp_scale = round(norm / sp_map, 4)
-#                 except ZeroDivisionError as e:
-#                     log.error(e)
-#                     sp_scale = 1.0
-#                 # save to spikein_scale_json
-#                 d = {
-#                     'smp_name': a.smp_name,
-#                     'is_spikein': by_spikein,
-#                     'map': sp_map,
-#                     'norm': norm,
-#                     'scale': sp_scale
-#                 }
-#                 Config().dump(d, a.spikein_scale_json)
-#                 out = sp_scale
-#         else:
-#             # genome
-#             if file_exists(a.align_scale_json):
-#                 d = Config().load(a.align_scale_json)
-#                 out = d.get('scale', 1.0)
-#             else:
-#                 g_map = 0
-#                 for i in list_hiseq_dir(x, 'r1'):
-#                     i_r = read_hiseq(i, 'r1')
-#                     i_d = Config().load(i_r.align_scale_json)
-#                     g_map += i_d.get('map', 0) # unique+multi
-#                 try:
-#                     g_scale = round(norm / g_map, 4)
-#                 except ZeroDivisionError as e:
-#                     log.error(e)
-#                     g_scale = 1.0
-#                 # save to spikein_scale_json
-#                 d = {
-#                     'smp_name': a.smp_name,
-#                     'is_spikein': by_spikein,
-#                     'map': g_map,
-#                     'norm': norm,
-#                     'scale': g_scale
-#                 }
-#                 Config().dump(d, a.align_scale_json)
-#                 out = g_scale
-#     else:
-#         log.error('is not hiseq dir: {}'.format(x))
-#         out = None
-#     return out
-
-
-
-# def rnaseq_r1_norm_scale(x, hiseq_type='r1', by_spikein=False, norm=1000000):
-#     """
-#     Parameters
-#     ---------
-#     x: str
-#         The path to RnaseqR1() dir, hiseq_type=rnaseq_r1
-
-#     cal the norm scale:
-#     1. spikein (total mapped, unique+multi)
-#     2. genome (total mapped, unique+multi)
-#     """
-#     a = read_hiseq(x, hiseq_type) # for general usage
-#     out = None
-#     if a.is_hiseq:
-#         if by_spikein:
-#             # spikein
-#             if file_exists(a.spikein_scale_json):
-#                 d = Config().load(a.spikein_scale_json)
-#                 out = d.get('scale', 1.0)
-#             else:
-#                 if file_exists(a.spikein_json):
-#                     d = Config().load(a.spikein_json)
-#                     sp_map = d.get('map', 0)
-#                     try:
-#                         sp_scale = round(norm / sp_map, 4)
-#                     except ZeroDivisionError as e:
-#                         log.error(e)
-#                         sp_scale = 1.0
-#                     # save to spikein_scale_json
-#                     d = {
-#                         'smp_name': a.smp_name,
-#                         'is_spikein': by_spikein,
-#                         'map': sp_map,
-#                         'norm': norm,
-#                         'scale': sp_scale
-#                     }
-#                     Config().dump(d, a.spikein_scale_json)
-#                     out = sp_scale
-#         else:
-#             # genome
-#             if file_exists(a.align_scale_json):
-#                 d = Config().load(a.align_scale_json)
-#                 out = d.get('scale', 1.0)
-#             else:
-#                 if file_exists(a.align_json):
-#                     d = Config().load(a.align_json)
-#                     g_map = d.get('map', 0)
-#                     try:
-#                         g_scale = round(norm / g_map, 4)
-#                     except ZeroDivisionError as e:
-#                         log.error(e)
-#                         g_scale = 1.0
-#                     # save to spikein_scale_json
-#                     d = {
-#                         'smp_name': a.smp_name,
-#                         'is_spikein': by_spikein,
-#                         'map': g_map,
-#                         'norm': norm,
-#                         'scale': g_scale
-#                     }
-#                     Config().dump(d, a.align_scale_json)
-#                     out = g_scale
-#     else:
-#         log.error('is not hiseq dir: {}'.format(x))
-#         out = None
-#     return out

@@ -414,6 +414,8 @@ def check_index_args(**kwargs):
     to_MT
     to_chrM
     to_MT_trRNA
+    te_te
+    to_piRC
     genome_path
     """
     # default arguments
@@ -428,6 +430,8 @@ def check_index_args(**kwargs):
     to_MT = kwargs.get('to_MT', False)
     to_chrM = kwargs.get('to_chrM', False)
     to_MT_trRNA = kwargs.get('to_MT_trRNA', False)
+    to_te = kwargs.get('to_te', False)
+    to_piRC = kwargs.get('to_piRC', False)
     verbose = kwargs.get('verbose', False)
     genome_path = kwargs.get('genome_path', None)
     # for message
@@ -440,10 +444,12 @@ def check_index_args(**kwargs):
         '{:>14s} : {}'.format('spikein', spikein),
         '{:>14s} : {}'.format('spikein_index', spikein_index),
         '{:>14s} : {}'.format('index_list', index_list),
-        '{:>14s} : {}'.format('extra_index', index_list),
+        '{:>14s} : {}'.format('extra_index', extra_index),
         '{:>14s} : {}'.format('to_rRNA', to_rRNA),
         '{:>14s} : {}'.format('to_chrM', to_chrM),
         '{:>14s} : {}'.format('to_MT_trRNA', to_MT_trRNA),
+        '{:>14s} : {}'.format('to_te', to_te),
+        '{:>14s} : {}'.format('to_piRC', to_piRC),
         '-'*80,
     ])
     if verbose:
@@ -457,6 +463,12 @@ def check_index_args(**kwargs):
         group = 'MT_trRNA'
     else:
         group = None
+    ############################################################################
+    # index te+piRC; extra
+    index_te = fetch_index(genome, 'te', aligner=aligner, genome_path=genome_path) if to_te else None    
+    index_piRC = fetch_index(genome, 'piRC', aligner=aligner, genome_path=genome_path) if to_piRC else None
+
+    ############################################################################
     group_index_g = None
     group_index_sp = None
     # top-level; genome,spikein, supported or not
@@ -516,6 +528,11 @@ def check_index_args(**kwargs):
                 else:
                     log.error('AlignIndex({}, {}) not available'.format(
                         genome, aligner))
+        #######################################################################
+        # add te, piRC
+        index_list.insert(0, index_piRC)
+        index_list.insert(0, index_te)
+        #######################################################################
     # check all
     index_list = [i for i in index_list if 
         AlignIndex(i, aligner).is_valid()]

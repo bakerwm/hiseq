@@ -21,6 +21,7 @@ from shutil import which
 from hiseq.utils.file import file_exists, check_path, file_prefix
 from hiseq.utils.utils import log, Config, run_shell_cmd, get_date, update_obj
 from hiseq.utils.bam import Bam
+from hiseq.utils.genome import Genome
 
 
 
@@ -120,6 +121,7 @@ class Bam2bw(object):
             'genome_size': None,
             'scaleFactor': 1.0,
             'normalizeUsing': 'RPGC',
+            'blacklist': None,
             'threads': 4,
             'config_txt': os.path.join(self.outdir, 'config.txt'),
             'config_yaml': os.path.join(self.outdir, 'config.yaml'),
@@ -162,6 +164,10 @@ class Bam2bw(object):
         else:
             log.error('genome, genome_size, reference; one of arg is requred')
             self.flag = False # do not run
+        # blacklist
+        if self.blacklist is None:
+            self.blacklist = Genome(self.genome).blacklist()
+        self.args_bl = '--blackListFileName {}'.format(self.blacklist) if file_exists(self.blacklist) else ''
 
 
     def run_cmd(self, cmd, bw, bw_log):
@@ -187,6 +193,7 @@ class Bam2bw(object):
             '--numberOfProcessors {}'.format(self.threads), 
             '--scaleFactor {}'.format(self.scaleFactor),
             '--normalizeUsing {}'.format(self.normalizeUsing),
+            self.args_bl,
             '2> {}'.format(self.bw_log)
             ])
         cmd_txt = os.path.join(self.outdir, 'cmd_fwd.txt')
@@ -203,7 +210,10 @@ class Bam2bw(object):
             '--filterRNAstrand reverse',
             '--numberOfProcessors {}'.format(self.threads), 
             '--scaleFactor {}'.format(self.scaleFactor),
-            '--normalizeUsing {}'.format(self.normalizeUsing)])
+            '--normalizeUsing {}'.format(self.normalizeUsing),
+            self.args_bl,
+            '2> {}'.format(self.bw_log)
+        ])
         cmd_txt = os.path.join(self.outdir, 'cmd_rev.txt')
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + 'n')
@@ -218,7 +228,10 @@ class Bam2bw(object):
             '--effectiveGenomeSize {}'.format(self.genome_size),
             '--numberOfProcessors {}'.format(self.threads), 
             '--scaleFactor {}'.format(self.scaleFactor),
-            '--normalizeUsing  {}'.format(self.normalizeUsing)])
+            '--normalizeUsing  {}'.format(self.normalizeUsing),
+            self.args_bl,
+            '2> {}'.format(self.bw_log)
+        ])
         cmd_txt = os.path.join(self.outdir, 'cmd.sh')
         with open(cmd_txt, 'wt') as w:
             w.write(cmd + '\n')

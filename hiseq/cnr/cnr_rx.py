@@ -217,6 +217,12 @@ class CnrRxConfig(object):
             self.genome_size_file = Genome(self.genome).fasize()
         else:
             raise ValueError('--genome or --extra-index; required')
+        # update genome_size
+        gs = 0
+        with open(self.genome_size_file) as r:
+            for line in r:
+                gs += int(line.strip().split('\t')[1])
+        self.genome_size = gs
 
 
     def init_name(self):

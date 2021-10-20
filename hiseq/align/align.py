@@ -44,11 +44,13 @@ import argparse
 from multiprocessing import Pool
 from hiseq.utils.seq import Fastx
 from hiseq.align.align_rp import AlignRp
-from hiseq.utils.utils import update_obj, Config, get_date, read_hiseq, \
-    is_supported
-from hiseq.utils.file import check_path, file_abspath, file_prefix, \
-    file_exists, symlink_file, list_dir, check_fx_args, check_fx_paired, \
-    fx_name
+from hiseq.utils.utils import (
+    update_obj, Config, get_date, read_hiseq, is_supported
+)
+from hiseq.utils.file import (
+    check_path, file_abspath, file_prefix, file_exists, symlink_file,
+    list_dir, check_fx_args, check_fx_paired, fx_name
+)
 from hiseq.align.bowtie import Bowtie
 from hiseq.align.bowtie2 import Bowtie2
 from hiseq.align.star import Star
@@ -559,7 +561,6 @@ def get_args():
     parser.add_argument('--genome-index', dest="genome_index", default=None,
         help='align index of genome')
     parser.add_argument('-k', '--spikein', default=None,
-        choices=[None, 'dm3', 'hg19', 'hg38', 'mm10'],
         help='Spike-in genome : dm3, hg19, hg38, mm10, default: None')
     parser.add_argument('--spikein-index', dest="spikein_index", default=None,
         help='align index of spikein')    

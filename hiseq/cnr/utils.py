@@ -104,8 +104,8 @@ def cnr_trim(x, hiseq_type='r1'):
     clean_fq1, clean_fq2 = a.clean_fq_list
     # whether to trim or not
     if a.trimmed:
-        symlink(fq1, clean_fq1)
-        symlink(fq2, clean_fq2)
+        symlink_file(fq1, clean_fq1)
+        symlink_file(fq2, clean_fq2)
     else:
         args_local = {
             'fq1': fq1,
@@ -1125,8 +1125,8 @@ def qc_bam_fingerprint(x, hiseq_type='rn', bam_type='r1'):
 #     clean_fq1, clean_fq2 = a.clean_fq_list
 #     # whether to trim or not
 #     if a.trimmed:
-#         symlink(fq1, clean_fq1)
-#         symlink(fq2, clean_fq2)
+#         symlink_file(fq1, clean_fq1)
+#         symlink_file(fq2, clean_fq2)
 #     else:
 #         args_local = {
 #             'fq1': fq1,
