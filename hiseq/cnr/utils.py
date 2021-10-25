@@ -19,13 +19,14 @@ from hiseq.bam2bw.bam2bw import Bam2bw, bw_compare
 from hiseq.cnr.callpeak import CallPeak
 from hiseq.fragsize.fragsize import BamFragSize, BamFragSizeR1
 from hiseq.utils.file import (
-    list_file, list_dir, check_file, check_path, copy_file, copy_dir, symlink_file, 
+    list_file, list_dir, check_file, check_path, copy_file, copy_dir, symlink_file,
     remove_file, fx_name, file_exists, file_abspath, file_prefix, file_nrows
 )
 from hiseq.utils.bam import Bam, Bam2cor, Bam2fingerprint
 from hiseq.utils.bed import PeakIDR, BedOverlap, PeakFRiP
 from hiseq.utils.utils import (
-    log, update_obj, Config, get_date, read_hiseq, list_hiseq_file, 
+    log, update_obj, Config, get_date, read_hiseq, list_hiseq_file,
+    is_hiseq_dir,
     run_shell_cmd, find_longest_common_str, hash_string, check_hash_string
 )
 
@@ -74,7 +75,7 @@ def hiseq_norm_scale(x, hiseq_type='_r1', by_spikein=False, norm=1000000):
 ################################################################################
 ## main ##
 #
-# cnr_trim 
+# cnr_trim
 # cnr_align_spikein
 # cnr_align_genome
 def cnr_trim(x, hiseq_type='r1'):
@@ -125,7 +126,7 @@ def cnr_trim(x, hiseq_type='r1'):
         symlink_file(trim.clean_fq2, clean_fq2)
         symlink_file(trim.trim_json, a.trim_json)
 
-        
+
 def cnr_align_spikein(x, hiseq_type='_r1'):
     """
     Parameters
@@ -349,8 +350,8 @@ def hiseq_pcr_dup(x, hiseq_type='r1'):
     else:
         log.warning('qc_dup_summary() skipped')
     return out
-    
-    
+
+
 def cnr_call_peak(x, hiseq_type='r1'):
     """
     Call peaks using MACS2 and SEACR
@@ -449,7 +450,7 @@ def hiseq_bam2bw(x, hiseq_type='_r1'):
     }
     Bam2bw(**args).run()
 
-    
+
 ################################################################################
 ## Quality control matrix for CnRseq analysis
 #
@@ -591,11 +592,11 @@ def qc_align_summary(x, hiseq_type='auto'):
             d_str = {k:v for k,v in di.items() if type(v) == bool or type(v) == str}
             df.update(d_str) # unique_only, index, name
             df['name'] = list_hiseq_file(x, 'smp_name', 'auto') # update name
-        Config().dump(df, a.align_summary_json)        
+        Config().dump(df, a.align_summary_json)
     else:
         log.warning('qc_align_summary() skipped, no align_json')
         return None
-    
+
 
 def qc_lendist(x, hiseq_type='r1'):
     a = read_hiseq(x, hiseq_type) # for general usage
@@ -777,7 +778,7 @@ def qc_tss_enrich(x, hiseq_type='r1', bw_type='r1', **kwargs):
     $ computeMatrix referencepoint -b -R gene.bed -S in.bw -o mat.gz
     $ plotProfile -m mat.gz -o tss.png
     """
-    a = read_hiseq(x, hiseq_type) # for general usage    
+    a = read_hiseq(x, hiseq_type) # for general usage
     if not a.is_hiseq:
         log.error('qc_tss_enrich() failed, not a hiseq dir: {}'.format(x))
         return None
@@ -1038,55 +1039,65 @@ def qc_bam_fingerprint(x, hiseq_type='rn', bam_type='r1'):
 def copy_hiseq_qc(x, hiseq_type='_merge'):
     """
     Copy the following data to dest dir, for hiseq_merge module
-    The SHA-256 value of project_dir (first 7-character) was used to mark duplicate smp_names 
-    
+    The SHA-256 value of project_dir (first 7-character) was used to mark duplicate smp_names
+
     - report_html, data/
     - trim_summary_json
     - align_summary_json
     - dup_summary_json # in align_summary_json
     - frip_json
-    - lendist_csv 
-    - tss_enrich_png 
-    - genebody_enrich_png 
-    - peak_overlap_png 
-    - bam_cor_heatmap_png 
+    - lendist_csv
+    - tss_enrich_png
+    - genebody_enrich_png
+    - peak_overlap_png
+    - bam_cor_heatmap_png
     - bam_cor_pca_png
-    
+
     Parameters
     x  :  str
         path to the hiseq_merge dir
-    keys : str 
+    keys : str
         key name of the file, in config
-    dest : str 
+    dest : str
         path to the directory, saving files
     """
+    log.info('copy hiseq qc files ...')
     key_list = ['config_yaml', 'report_html', 'trim_summary_json',
-        'align_summary_json', 
+        'align_summary_json',
         'dup_summary_json', 'frip_json', 'lendist_csv', 'tss_enrich_png',
         'genebody_enrich_png', 'peak_overlap_png', 'bam_cor_heatmap_png',
         'bam_cor_pca_png']
     a = read_hiseq(x, hiseq_type) # for general usage
+    hiseq_list = list_hiseq_file(x, 'hiseq_list', 'auto')
     # copy files to project_dir/data/
-    for s in a.indir:
+    for s in hiseq_list:
+        if not is_hiseq_dir(s):
+            continue # skip
         b = read_hiseq(s)
-        src_name = b.smp_name #
-        src_outdir = b.outdir #
+        src_name = list_hiseq_file(s, 'smp_name', 'auto')
+        src_outdir = list_hiseq_file(s, 'outdir', 'auto')
+        src_name = getattr(b, 'smp_name', None) #
+        src_outdir = getattr(b, 'outdir', None) #
         src_tag = hash_string(src_outdir)[:7] # first-7-character
         for key in key_list:
-            src_list = list_hiseq_file(s, key, b.hiseq_type)
-            if src_list is None:
-                log.info('hiseq_dir missing {} in {}'.format(key, s))
+            src_file = list_hiseq_file(s, key, b.hiseq_type)
+            if src_file is None:
+#                 log.info('hiseq_dir missing {} in {}'.format(key, s))
                 continue # skip
-            for src in src_list: # multiple files
+            # convert str to list
+            if isinstance(src_file, str):
+                src_file = [src_file]
+            for src in src_file: # multiple files
                 if src is None: continue
+                if not os.path.exists(src): continue
                 dest_dir = os.path.join(a.data_dir, src_name+'.'+src_tag)
                 check_path(dest_dir)
                 copy_file(src, dest_dir) # report.html
                 # if report/data
                 src_data_dir = os.path.join(os.path.dirname(src), 'data')
                 dest_data_dir = os.path.join(dest_dir, 'data')
+                check_path(dest_data_dir)
                 if os.path.exists(src_data_dir) and not os.path.exists(dest_data_dir):
                     copy_dir(src_data_dir, dest_data_dir)
-            
-            
-            
+
+    

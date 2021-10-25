@@ -10,27 +10,10 @@ cnr_r1, cnr_rn, ...
 import os
 import pathlib
 import argparse
-from multiprocessing import Pool
-from hiseq.cnr.cnr_rn import CnrRn
 from hiseq.cnr.cnr_rp import CnrRp
-from hiseq.utils.file import (
-    check_fx_args, check_path, symlink_file, file_abspath, file_prefix,
-    file_exists, check_fx_paired, fx_name, list_file, list_dir, copy_file, copy_dir
-)
-from hiseq.utils.utils import (
-    log, update_obj, Config, get_date, init_cpu, print_dict, read_hiseq,
-    find_longest_common_str, is_hiseq_dir, list_hiseq_file
-)
-from hiseq.cnr.utils import (
-    hiseq_bam2bw,
-    cnr_call_peak, cnr_merge_bam, qc_lendist, qc_frip, 
-    qc_bam_cor, qc_peak_idr, qc_peak_overlap, qc_bam_fingerprint, 
-    qc_tss_enrich, qc_genebody_enrich, cnr_bw_compare, 
-    copy_hiseq_qc
-)
-from hiseq.utils.genome import Genome
-from hiseq.align.align_index import AlignIndex, check_index_args
-
+from hiseq.utils.file import check_path, file_abspath, list_dir
+from hiseq.utils.utils import log, update_obj, Config, is_hiseq_dir
+from hiseq.cnr.utils import copy_hiseq_qc
 
 
 class CnrMerge(object):
@@ -43,68 +26,7 @@ class CnrMerge(object):
         Config().dump(self.__dict__, self.config_yaml) # save config
         Config().dump({'indir': self.indir}, self.indir_json) # save dir list
         copy_hiseq_qc(self.project_dir) # copy files, config
-        
-        
-
-#     def prepare_files(self):
-#         # ip - bam,bw
-#         ra = read_hiseq(self.ip_dir, 'rn')
-#         symlink_file(ra.bam, self.ip_bam)
-#         symlink_file(ra.bw, self.ip_bw)
-#         # input - bam,bw
-#         rb = read_hiseq(self.input_dir, 'rn')
-#         if rb.is_hiseq:
-#             symlink_file(rb.bam, self.input_bam)
-#             symlink_file(rb.bw, self.input_bw)
-    
-    
-#     def run_rx(self):
-#         """
-#         Run ip over input (IgG), for quality control
-#         """
-#         # ip-over-input
-#         cnr_bw_compare(self.project_dir, 'rx') # generate bw, ip.over.input
-#         cnr_call_peak(self.project_dir, 'rx') # call peak
-#         # cnr_call_motifs(self.project_dir, 'rx') # to-do
-#         # qc - enrich
-#         qc_tss_enrich(self.project_dir, 'rx')
-#         qc_genebody_enrich(self.project_dir, 'rx')
-#         # qc - bam cor
-#         qc_bam_cor(self.project_dir, 'rx')
-#         # qc - fingerprint
-#         qc_bam_fingerprint(self.project_dir, hiseq_type='rx', bam_type='rn')
-#         # qc - motifs-fingerprint
-        
-    
-#     def run_ip_only(self):
-#         """
-#         copy ip files to rx directory: bam,bw,qc
-#         """
-#         # ip - bam,bw
-#         ra = read_hiseq(self.ip_dir, 'rn')
-#         symlink_file(a.peak, self.peak)
-#         symlink_file(a.peak_seacr, self.peak_seacr)
-#         symlink_file(a.peak_seacr_top001, self.peak_seacr_top001)
-#         # ip - qc
-#         symlink_file(a.tss_enrich_png, self.tss_enrich_png)
-#         symlink_file(a.genebody_enrich_png, self.genebody_enrich_png)
-#         symlink_file(a.bam_fingerprint_png, self.bam_fingerprint_png)
-
-            
-#     def run(self):
-#         # 1. save config
-#         Config().dump(self.__dict__, self.config_yaml)
-#         # 2. run CnrRn
-#         self.run_rn()
-#         # 3. run CnrRx
-#         self.prepare_files()
-#         if self.input_fq1 is None:
-#             print('!ip - only, ...')
-#             self.run_ip_only()
-#         else:
-#             self.run_rx()
-#         # 4. generate report
-#         CnrRp(self.project_dir).run()
+        CnrRp(self.outdir).run() # generate report
 
 
 class CnrMergeConfig(object):
@@ -122,9 +44,10 @@ class CnrMergeConfig(object):
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'cnr_merge'
         if self.outdir is None:
-            self.outdir = str(pathlib.Path.cwd())
+            self.outdir = os.path.join(str(pathlib.Path.cwd()), 'hiseq_merge')
+        self.indir = file_abspath(self.indir)
         self.outdir = file_abspath(self.outdir)
-        self.indir = self.parse_dir(self.indir)
+        self.hiseq_list = self.parse_dir(self.indir)
         self.init_files()
     
     
@@ -132,8 +55,7 @@ class CnrMergeConfig(object):
         """
         Update indir, for cnr_r1, cnr_rn, cnr_rx, ...
         level-1:
-        level-2:
-        
+        level-2:        
         indir could be dir or a list of dirs saving in a file
         """
         out = []
@@ -147,17 +69,18 @@ class CnrMergeConfig(object):
                 if isinstance(d, list):
                     out += d
             elif os.path.isfile(x):
+                d = []
                 with open(x) as r:
                     for line in r:
                         line = line.strip()
                         if line.startswith('#') or len(line) == 0:
                             continue
-                        d = line.strip().split(' ')
-                out = [parse_dir(i) for i in d]
+                        d.append(line.strip().split(' ')[0])
+                out = [j for i in d for j in self.parse_dir(i)]
             else:
                 pass
         elif isinstance(x, list):
-            out = [parse_dir(i) for i in x]
+            out = [j for i in x for j in self.parse_dir(i)]
         else:
             pass
         return out
@@ -204,50 +127,26 @@ def get_args():
     """
     example = '\n'.join([
         'Examples:',
-        '1. Run pipeline for design.yaml, with different parameters',
-        '$ python cnr_rx.py -d design.yaml -g dm6 -o results',
-        '2. Run pipeline with different parameters',
-        '$ python cnr_rx.py -d design.yaml -g dm6 -o results --extra-index te',
+        '1. Organize multiple hiseq dirs (cnr)',
+        '$ python hiseq_merge.py -o ',
     ])
     parser = argparse.ArgumentParser(
-        prog='cnr_rx',
-        description='cnr_rx: for multiple groups of PE reads',
+        prog='hiseq_merge',
+        description='hiseq_merge: merge multiple hiseq dirs',
         epilog=example,
         formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument('-d', '--design', required=True,
-        help='The file saving fastq files config; generated by cnr_rd.py')
-    parser.add_argument('-g', '--genome', default=None,
-        choices=['dm3', 'dm6', 'hg19', 'hg38', 'mm9', 'mm10'],
-        help='Reference genome : dm3, dm6, hg19, hg39, mm9, mm10, default: dm6')
-    parser.add_argument('-x', '--extra-index', dest="extra_index",
-        help='Provide alignment index (bowtie2)')
-    parser.add_argument('--bed', '--gene-bed', dest='gene_bed', default=None,
-        help='The BED or GTF of genes, for TSS enrichment analysis')
-    parser.add_argument('--trimmed', action='store_true',
-        help='specify if input files are trimmed')
-    parser.add_argument('--cut', action='store_true', 
-        help='Cut reads to 50nt, equal to: --cut-to-length 50 --recursive')
-
-    # optional arguments - 1
-    parser.add_argument('-p', '--threads', default=1, type=int,
-        help='Number of threads to launch, default [1]')
-    parser.add_argument('-j', '--parallel-jobs', dest='parallel_jobs',
-        default=1, type=int,
-        help='Number of jobs run in parallel, default: [1]')
-    parser.add_argument('--overwrite', action='store_true',
+    parser.add_argument('-i', '--indir', nargs='+', required=True,
+        help='hiseq project directories')
+    parser.add_argument('-o', '--outdir', default=None,
+        help='Directory saving results, default: [./hiseq_merge]')
+    parser.add_argument('-f', '--overwrite', action='store_true',
         help='if spcified, overwrite exists file')
-
-    parser.add_argument('--cut-to-length', dest='cut_to_length',
-        default=0, type=int,
-        help='cut reads to specific length from tail, default: [0]')
-    parser.add_argument('--recursive', action='store_true',
-        help='trim adapter recursively')
     return parser
 
 
 def main():
     args = vars(get_args().parse_args())
-    CnrRx(**args).run()
+    CnrMerge(**args).run()
 
 
 if __name__ == '__main__':
