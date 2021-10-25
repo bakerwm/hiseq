@@ -2,7 +2,7 @@
 *.pyc
 build/
 .ipynb_checkpoints
-*.ipynb 
+.ipynb 
 
 # Setuptools distribution folder
 /dist/
