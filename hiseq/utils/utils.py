@@ -178,7 +178,7 @@ def is_hiseq_dir(x, hiseq_type=True):
         a = read_hiseq(x)
         k = False # init
         if a.is_hiseq:
-            if isinstance(hiseq_type, str):        
+            if isinstance(hiseq_type, str):
                 k = any([
                     a.hiseq_type == hiseq_type,
                     a.hiseq_type.startswith(hiseq_type),
@@ -212,15 +212,18 @@ def list_hiseq_file(x, keys='bam', hiseq_type='r1'):
         see: HiseqReader() for details; default: ['r1']
     """
     out = []
-    prj_dirs = list_hiseq_dir(x, hiseq_type) # all dirs
-    for d in prj_dirs:
-        a = read_hiseq(d)
-        out.append(getattr(a, keys, None))
+    dirs = list_hiseq_dir(x, hiseq_type) # all dirs
+    if len(dirs) > 0:
+        for i in dirs:
+            a = read_hiseq(i)
+            out.append(getattr(a, keys, None))
+    # to str !!!
+    if len(out) == 1:
+        out = out[0]
     return out
 
 
-
-def list_hiseq_dir(x, hiseq_type='r1'):
+def list_hiseq_dir(x, hiseq_type='auto'):
     """
     Return the project_dir of hiseq
 
@@ -231,59 +234,50 @@ def list_hiseq_dir(x, hiseq_type='r1'):
 
     hiseq_type:  str
         Type of the hiseq, ['r1', 'rn', 'rx', 'rt', 'rp']
-        see: HiseqReader() for details; default: ['r1']
+        see: HiseqReader() for details; default: ['r1'],
     """
     a = read_hiseq(x)
     out = []
     if a.is_hiseq:
-        if hiseq_type.endswith('r1'):
-            if a.is_hiseq_r1:
-                out.append(x)
-            elif a.is_hiseq_rn:
-                # ATACseq; CnR, ChIPseq, ... !!!!to-do
-                out = a.rep_list
-            elif a.is_hiseq_rx:
-                if a.hiseq_type in ['atacseq_rx']:
-                    dir_list = list_dir(a.project_dir, include_dir=True)
-                    for i in dir_list:
-                        out.extend(list_hiseq_dir(i, 'r1'))
-                else:
-                    if a.hiseq_type in ['cnr_rx', 'chipseq_rx']:
-                        d1, d2 = (a.ip_dir, a.input_dir)
-                    elif a.hiseq_type in ['rnaseq_rx']:
-                        d1, d2 = (a.mut_dir, a.wt_dir)
-                    else:
-                        d1 = d2 = None
-                    r1a = list_hiseq_dir(d1, 'r1')
-                    r1b = list_hiseq_dir(d2, 'r1')
-                    out = r1a + r1b
+        # update hiseq_type
+        if isinstance(hiseq_type, str):
+            if(hiseq_type == 'auto'):
+                hiseq_type = a.hiseq_type # auto
+        if any([a.hiseq_type.endswith(i) for i in ['r1', 'rp', 'merge', 'alignment']]):
+            out = [x]
+        elif a.hiseq_type.endswith('rn'):
+            out = [x] # add rn
+            r1 = getattr(a, 'rep_list', None)
+            if isinstance(r1, list):
+                out += r1 # add r1
+        elif a.hiseq_type.endswith('rx'): 
+            if a.hiseq_type.startswith('atac_'):
+                out = list_dir(x, include_dir=True)
+                # out = [i for i in out if is_hiseq_dir(i)]
             else:
-                pass
-        elif hiseq_type.endswith('rn'):
-            if a.is_hiseq_rn:
-                out.append(x)
-            elif a.is_hiseq_rx:
-                if a.hiseq_type in ['atacseq_rx']:
-                    # list all directories in project
-                    dir_list = list_dir(a.project_dir, include_dir=True)
-                    for i in dir_list:
-                        out.extend(list_hiseq_dir(i, 'rn'))
+                # for rn dirs
+                rn = []
+                if any([a.hiseq_type.startswith(i) for i in ['cnr', 'cnt', 'chip']]):
+                    kt = ['ip_dir', 'input_dir']
+                elif a.hiseq_type.startswith('rnaseq_'):
+                    kt = ['wt_dir', 'mut_dir']
                 else:
-                    if a.hiseq_type in ['cnr_rx', 'chipseq_rx']:
-                        out = (a.ip_dir, a.input_dir)
-                    elif a.hiseq_type in ['rnaseq_rx']:
-                        out = (a.mut_dir, a.wt_dir)
-                    else:
-                        pass
-            else:
-                pass
-        elif hiseq_type.endswith('rx'):
-            if a.is_hiseq_rx:
+                    kt = []
+                for k in kt:
+                    kd = getattr(a, k, None)
+                    if isinstance(kd, str):
+                        rn += [kd]
+                # for r1
+                r1 = [j for i in rn for j in list_hiseq_dir(i, 'r1')]
+                out = rn + r1
+                # for rx
                 out.append(x)
+                # out = [i for i in out if is_hiseq_dir(i)]
         else:
-            pass
-    out = list(set(out)) # remove duplicates
-    return sorted(out)
+            out <- [] # empty        
+        out = list(set(out)) # remove duplicates
+        out = [i for i in out if is_hiseq_dir(i, hiseq_type)] # keep hiseq
+        return sorted(out)
 
 
 def read_hiseq(x, hiseq_type=True):

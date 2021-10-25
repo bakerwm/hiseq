@@ -2,6 +2,7 @@
 *.pyc
 build/
 .ipynb_checkpoints
+*.ipynb 
 
 # Setuptools distribution folder
 /dist/
@@ -16,8 +17,4 @@ test/results/
 test/
 
 # temp files
-<<<<<<< HEAD
-# tmp.*
-=======
 tmp.*
->>>>>>> fix_atac

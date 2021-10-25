@@ -60,8 +60,9 @@ class CnrRn(object):
         cnr_call_peak(self.project_dir, 'rn')
         hiseq_bam2bw(self.project_dir, '_rn')
         cnr_call_peak(self.project_dir, 'rn')
-        # qc_trim(self.project_dir, 'rn')
-        # qc_align(self.project_dir, 'rn')
+        # qc
+        qc_trim_summary(self.project_dir, '_rn')
+        qc_align_summary(self.project_dir, '_rn')
         qc_lendist(self.project_dir, 'rn')
         qc_frip(self.project_dir, 'rn')
         qc_tss_enrich(self.project_dir, 'rn')

@@ -470,58 +470,77 @@ def qc_trim_summary(x, hiseq_type='r1'):
     # name, input, output, out_pct, rm_pct
     """
     a = read_hiseq(x, hiseq_type) # for general usage
+    if hiseq_type == 'auto':
+        hiseq_type = a.hiseq_type # auto
     if not a.is_hiseq:
-        log.error('qc_trim_summary() failed, not a hiseq_r1: {}'.format(x))
+        log.error('qc_trim_summary() skipped, not a hiseq dir: {}'.format(x))
         return None
-    # option-1: stat.yaml
-    # option-2: stat.txt
-    stat_json = getattr(a, 'trim_json', None)
-    stat_txt = getattr(a, 'trim_stat', None)
-    # format:
-    # name, total, too_short, dup, too_short2, clean, percent
-    d = {
-        'name': a.smp_name,
-        'input': 1,
-        'output': 1,
-        'out_pct': 100.0,
-        'rm_pct': 0,
-    }
-    if file_exists(stat_json):
-        df = Config().load(stat_json) # laod data
-        d['input'] = int(df.get('total', 1))
-        d['output'] = int(df.get('clean', 1))
-        d['out_pct'] = float(df.get('percent', 100.0))
-        d['rm_pct'] = 100.0 - d['out_pct']
-    elif file_exists(stat_txt):
-        try:
-            s = None # init
-            with open(stat_txt) as r:
-                for line in r:
-                    if line.startswith('#'):
-                        continue
-                    s = line.strip().split('\t')
-                    break
-            if isinstance(s, list):
-                d = {
-                    'name': s[0],
-                    'input': int(s[1]),
-                    'output': int(s[-2]),
-                    'out_pct': float(s[-1]),
-                    'rm_pct': 100.0 - float(s[-1]),
-                }
-        except IOError as e:
-            log.error(e)
+    if a.is_hiseq_r1:
+        # option-1: stat.yaml
+        # option-2: stat.txt
+        stat_json = getattr(a, 'trim_json', None)
+        stat_txt = getattr(a, 'trim_stat', None)
+        # format:
+        # name, total, too_short, dup, too_short2, clean, percent
+        d = {
+            'name': a.smp_name,
+            'input': 1,
+            'output': 1,
+            'out_pct': 100.0,
+            'rm_pct': 0,
+        }
+        if file_exists(stat_json):
+            df = Config().load(stat_json) # laod data
+            d['input'] = int(df.get('total', 1))
+            d['output'] = int(df.get('clean', 1))
+            d['out_pct'] = float(df.get('percent', 100.0))
+            d['rm_pct'] = 100.0 - d['out_pct']
+        elif file_exists(stat_txt):
+            try:
+                s = None # init
+                with open(stat_txt) as r:
+                    for line in r:
+                        if line.startswith('#'):
+                            continue
+                        s = line.strip().split('\t')
+                        break
+                if isinstance(s, list):
+                    d = {
+                        'name': s[0],
+                        'input': int(s[1]),
+                        'output': int(s[-2]),
+                        'out_pct': float(s[-1]),
+                        'rm_pct': 100.0 - float(s[-1]),
+                    }
+            except IOError as e:
+                log.error(e)
+        else:
+            log.error('trim.stat not exists: {}'.format(stat_txt))
+        # update pct
+        d['out_pct'] = float('{:.2f}'.format(d['out_pct']))
+        d['rm_pct'] = float('{:.2f}'.format(d['rm_pct']))
+        # save to new file
+        Config().dump(d, a.trim_summary_json)
+    elif a.is_hiseq_rn:
+        r1 = list_hiseq_file(x, 'trim_summary_json', 'r1')
+        d = {}
+        for i in r1:
+            di = Config().load(i)
+            d = {k:d.get(k, 0)+di.get(k, 0) for k,v in di.items() if type(v) == int} # merge values
+            d_str = {k:v for k,v in di.items() if type(v) == bool or type(v) == str}
+            d.update(d_str) # unique_only, index, name
+            d['name'] = list_hiseq_file(x, 'smp_name', 'auto') # update name
+            # update out_pct, rm_pct
+            d['out_pct'] = round(d.get('output', 0)/d.get('input', 1)*100, 2)
+            d['rm_pct'] = round(100-d.get('out_pct'), 2)
+        Config().dump(d, a.trim_summary_json)
     else:
-        log.error('trim.stat not exists: {}'.format(stat_txt))
-    # update pct
-    d['out_pct'] = float('{:.2f}'.format(d['out_pct']))
-    d['rm_pct'] = float('{:.2f}'.format(d['rm_pct']))
-    # save to new file
-    Config().dump(d, a.trim_summary_json)
+        log.warning('qc_align_summary() skipped, no align_json')
+        return None
     return d
 
 
-def qc_align_summary(x, hiseq_type='r1'):
+def qc_align_summary(x, hiseq_type='auto'):
     """
     Organize the alignment:
     add pcr_dup: a.pcr_dup_json
@@ -529,37 +548,50 @@ def qc_align_summary(x, hiseq_type='r1'):
     name, total, map, unique, multi, spikein, rRNA, unmap, dup, nodup
     """
     a = read_hiseq(x, hiseq_type) # for general usage
+    if hiseq_type == 'auto':
+        hiseq_type = a.hiseq_type # auto
     if not a.is_hiseq:
         log.error('qc_align_summary() skipped, not a rnaseq_r1 dir: {}'.format(x))
         return None
-    # spikein, rRNA, genome
-    n_total = 0
-    if file_exists(a.spikein_json):
-        sp = Config().load(a.spikein_json)
-        n_sp = sp.get('map', 0) if isinstance(sp, dict) else 0
-        n_total = sp.get('total', 0) if isinstance(sp, dict) else 0
-    else:
-        n_sp = 0
-    # pcr_dup
-    if file_exists(a.pcr_dup_json):
-        sd = Config().load(a.pcr_dup_json)
-        n_dup = sd.get('dup', 0)
-        n_nodup  = sd.get('nodup', 0)
-    else:
-        n_dup = n_nodup = 0
-    # name, total, map, unique, multi, unmap
-    if file_exists(a.align_json):
-        df = Config().load(a.align_json)
-        if n_total == 0:
-            n_total = df.get('total', 1)
-        df.update({
-            'total': n_total,
-            'spikein': n_sp,
-            'chrM': get_mito_count(a.bam),
-            'dup': n_dup,
-            'nodup': n_nodup,
-        })
-        Config().dump(df, a.align_summary_json)
+    if a.is_hiseq_r1:
+        # spikein, rRNA, genome
+        n_total = 0
+        if file_exists(a.spikein_json):
+            sp = Config().load(a.spikein_json)
+            n_sp = sp.get('map', 0) if isinstance(sp, dict) else 0
+            n_total = sp.get('total', 0) if isinstance(sp, dict) else 0
+        else:
+            n_sp = 0
+        # pcr_dup
+        if file_exists(a.pcr_dup_json):
+            sd = Config().load(a.pcr_dup_json)
+            n_dup = sd.get('dup', 0)
+            n_nodup  = sd.get('nodup', 0)
+        else:
+            n_dup = n_nodup = 0
+        # name, total, map, unique, multi, unmap
+        if file_exists(a.align_json):
+            df = Config().load(a.align_json)
+            if n_total == 0:
+                n_total = df.get('total', 1)
+            df.update({
+                'total': n_total,
+                'spikein': n_sp,
+                'chrM': get_mito_count(a.bam),
+                'dup': n_dup,
+                'nodup': n_nodup,
+            })
+            Config().dump(df, a.align_summary_json)
+    elif a.is_hiseq_rn:
+        r1 = list_hiseq_file(x, 'align_summary_json', 'r1')
+        df = {}
+        for i in r1:
+            di = Config().load(i)
+            df = {k:df.get(k, 0)+di.get(k, 0) for k,v in di.items() if type(v) == int} # merge values
+            d_str = {k:v for k,v in di.items() if type(v) == bool or type(v) == str}
+            df.update(d_str) # unique_only, index, name
+            df['name'] = list_hiseq_file(x, 'smp_name', 'auto') # update name
+        Config().dump(df, a.align_summary_json)        
     else:
         log.warning('qc_align_summary() skipped, no align_json')
         return None
