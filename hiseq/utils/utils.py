@@ -167,8 +167,7 @@ def is_supported(x=True, key=True, return_values=False):
     return out
 
 
-
-def is_hiseq_dir(x, hiseq_type=True):
+def is_hiseq_dir(x, hiseq_type='auto'):
     """
     Return True/False, if the input is hiseq dir or not
     
@@ -178,14 +177,14 @@ def is_hiseq_dir(x, hiseq_type=True):
         a = read_hiseq(x)
         k = False # init
         if a.is_hiseq:
-            if isinstance(hiseq_type, str):
+            if hiseq_type == 'auto' or hiseq_type is True:
+                k = True
+            elif isinstance(hiseq_type, str):
                 k = any([
                     a.hiseq_type == hiseq_type,
                     a.hiseq_type.startswith(hiseq_type),
                     a.hiseq_type.endswith(hiseq_type),
                 ])
-            elif isinstance(hiseq_type, bool):
-                k = hiseq_type is True
     elif isinstance(x, list):
         k = [is_hiseq_dir(i, hiseq_type) for i in x]
     else:
@@ -194,7 +193,7 @@ def is_hiseq_dir(x, hiseq_type=True):
     return k
 
 
-def list_hiseq_file(x, keys='bam', hiseq_type='r1'):
+def list_hiseq_file(x, keys='bam', hiseq_type='auto'):
     """
     Return the specific file from project_dir of hiseq
 
@@ -280,7 +279,7 @@ def list_hiseq_dir(x, hiseq_type='auto'):
         return sorted(out)
 
 
-def read_hiseq(x, hiseq_type=True):
+def read_hiseq(x, hiseq_type='auto'):
     """
     Parameters
     ---------
@@ -308,10 +307,10 @@ def read_hiseq(x, hiseq_type=True):
             ])
         else:
             pass
-        # check
-        if not k:
-            log.warning('hiseq_dir not match, expect {}, got {}'.format(
-                hiseq_type, a_hiseq_type))
+#         # check
+#         if not k:
+#             log.warning('hiseq_dir not match, expect {}, got {}'.format(
+#                 hiseq_type, a_hiseq_type))
     else:
         # raise ValueError('not a hiseq dir: {}'.format(x))
         # log.warning('not a hiseq dir: {}'.format(x))
@@ -360,8 +359,8 @@ class HiseqReader(object):
                 self.is_hiseq_rt = a.endswith('_rt') # !!
                 self.is_hiseq_rp = a.endswith('_rp') # report
                 self.is_hiseq_merge = a.endswith('_merge') # merge multiple dirs
-            else:
-                log.warning('unknown hiseq dir: {}'.format(self.x))
+#             else:
+#                 log.warning('unknown hiseq dir: {}'.format(self.x))
         else:
             # log.warning('not a hiseq dir: {}'.format(self.x))
             pass # reduce message log

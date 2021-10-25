@@ -24,12 +24,14 @@ from hiseq.atac.atac import get_args as add_atac_args
 from hiseq.cnr.cnr import Cnr
 from hiseq.cnr.cnr import get_args as add_cnr_args
 
+from hiseq.cnr.cnr_merge import CnrMerge
+from hiseq.cnr.cnr_merge import get_args as add_hiseq_merge_args
+
 from hiseq.rnaseq.rnaseq import Rnaseq
 from hiseq.rnaseq.rnaseq import get_args as add_rnaseq_args
 
 from hiseq.rnaseq.rnaseq_salmon import RnaseqSalmonPipe
 from hiseq.rnaseq.rnaseq_salmon import get_args as add_rnaseq_salmon_args
-
 
 from hiseq.chipseq.chipseq import Chipseq
 from hiseq.chipseq.chipseq import get_args as add_chipseq_args
@@ -209,6 +211,14 @@ class Hiseq(object):
         args = self.init_args(add_cnr_args())
         Cnr(**args).run()
 
+        
+    def hiseq_merge(self):
+        """
+        Merge multiple hiseq dirs
+        """
+        args = self.init_args(add_hiseq_merge_args())
+        CnrMerge(**args).run()
+        
         
     def chipseq(self):
         args = self.init_args(add_chipseq_args())
