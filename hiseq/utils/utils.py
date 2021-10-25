@@ -19,6 +19,8 @@ import collections
 import subprocess
 import random
 import string
+import hashlib # hash functions
+import uuid # generate a random number
 from PIL import Image # pillow
 from datetime import datetime
 from dateutil import tz
@@ -51,6 +53,45 @@ def find_longest_common_str(s1, s2):
             type(s1).__name__, type(s2).__name__))
         out = None
     return out
+
+
+################################################################################
+# ## for hash string; version with random number
+# see: https://www.pythoncentral.io/hashing-strings-with-python/
+#
+# equivalent in R
+# > digest::digest(s, algo = "sha256", serialize=FALSE, raw=FALSE)
+
+# def hash_string(s):
+#     salt = uuid.uuid4().hex # random number
+#     return hashlib.sha256(salt.encode() + s.encode()).hexdigest() + ':' + salt
+
+# def check_hashed_string(hash_s, s):
+#     hs, salt = hash_s.split(':')
+#     return hs == hashlib.sha256(salt.encode() + s.encode()).hexdigest()
+ 
+
+## for hash string; version with random number
+def hash_string(s):
+    return hashlib.sha256(s.encode()).hexdigest()
+
+
+def check_hash_string(hash_s, s):
+    """
+    Parameters:
+    hash_s  : str
+        The SHA-256 value for the input string 
+        Also, could be the first few characters of the SHA-256 value
+        Suggest useing the full version (64 characters) for checking
+        
+    s  : str
+        The string for checking
+    """
+    # hash_s, could be the first few characters, (8?)
+    hs = hash_string(s)
+    return hs.startswith(hash_s) or hs == s
+################################################################################
+
 
 
 
@@ -124,6 +165,33 @@ def is_supported(x=True, key=True, return_values=False):
         type(x).__name__))
         out = False
     return out
+
+
+
+def is_hiseq_dir(x, hiseq_type=True):
+    """
+    Return True/False, if the input is hiseq dir or not
+    
+    x could be str, list
+    """
+    if isinstance(x, str):
+        a = read_hiseq(x)
+        k = False # init
+        if a.is_hiseq:
+            if isinstance(hiseq_type, str):        
+                k = any([
+                    a.hiseq_type == hiseq_type,
+                    a.hiseq_type.startswith(hiseq_type),
+                    a.hiseq_type.endswith(hiseq_type),
+                ])
+            elif isinstance(hiseq_type, bool):
+                k = hiseq_type is True
+    elif isinstance(x, list):
+        k = [is_hiseq_dir(i, hiseq_type) for i in x]
+    else:
+        log.error('x is {}, expect str, list'.format(type(x).__name__))
+        k = None
+    return k
 
 
 def list_hiseq_file(x, keys='bam', hiseq_type='r1'):
@@ -297,6 +365,7 @@ class HiseqReader(object):
                 self.is_hiseq_rx = a.endswith('_rx') # group vs group
                 self.is_hiseq_rt = a.endswith('_rt') # !!
                 self.is_hiseq_rp = a.endswith('_rp') # report
+                self.is_hiseq_merge = a.endswith('_merge') # merge multiple dirs
             else:
                 log.warning('unknown hiseq dir: {}'.format(self.x))
         else:
@@ -982,4 +1051,31 @@ def download_file(url, file):
             log.error('failed downloading file: {}'.format(url))
         if os.path.exists(file):
             log.info('saving file: {}'.format(file))
-            
+
+        
+def url_to_link(url, name=None, format='markdown'):
+    """
+    Convert url to link, in different format
+    markdown, html
+    
+    markdown: [name](url) 
+    html: <a href=url target='_blank'>name</a>
+    """
+    # support str, list
+    if isinstance(url, str):
+        if not isinstance(name, str):
+            name = url
+        if format == 'markdown':
+            out = '[{name}]({url})'.format(name=name, url=url)
+        elif format == 'html':
+            out = "<a href={url} target='_blank'>{name}</a>".format(name=name, url=url)
+        else:
+            out = url
+    elif isinstance(url, list):
+        if not (isinstance(name, list) and len(url) == len(name)):
+            name = url
+        out = [url_to_link(i, n, format) for i,n in zip(url, name)]
+    else:
+        log.error('url illegal, str, list expect, got {}'.format(type(url).__name__))
+        out = None
+    return out

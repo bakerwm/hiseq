@@ -81,15 +81,15 @@ class TrackFile(object):
         self.fname, self.fext = os.path.splitext(os.path.basename(self.s))
         self.fname = self.sanitize(self.fname)
         self.label = self.sanitize(self.fname, self.label_rm_list)
-        self.ftype = self.filetype(self.fext)
+        self.ftype = self.filetype()
         # self.fcolor = self.pick_color(self.fname)
         self.subgroup = self.get_subgroup() # blank dict
         self.color = self.get_color() # '255,0,0'
         self.track = self.signal_track() if self.ftype in \
-            ['bigWig', 'bedGraph'] else self.region_track()
+            ['bigWig', 'bedGraph', 'bigNarrowPeak'] else self.region_track()
 
 
-    def filetype(self, s):
+    def filetype(self):
         """Determine the type of file
         Parameters
         ----------
@@ -99,8 +99,9 @@ class TrackFile(object):
         - bigWig: bigWig, bigwig, bw
         - bigBed: bigBed, bigbed, bb
         - bedGraph: bedGraph, bedgraph, bg
+        - bigNarrowPeak: bigNarrowPeak, np
         """
-        s = s.lstrip('.').lower()
+        ext = self.fext.lstrip('.').lower()
         # predefined ftypes
         ftypes = {
             'bw': 'bigWig',
@@ -108,9 +109,12 @@ class TrackFile(object):
             'bb': 'bigBed',
             'bigbed': 'bigBed',
             'bg': 'bedGraph',
-            'bdg': 'bedGraph'
+            'bdg': 'bedGraph',
         }
-        return ftypes.get(s, None)
+        ft = ftypes.get(ext, None)
+#         if self.s.endswith('.narrowPeak.bb'):
+#             ft = 'bigNarrowPeak'
+        return ft
     
     
     def is_track_file(self):
@@ -118,8 +122,9 @@ class TrackFile(object):
         - bigWig
         - bigBed
         - bedGraph
+        - bigNarrowPeak
         """
-        return any([self.is_bw(), self.is_bb(), self.is_bg()])
+        return any([self.is_bw(), self.is_bb(), self.is_bg(), self.is_bigNarrowPeak])
 
 
     def is_bw(self):
@@ -148,6 +153,10 @@ class TrackFile(object):
         """
         return self.ftype == 'bedGraph'
 
+    
+    def is_bigNarrowPeak(self):
+        return self.ftype == 'bigNarrowPeak'
+        
 
     def sanitize(self, s, remove_list=None):
         """

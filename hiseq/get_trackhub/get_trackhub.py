@@ -233,6 +233,7 @@ class TrackHub():
         composite_subgroup = subgroups_config.get('subgroups', None)
         bw_files = subgroups_config.get('bw_files', [])
         bb_files = subgroups_config.get('bb_files', [])
+        bigNarrowPeak_files = subgroups_config.get('bigNarrowPeak_files', [])
         # For subgroups:
         # required arguments:
         # 1. subgroups, YAML file, saving subgroups structure
@@ -304,17 +305,27 @@ class TrackHub():
             signal_view = None
 
         # add region view (bigBed)
-        region_view = trackhub.ViewTrack(
-            name=composite_name+'_region',
-            view='regions',
-            visibility='dense',
-            tracktype='bigBed',
-            short_label='Region')
         if len(bb_files) > 0:
+            region_view = trackhub.ViewTrack(
+                name=composite_name+'_region',
+                view='regions',
+                visibility='dense',
+                tracktype='bigBed',
+                short_label='Region')
+            composite.add_view(region_view)
+        # add region view (bigNarrowPeak)
+        elif len(bigNarrowPeak_files) > 0:
+            region_view = trackhub.ViewTrack(
+                name=composite_name+'_region',
+                view='regions',
+                visibility='dense',
+                tracktype='bigNarrowPeak',
+                short_label='Region')
             composite.add_view(region_view)
         else:
             region_view = None
 
+            
         # output
         return (composite, subgroups_dict, signal_view, region_view)
 
@@ -362,7 +373,7 @@ class TrackHub():
                 self.trackdb.add_tracks(composite)
                 # add bigWig files
                 for bw in subgroups_config.get('bw_files', []):
-                    print('!AAAA-2', self.colorPal)
+                    # print('!AAAA-2', self.colorPal)
                     tk = TrackFile(bw,
                         subgroups=subgroups_dict,
                         colorDim=self.colorDim, # dimX, dimY, dimA, ...
@@ -701,13 +712,16 @@ class TrackHubConfig(object):
                         [f_lv2.extend([i for i in list_dir(d)
                             if TrackFile(i).is_track_file()]) for d in d_lv1]
                     f_lv1.extend(f_lv2)
+                    # print('!AAAA-1', f_lv1)
                     # output
                     d_grp = {
                         'name': grp_name,
                         'subgroups': subgrp_lv1,
                         'bw_files': [i for i in f_lv1 if TrackFile(i).is_bw()],
-                        'bb_files': [i for i in f_lv1 if TrackFile(i).is_bb()]
+                        'bb_files': [i for i in f_lv1 if TrackFile(i).is_bb()],
+                        'bigNarrowPeak_files': [i for i in f_lv1 if TrackFile(i).is_bigNarrowPeak()],
                     }
+                    # print('!AAAA-2', d_grp)
                     # check
                     if len(d_grp.get('bw_files')) == 0:
                         log.warning('bigWig files not found: {}'.format(

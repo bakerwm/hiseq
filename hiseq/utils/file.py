@@ -446,6 +446,27 @@ def symlink_file(src, dest, absolute_path=False, force=False):
     else:
         log.warning('symlink_file() failed, src not vaild: {}'.format(src))
 
+        
+def copy_dir(src, dest, force=False):
+    """Copy the whole directory
+    
+    Parameters
+    ----------
+    x : str or list
+        The file(s) to be removed 
+        
+    force : bool
+        Copy files, overwrite dest file
+    """
+    if isinstance(src, str) and isinstance(dest, str):
+        if os.path.isdir(src):
+            shutil.copytree(src, dest)
+        else:
+            log.error('src is not directory')
+    else:
+        log.error('both src and dest required str, got {}, {}'.format(
+            type(src).__name__, type(dest).__name__))
+        
 
 def copy_file(src, dest, force=False):
     """Copy file

@@ -159,7 +159,7 @@ class HubUrl(object):
         """
         d = {}
         try:
-            log.info('Parsing url: {}'.format(s))
+#             log.info('Parsing url: {}'.format(s))
             html = urlopen(s).read()
             text = BeautifulSoup(html, features='html.parser')
             x = re.split('\s', text.text)
@@ -202,25 +202,20 @@ class HubUrl(object):
         if isinstance(self.genome, str):
             genome = self.genome
         else:
-            log.info('Parsing the [genome] from URL')
+#             log.info('Parsing the [genome] from URL')
             # Parsing the hub_url webpage (plain text)
             args_hub = self.read_url(self.hub_url)
-
             # parsing the genome (hg19, hg38, dm6, ...)
             # construct the genome_url
             genome_fname = args_hub.get('genomesFile', 'genomes.txt')
             genome_url = os.path.join(os.path.dirname(self.hub_url),
                 genome_fname)
             args_genome = self.read_url(genome_url)
-
             genome = args_genome.get('genome', None)
-
             if not isinstance(genome, str):
                 raise ValueError('genome failed, illegal file: {}'.format(
                     genome_url))
-
-            log.info('Got [genome={}]'.format(genome))
-
+#             log.info('Got [genome={}]'.format(genome))
         return genome
 
 
