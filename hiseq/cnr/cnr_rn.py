@@ -39,16 +39,16 @@ class CnrRn(object):
     def __init__(self, **kwargs):
         self = update_obj(self, kwargs, force=True)
         self.init_args()
-        self.init_files()
 
 
     def init_args(self):
         args_local = CnrRnConfig(**self.__dict__)
         self = update_obj(self, args_local.__dict__, force=True)
-        self.init_files()
+#         self.init_files()
 
 
     def init_files(self): # from rep_list
+        # run this cmd, after r1
         self.bam_list = list_hiseq_file(self.project_dir, 'bam', 'r1')
         self.bw_list = list_hiseq_file(self.project_dir, 'bw', 'r1')
         self.peak_list = list_hiseq_file(self.project_dir, 'peak', 'r1')
@@ -75,25 +75,26 @@ class CnrRn(object):
 
 
     def run_pipe_r1(self): # for rep_list == 1
-        log.warning('merge() skipped, Only 1 replicate detected')
-        k_list = [
-            'bam', 'bw', 'peak', 'peak_seacr', 'peak_seacr_top001',
-            'align_scale_json', 'trim_json', 'align_json'
-        ]
-        # get the replist
-        rep_dir = self.rep_list[0] # first one
-        for k in k_list:
-            k_from = list_hiseq_file(rep_dir, k, 'r1')
-            # k_to = list_hiseq_file(self.project_dir, k, 'rn')
-            k_to = getattr(self, k)
-            symlink_file(k_from[0], k_to)
-        # copy all files in qc dir
-        rep_qc_dir = list_hiseq_file(rep_dir, 'qc_dir', 'r1')
-        rep_qc_files = list_dir(rep_qc_dir[0], include_dir=True)
-        for f in rep_qc_files:
-            symlink_file(f, self.qc_dir) # to qc_dir
-        # update: bam index
-        Bam(self.bam).index()
+        cnr_merge_bam(self.project_dir, 'rn')
+#         log.warning('merge() skipped, Only 1 replicate detected')
+#         k_list = [
+#             'bam', 'bw', 'peak', 'peak_seacr', 'peak_seacr_top001',
+#             'align_scale_json', 'trim_json', 'align_json', 'pcr_dup_json'
+#         ]
+#         # get the replist
+#         rep_dir = self.rep_list[0] # first one
+#         for k in k_list:
+#             k_from = list_hiseq_file(rep_dir, k, 'r1')
+#             # k_to = list_hiseq_file(self.project_dir, k, 'rn')
+#             k_to = getattr(self, k)
+#             symlink_file(k_from, k_to) # update list_hiseq_file
+#         # copy all files in qc dir
+#         rep_qc_dir = list_hiseq_file(rep_dir, 'qc_dir', 'r1')
+#         rep_qc_files = list_dir(rep_qc_dir, include_dir=True) # update list_hiseq_file
+#         for f in rep_qc_files:
+#             symlink_file(f, self.qc_dir) # to qc_dir
+#         # update: bam index
+#         Bam(self.bam).index()
 
 
     def run_single_fx(self, i):
@@ -137,11 +138,14 @@ class CnrRn(object):
         Config().dump(self.__dict__, self.config_yaml)
         # 2. run CnrR1
         self.run_multi_fx()
+        self.init_files() # update files for rep_list
         # 3. run CnrRn, merge
         if len(self.rep_list) == 1:
             self.run_pipe_r1()
         else:
             self.run_pipe_rn()
+
+        self.init_files()
         # 4. generate reprot
         CnrRp(**self.__dict__).run()
 

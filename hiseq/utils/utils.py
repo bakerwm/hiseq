@@ -212,7 +212,7 @@ def list_hiseq_file(x, keys='bam', hiseq_type='auto'):
     """
     out = []
     dirs = list_hiseq_dir(x, hiseq_type) # all dirs
-    if len(dirs) > 0:
+    if dirs is not None:
         for i in dirs:
             a = read_hiseq(i)
             out.append(getattr(a, keys, None))

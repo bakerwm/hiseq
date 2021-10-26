@@ -87,6 +87,8 @@ class CnrConfig(object):
             'input': None, # str
             'ip_fq1': None,
             'ip_fq2': None,
+            'threads': 1,
+            'parallel_jobs': 1
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'cnr_ra'
