@@ -267,16 +267,24 @@ def list_hiseq_dir(x, hiseq_type='auto'):
                     if isinstance(kd, str):
                         rn += [kd]
                 # for r1
-                r1 = [j for i in rn for j in list_hiseq_dir(i, 'r1')]
+                try:
+                    r1 = [j for i in rn for j in list_hiseq_dir(i, 'r1')]
+                except:
+                    r1 = []
+                    # print('!B-1', rn)
                 out = rn + r1
                 # for rx
                 out.append(x)
                 # out = [i for i in out if is_hiseq_dir(i)]
         else:
-            out <- [] # empty        
+            out = [] # empty        
         out = list(set(out)) # remove duplicates
         out = [i for i in out if is_hiseq_dir(i, hiseq_type)] # keep hiseq
-        return sorted(out)
+        # fix None
+        out = [i for i in out if i is not None]
+#         if out is None:
+#             out = []
+    return sorted(out)
 
 
 def read_hiseq(x, hiseq_type='auto'):

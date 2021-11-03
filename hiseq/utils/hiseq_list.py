@@ -44,7 +44,11 @@ def hiseq_list(dirs, **kwargs):
         elif isinstance(args['name'], str):
             out = list_hiseq_file(dirs, args['name'], args['hiseq_type'])
         else:
-            out = list_hiseq_dir(dirs, args['hiseq_type'])
+            try:
+                out = list_hiseq_dir(dirs, args['hiseq_type'])
+            except:
+                out = []
+                print('!A-3', dirs)
         # convert to list
         if isinstance(out, str):
             out = [out]
@@ -94,9 +98,10 @@ def main():
     dirs = list_dirs(dirs) # update, root/subdir
     out = hiseq_list(dirs, **args)
     print('\n'.join(out))
-    
-    
+
+
 if __name__ == '__main__':
     main()
+
 
 #
