@@ -8,6 +8,7 @@ analysis-module:
 """
 
 import os
+import sys
 import re
 import glob
 import shutil
@@ -104,6 +105,11 @@ def cnr_trim(x, hiseq_type='r1'):
     fq1, fq2 = a.raw_fq_list
     clean_fq1, clean_fq2 = a.clean_fq_list
     # whether to trim or not
+    try:
+        a.trimmed
+    except:
+        print('!A-4', x)
+        return None
     if a.trimmed:
         symlink_file(fq1, clean_fq1)
         symlink_file(fq2, clean_fq2)
@@ -363,6 +369,11 @@ def hiseq_pcr_dup(x, hiseq_type='r1'):
     out = None
     j1 = list_hiseq_file(x, 'align_json', hiseq_type)
     j2 = list_hiseq_file(x, 'align_scale_json', hiseq_type)
+    try:
+        all([os.path.exists(i) for i in [j1, j2]])
+    except:
+        print('!A-3', j1, j2)
+        sys.exit(1)
     # if isinstance(j1, list) and isinstance(j2, list):
     if all([os.path.exists(i) for i in [j1, j2]]):
         d1 = Config().load(j1)
@@ -373,7 +384,10 @@ def hiseq_pcr_dup(x, hiseq_type='r1'):
             'nodup': d2.get('map', 0),
             'dup': d1.get('map', 0) - d2.get('map', 0)
         }
-        out['dup_pct'] = round(out['dup']/out['total'], 4)
+        try:
+            out['dup_pct'] = round(out['dup']/out['total'], 4)
+        except ZeroDivisionError:
+            out['dup_pct'] = 0
         # Config().dump(out, a.dup_summary_json)
         Config().dump(out, a.pcr_dup_json)
     else:
@@ -1049,6 +1063,8 @@ def qc_bam_fingerprint(x, hiseq_type='rn', bam_type='r1'):
         log.error('qc_bam_fingerprint() failed, not a hiseq dir: {}'.format(x))
         return None
     bam_list = list_hiseq_file(x, 'bam', bam_type)
+    if isinstance(bam_list, str):
+        bam_list = [bam_list]
     args = {
         'bam_list': bam_list,
         'outdir': a.qc_dir,

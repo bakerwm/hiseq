@@ -96,7 +96,9 @@ class CnrRd(object):
 #             return None
         f_list = self.list_fq_files()
         # check ip
-        if not isinstance(self.ip, list):
+        if isinstance(self.ip, str):
+            self.ip = [self.ip]
+        elif not isinstance(self.ip, list):
             log.error('unknown ip, expect list, got {}'.format(
                 type(self.ip).__name__))
             return None
