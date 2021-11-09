@@ -213,7 +213,7 @@ class TrimSmRNAR1(object):
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'trim_r1'
-        self.prefix = fx_name(self.fq1, fix_pe=True, fix_rep=True)
+        self.prefix = fx_name(self.fq1, fix_pe=True, fix_rep=False)
         if not isinstance(self.outdir, str):
             self.outdir = str(pathlib.Path.cwd())
         self.outdir = file_abspath(self.outdir)
@@ -424,11 +424,11 @@ class TrimSmRNAR1(object):
         }
         trim = TrimR1(**args_local)
         trim.run()
-        # return trim.clean_fq1 # no ad
+        # return trim.clean_fq # no ad
         # for clean data
-        if file_exists(trim.clean_fq1):
-            symlink_file(trim.clean_fq1, self.clean_fq)
-        return trim.clean_fq1
+        if file_exists(trim.clean_fq):
+            symlink_file(trim.clean_fq, self.clean_fq)
+        return trim.clean_fq
     
     
     def parse_value(self, x):

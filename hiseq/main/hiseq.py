@@ -152,6 +152,7 @@ class Hiseq(object):
         bacteria     Check bacteria content
         
         trim         trim adapters, low-quality bases, ...
+        trim_smRNA   trim adapters, UMI, for small RNA libraries
         align        Align fastq/a files to reference genome
         quant        Count genes/features
         peak         Call peaks using MACS2
