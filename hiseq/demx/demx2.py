@@ -121,16 +121,12 @@ class Demx2(object):
         self.sample_sheet = file_abspath(self.sample_sheet)
         # check input fastq files
         self.raw_fq_list = list_fx(self.datadir, recursive=True)
-#         f1 = list_file(self.datadir, '*.fq.gz', recursive=True)
-#         f2 = list_file(self.datadir, '*.fastq.gz', recursive=True)
-#         self.raw_fq_list = f1 + f2
         if len(self.raw_fq_list) < 2:
             raise ValueError('no fastq files in: {}'.format(self.datadir))
         self.init_files()
         # read table
         self.load_table()
         # fix files
-        # self.demx_bc_shell = os.path.join(self.outdir, 'demx_bc.sh')
         self.read_count_json = os.path.join(self.outdir, 'read_count.json')
         self.demx_report = os.path.join(self.outdir, 'report.txt')
         # save part of the objects
@@ -219,7 +215,7 @@ class Demx2(object):
         check_path(self.count_dir)
         q_size = {}
         for fq in self.raw_fq_list:
-            is_r1 = re.search('_1.f(ast)?q+.gz', fq, re.IGNORECASE)
+            is_r1 = re.search('_(R)?1.f(ast)?q+.gz', fq, re.IGNORECASE)
             suffix = '_1.fq.gz' if is_r1 else '_2.fq.gz'
             prefix = fx_name(fq, fix_pe=True)
             ###################################################################
@@ -253,7 +249,6 @@ class Demx2(object):
                 if os.path.isfile(s_file):
                     log.warning('renaming skipped, file exists: {}'.format(s_file))
                 else:
-                    # os.rename(fq, s_file)
                     symlink_file(fq, s_file)
                 # count fq
                 # save read count to file: read_count/s_name.count.json

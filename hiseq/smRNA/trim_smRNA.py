@@ -213,7 +213,7 @@ class TrimSmRNAR1(object):
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'trim_r1'
-        self.prefix = fx_name(self.fq1, fix_pe=True)
+        self.prefix = fx_name(self.fq1, fix_pe=True, fix_rep=True)
         if not isinstance(self.outdir, str):
             self.outdir = str(pathlib.Path.cwd())
         self.outdir = file_abspath(self.outdir)
@@ -313,7 +313,7 @@ class TrimSmRNAR1(object):
         }
         trim = TrimR1(**args_local)
         trim.run()
-        return trim.clean_fq1 # no ad
+        return trim.clean_fq # single end
     
     
     # step-2.

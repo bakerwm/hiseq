@@ -372,7 +372,7 @@ def hiseq_pcr_dup(x, hiseq_type='r1'):
     try:
         all([os.path.exists(i) for i in [j1, j2]])
     except:
-        print('!A-3', j1, j2)
+        # print('!A-3', j1, j2)
         sys.exit(1)
     # if isinstance(j1, list) and isinstance(j2, list):
     if all([os.path.exists(i) for i in [j1, j2]]):
