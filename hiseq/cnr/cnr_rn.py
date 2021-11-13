@@ -75,7 +75,7 @@ class CnrRn(object):
 
 
     def run_pipe_r1(self): # for rep_list == 1
-        cnr_merge_bam(self.project_dir, 'rn')
+        cnr_merge_bam(self.project_dir, 'rn') # copy bam, qc_dir files
 #         log.warning('merge() skipped, Only 1 replicate detected')
 #         k_list = [
 #             'bam', 'bw', 'peak', 'peak_seacr', 'peak_seacr_top001',

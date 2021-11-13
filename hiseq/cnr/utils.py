@@ -489,7 +489,8 @@ def hiseq_bam2bw(x, hiseq_type='_r1'):
         'scaleFactor': 1.0, # force
         'normalizeUsing': 'RPGC',
         'overwrite': a.overwrite,
-        'genome_size': a.genome_size
+        'genome_size': a.genome_size,
+        'extend_read': True,
     }
     Bam2bw(**args).run()
 

@@ -12,6 +12,24 @@ How to normalize
 2. RPGC (reads per genomic content, 1x)
 3. RPKM per bin: 
 4. CPM  per bin:
+
+Example:
+
+bamCoverage -b aln.bam \
+-o out.bw \
+--binSize 20 \
+--normalizeUsing RPGC \
+--smoothLength 60 \
+--extendReads 150 \
+--centerReads \
+-p 6
+
+normalizeUsing: Possible choices: RPKM, CPM, BPM, RPGC. We will use BPM (Bins Per Million), which is similar to TPM in RNA-seq. BPM (per bin) = number of reads per bin / sum of all reads per bin (in millions).
+binSize: size of bins in bases
+smoothLength: defines a window, larger than the binSize, to average the number of reads over. This helps produce a more continuous plot.
+centerReads: reads are centered with respect to the fragment length as specified by extendReads. This option is useful to get a sharper signal around enriched regions.
+
+
 """
 
 import os
@@ -121,6 +139,7 @@ class Bam2bw(object):
             'genome_size': None,
             'scaleFactor': 1.0,
             'normalizeUsing': 'RPGC',
+            'extend_read': False,
             'blacklist': None,
             'threads': 4,
             'config_txt': os.path.join(self.outdir, 'config.txt'),
@@ -168,7 +187,11 @@ class Bam2bw(object):
         if self.blacklist is None:
             self.blacklist = Genome(self.genome).blacklist()
         self.args_bl = '--blackListFileName {}'.format(self.blacklist) if file_exists(self.blacklist) else ''
-
+        # extend reads
+        self.args_extread = '--extendReads 150' if self.extend_read else ''
+        # for chipseq
+        self.args_smooth = '--smoothLength {} --centerReads'.format(self.binsize*3)
+        
 
     def run_cmd(self, cmd, bw, bw_log):
         if os.path.exists(bw) and not self.overwrite:
@@ -194,6 +217,8 @@ class Bam2bw(object):
             '--scaleFactor {}'.format(self.scaleFactor),
             '--normalizeUsing {}'.format(self.normalizeUsing),
             self.args_bl,
+            self.args_extread,
+            self.args_smooth,
             '2> {}'.format(self.bw_log)
             ])
         cmd_txt = os.path.join(self.outdir, 'cmd_fwd.txt')
@@ -212,6 +237,8 @@ class Bam2bw(object):
             '--scaleFactor {}'.format(self.scaleFactor),
             '--normalizeUsing {}'.format(self.normalizeUsing),
             self.args_bl,
+            self.args_extread,
+            self.args_smooth,
             '2> {}'.format(self.bw_log)
         ])
         cmd_txt = os.path.join(self.outdir, 'cmd_rev.txt')
@@ -230,6 +257,8 @@ class Bam2bw(object):
             '--scaleFactor {}'.format(self.scaleFactor),
             '--normalizeUsing  {}'.format(self.normalizeUsing),
             self.args_bl,
+            self.args_extread,
+            self.args_smooth,
             '2> {}'.format(self.bw_log)
         ])
         cmd_txt = os.path.join(self.outdir, 'cmd.sh')
@@ -327,6 +356,8 @@ def get_args():
         help='Whether overwrite exists files')
     parser.add_argument('-p', '--threads', type=int, default=4,
         help='Number of threads, default: [4]')
+    parser.add_argument('-e', '--extend-read', dest='extend_read', action='store_true',
+        help='Extend the reads to fragment size, see deeptools bamCoverage')
     return parser
 
 

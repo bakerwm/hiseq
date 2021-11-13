@@ -55,9 +55,9 @@ class DemxBarcode(object):
                      fq1 | /data/1m.r1.fq.gz
                      fq2 | /data/1m.r2.fq.gz
                  PE_mode | yes     
-             bc_in_read2 | yes     
-               barcode_n_left | 0       
-              barcode_n_right | 1       
+                in_read2 | yes     
+          barcode_n_left | 0       
+         barcode_n_right | 1       
                 bc_width | 6       
              index_table | /data/index.csv
                   outdir | /data/aaa

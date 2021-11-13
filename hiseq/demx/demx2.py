@@ -409,8 +409,8 @@ def get_args():
         help='run demo (1M reads) for demostration, default: off')
     parser.add_argument('-m', '--mismatch', type=int, default=0,
         help='mismatches allowed to search index, default: [0]')
-    parser.add_argument('-x', '--barcode-in-read2', dest='barcode_in_read2',
-        action='store_true', help='barcode in read2')
+    parser.add_argument('-x', '--in-read2', dest='in_read2',
+        action='store_true', help='barcode in read2, default in read1, ...... demx2')
     parser.add_argument('-l', '--barcode-n-left', type=int, dest='barcode_n_left',
         default=0, help='bases locate on the left of barcode')
     parser.add_argument('-r', '--barcode-n-right', type=int, dest='barcode_n_right',
