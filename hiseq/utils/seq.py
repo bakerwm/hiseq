@@ -730,7 +730,7 @@ class Fastx(object):
 
         d = {}
         with xopen(self.input) as r:
-            for _, seq, _ in self.readfq(r):
+            for _, seq, _, _ in self.readfq(r):
                 d[seq] = d.get(seq, 0) + 1
 
         # sort by value

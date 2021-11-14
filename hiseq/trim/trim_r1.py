@@ -299,7 +299,7 @@ class TrimR1(object):
         # 2. remove dup
         if self.rmdup:
             log.info('rmdup(), running')
-            self.rm_dup(cut1_fq, self.rmdup_fq)
+            self.run_rmdup(cut1_fq, self.rmdup_fq)
             n_rmdup = Fastx(self.rmdup_fq).number_of_seq()
         else:
             log.info('rmdup(), skipped')
@@ -374,8 +374,8 @@ class TrimR1(object):
         if self.rmdup:
             log.info('rmdup(), running')
             log.info('remove dup for read1 only')
-            self.rm_dup(cut1_fq1, self.rmdup_fq1)
-            self.rm_dup(cut1_fq2, self.rmdup_fq2)
+            self.run_rmdup(cut1_fq1, self.rmdup_fq1)
+            self.run_rmdup(cut1_fq2, self.rmdup_fq2)
             n_rmdup = Fastx(self.rmdup_fq1).number_of_seq()
             # n_rmdup2 = Fastx(rmdup_fq2).number_of_seq()
         else:
