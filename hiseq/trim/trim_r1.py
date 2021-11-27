@@ -274,8 +274,8 @@ class TrimR1(object):
                         name1 = f1[0]
                         name2 = f2[0]                        
                     # output
-                    fq1 = '@{}\n{}\n+\n{}'.format(f1[1], s1, q1)
-                    fq2 = '@{}\n{}\n+\n{}'.format(f2[1], s2, q2)
+                    fq1 = '@{}\n{}\n+\n{}'.format(name1, s1, q1)
+                    fq2 = '@{}\n{}\n+\n{}'.format(name2, s2, q2)
                     w1.write(fq1+'\n')
                     w2.write(fq2+'\n')
         except IOError as e:

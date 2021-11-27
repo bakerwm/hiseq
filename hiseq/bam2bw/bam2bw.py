@@ -348,7 +348,7 @@ def get_args():
         help='Possible choices: RPKM, CPM, BPM, RPGC, None, default: [None] \
         see https://deeptools.readthedocs.io/en/latest/content/tools/bamCoverage.html, \
         for details from deeptools documentation.')
-    parser.add_argument('-gs', '--genome-size', dest='genome_size', default=None,
+    parser.add_argument('-gs', '--genome-size', dest='genome_size', default=None, type=int,
         help='set the genome size for input genome, default: [None]' )
     parser.add_argument('-r', '--reference', default=None,
         help='the reference genome in fasta format, default: [None]')
