@@ -1,0 +1,37 @@
+{
+    "AGTATA": {
+        "count": 5618,
+        "name": "P7_2A",
+        "pct": 5.784000823638423,
+        "seq": "AGTATA",
+        "seq_revcomp": "TATACT"
+    },
+    "ATAGCA": {
+        "count": 1646,
+        "name": "P7_1B",
+        "pct": 1.694636054771955,
+        "seq": "ATAGCA",
+        "seq_revcomp": "TGCTAT"
+    },
+    "TATACG": {
+        "count": 1741,
+        "name": "CGTATA",
+        "pct": 1.79244311747143,
+        "seq": "TATACG",
+        "seq_revcomp": "CGTATA"
+    },
+    "TATAGG": {
+        "count": 67911,
+        "name": "P7_1A",
+        "pct": 69.91763615772676,
+        "seq": "TATAGG",
+        "seq_revcomp": "CCTATA"
+    },
+    "TATCGG": {
+        "count": 14465,
+        "name": "CCGATA",
+        "pct": 14.892412231030578,
+        "seq": "TATCGG",
+        "seq_revcomp": "CCGATA"
+    }
+}

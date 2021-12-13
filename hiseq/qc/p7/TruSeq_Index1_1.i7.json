@@ -1,0 +1,37 @@
+{
+    "AACACG": {
+        "count": 175,
+        "name": "AACACG",
+        "pct": 0.23723023533239346,
+        "seq": "AACACG",
+        "seq_revcomp": "AACACG"
+    },
+    "ATAACG": {
+        "count": 26,
+        "name": "ATAACG",
+        "pct": 0.035245634963669885,
+        "seq": "ATAACG",
+        "seq_revcomp": "ATAACG"
+    },
+    "ATCAAG": {
+        "count": 24,
+        "name": "ATCAAG",
+        "pct": 0.03253443227415682,
+        "seq": "ATCAAG",
+        "seq_revcomp": "ATCAAG"
+    },
+    "ATCACG": {
+        "count": 73466,
+        "name": "TruSeq_Index1",
+        "pct": 99.59060839388353,
+        "seq": "ATCACG",
+        "seq_revcomp": "ATCACG"
+    },
+    "ATCACT": {
+        "count": 29,
+        "name": "ATCACT",
+        "pct": 0.039312438997939486,
+        "seq": "ATCACT",
+        "seq_revcomp": "ATCACT"
+    }
+}

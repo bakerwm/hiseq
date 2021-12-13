@@ -1,0 +1,232 @@
+---
+title: "Check P7 structure"
+author: "Ming Wang"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    highlight: tango
+    toc: yes
+    toc_float:
+      collapsed: no
+    keep_md: false
+  word_document:
+    toc: yes
+  pdf_document:
+    toc: yes
+params:
+  input_dir: ""
+---
+
+```{r setup, include=FALSE}
+suppressPackageStartupMessages(library(knitr))
+
+knitr::opts_chunk$set(fig.width  = 12, 
+                      fig.height = 8, 
+                      fig.path   = "Figures/",
+                      eval       = TRUE,
+                      echo       = FALSE,
+                      cache      = FALSE,
+                      prompt     = FALSE,
+                      tidy       = FALSE,
+                      comment    = NA,
+                      message    = FALSE,
+                      warning    = FALSE,
+                      eval       = T,
+                      rownames.print = FALSE)
+```
+
+
+```{r load pkg}
+library(hiseqr)
+library(knitr)
+library(ggplot2)
+library(fishualize)
+library(patchwork)
+library(dplyr)
+library(glue)
+```
+
+
+```{r config, eval = T}
+# main
+input_dir <- params$input_dir
+input_dir <- normalizePath(input_dir)
+f_list    <- list.files(input_dir, "*.config.yaml$", full.names = TRUE)
+if(length(f_list) == 0) {
+  stop("No *config.yaml files detected")
+}
+```
+
+
+## 1. HiSeq library structure 
+
+```{r hiseq_lib_structure, fig.height=1, fig.width=8}
+ft <- c("P5", "Insert", "barcode", "P7_a", "i7", "P7_b")
+ds <- data.frame(
+  hiseq = "TruSeq",
+  score = c(3, 2, 1, 2, 1, 2),
+  name  = ft
+) %>%
+  dplyr::mutate(name = forcats::fct_relevel(name, rev(ft)),
+                label_x = cumsum(score) - 0.5 * score)
+
+ds %>%
+  ggplot(aes(score, hiseq, fill = name, group = name)) + 
+  geom_col() + 
+  scale_fill_manual(
+    values = c("blue4", "red4", "blue4", "red4", "grey40", "blue4")) + 
+  geom_text(aes(x = label_x, label = name), colour = "white", size =5) +
+  ggtitle("Structure of TruSeq/Nextera library") + 
+  theme_minimal() + 
+  theme(legend.position = "none",
+        axis.line.x = element_blank(),
+        axis.line.y = element_blank(),
+        axis.ticks = element_blank(),
+        axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank())
+```
+
+```
+## TruSeq 122nt+insert, 129nt+insert(inline barcode)
+P5:   AATGATACGGCGACCACCGAGATCTACACTCTTTCCCTACACGACGCTCTTCCGATCT, 58nt
+barcode: 6nt + A
+P7_a: AGATCGGAAGAGCACACGTCTGAACTCCAGTCAC, 34nt [TruSeq]
+i7:   6nt  
+P7_b: ATCTCGTATGCCGTCTTCTGCTTG, 24nt
+
+## Nextera 128nt+insert
+P5:   AATGATACGGCGACCACCGAGATCTACACTCGTCGGCAGCGTCAGATGTGTATAAGAGACAG, 62nt 
+P7_a: CTGTCTCTTATACACATCTCCGAGCCCACGAGAC, 34nt  
+i7:   8nt
+P7_b: ATCTCGTATGCCGTCTTCTGCTTG, 24nt
+
+```
+
+
+```{r}
+pd <- hiseq_p7(input_dir)
+```
+
+
+## 1. Overview 
+
+```{r}
+df1 <- lapply(pd, function(i) {
+  data.frame(
+    name  = i$smp_name,
+    HiSeq = i$hiseq_type
+  )
+}) %>% 
+  dplyr::bind_rows()
+
+hiseqr::to_DT(df1)
+```
+
+
+## 2 The distribution of P7 components
+
+### 1.1 Table1. P7 components
+
+The Percentage of the reads
+
+```{r}
+df2 <- lapply(pd, function(i) {
+  i$p7$data
+}) %>%
+  dplyr::bind_rows() %>%
+  dplyr::select(sample, group, pct) %>%
+  tidyr::pivot_wider(names_from = "group",
+                     values_from = "pct") %>%
+  dplyr::select(sample, p7a, p7a_p7b, p7b, no_ad)
+hiseqr::to_DT(df2)
+```
+
+### 1.2 Plots of P7 components
+
+Check the frequency of each `i7` sequences; `x-axis` is percentage of sequence.
+
+```{r, fig.height=5, fig.width=7, results="asis"}
+tmp <- lapply(pd, function(i) {
+  p <- patchwork::wrap_plots(i$p7, i$i7, i$barcode, ncol = 1) +
+    patchwork::plot_layout(heights = c(1, 3, 3))
+  print(p)
+})
+
+```
+
+
+>EOF
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -365,7 +365,6 @@ class Hiseq(object):
         if args['smRNA']:
             HiseqLibSmRNA(**args).run()
         else:
-            args['fq'] = args['fq1'] # only for fq1
             HiseqLib(**args).run()
 
         

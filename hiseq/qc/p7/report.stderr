@@ -1,0 +1,31 @@
+
+Attaching package: ‘dplyr’
+
+The following objects are masked from ‘package:stats’:
+
+    filter, lag
+
+The following objects are masked from ‘package:base’:
+
+    intersect, setdiff, setequal, union
+
+
+
+processing file: hiseq_qc_p7.Rmd
+
+Attaching package: 'glue'
+
+The following object is masked from 'package:dplyr':
+
+    collapse
+
+Scale for 'x' is already present. Adding another scale for 'x', which will
+replace the existing scale.
+Scale for 'x' is already present. Adding another scale for 'x', which will
+replace the existing scale.
+Scale for 'x' is already present. Adding another scale for 'x', which will
+replace the existing scale.
+output file: hiseq_qc_p7.knit.md
+
+
+Output created: p7/HiSeq_P7_report.html

@@ -91,13 +91,15 @@ class HiseqLib(object):
 
     def init_args(self):
         args_init = {
-            'fq': None,
+            'fq1': None,
+            'fq2': None,
             'outdir': None,
             'parallel_jobs': 1,
             'overwrite': False,
             'top_n': 100000,
             }
         self = update_obj(self, args_init, force=False)
+        self.fq = self.fq1 # update fq
         if not isinstance(self.outdir, str):
             self.outdir = str(pathlib.Path.cwd())
         self.outdir = file_abspath(self.outdir)
@@ -764,6 +766,8 @@ class HiseqLibSmRNA(object):
 def get_args():
     parser = argparse.ArgumentParser(
         description='hiseq i7')
+#     parser.add_argument('-i', '--fq', nargs='+', required=True,
+#         help='read1 of Paired end reads')
     parser.add_argument('-1', '--fq1', nargs='+', required=True,
         help='read1 of Paired end reads')
     parser.add_argument('-2', '--fq2', nargs='+', required=False, default=None,

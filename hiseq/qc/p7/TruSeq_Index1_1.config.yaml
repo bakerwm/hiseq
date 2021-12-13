@@ -1,0 +1,15 @@
+barcode_json: /data/yulab/wangming/work/wmlib/hiseq/hiseq/qc/p7/TruSeq_Index1_1.barcode.json
+config_yaml: /data/yulab/wangming/work/wmlib/hiseq/hiseq/qc/p7/TruSeq_Index1_1.config.yaml
+cutoff: 0.8
+fname: TruSeq_Index1_1
+fq: /data/nas/YY91_20211117/demo/TruSeq_Index1_1.fq.gz
+hiseq_type: truseq
+i7_json: /data/yulab/wangming/work/wmlib/hiseq/hiseq/qc/p7/TruSeq_Index1_1.i7.json
+is_nextera: false
+is_nsr: false
+is_smallrna: false
+is_truseq: true
+lib: truseq
+outdir: /data/yulab/wangming/work/wmlib/hiseq/hiseq/qc/p7
+p7_json: /data/yulab/wangming/work/wmlib/hiseq/hiseq/qc/p7/TruSeq_Index1_1.p7.json
+top_n: 100000

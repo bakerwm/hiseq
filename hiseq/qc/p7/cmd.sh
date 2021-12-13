@@ -1,0 +1,1 @@
+/data/yulab/wangming/miniconda3/envs/hiseq/bin/Rscript /data/yulab/wangming/miniconda3/envs/hiseq/lib/python3.8/site-packages/hiseq-0.0.1-py3.8.egg/hiseq/bin/hiseq_p7_report.R /data/yulab/wangming/work/wmlib/hiseq/hiseq/qc/p7 1> /data/yulab/wangming/work/wmlib/hiseq/hiseq/qc/p7/report.stdout 2> /data/yulab/wangming/work/wmlib/hiseq/hiseq/qc/p7/report.stderr
