@@ -10,16 +10,20 @@ analysis-module:
 import os
 import sys
 from hiseq.atac.atac_rp import AtacRp
-from hiseq.atac.utils import atac_trim, atac_align_genome, \
-    atac_align_spikein, atac_call_peak, atac_bam_to_bw, \
-    qc_trim_summary, qc_align_summary, qc_lendist, qc_frip, \
-    qc_tss_enrich, qc_genebody_enrich
-from hiseq.utils.file import check_path, check_fx_paired, symlink_file, \
-    file_abspath, file_prefix, fx_name
 from hiseq.utils.genome import Genome
-from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \
-    read_hiseq
 from hiseq.align.align_index import AlignIndex, check_index_args
+from hiseq.atac.utils import (
+    hiseq_trim, hiseq_align_genome, hiseq_align_spikein, hiseq_call_peak, 
+    hiseq_bam2bw, qc_trim_summary, qc_align_summary, qc_lendist, qc_frip,
+    qc_tss_enrich, qc_genebody_enrich
+)
+from hiseq.utils.file import (
+    check_path, check_fx_paired, symlink_file, file_abspath, file_prefix, 
+    fx_name
+)
+from hiseq.utils.utils import (
+    log, update_obj, Config, get_date, init_cpu, read_hiseq
+)
 
 
 class AtacR1(object):
@@ -39,13 +43,13 @@ class AtacR1(object):
         raw_fq1, raw_fq2 = self.raw_fq_list
         symlink_file(self.fq1, raw_fq1, absolute_path=True)
         symlink_file(self.fq2, raw_fq2, absolute_path=True)
-        atac_trim(self.project_dir, '_r1')
-        atac_align_genome(self.project_dir, '_r1')
+        hiseq_trim(self.project_dir, '_r1')
+        hiseq_align_genome(self.project_dir, '_r1')
         # sys.exit(1)
-        atac_call_peak(self.project_dir, '_r1')
-        atac_bam_to_bw(self.project_dir, '_r1')
+        hiseq_call_peak(self.project_dir, '_r1')
+        hiseq_bam2bw(self.project_dir, '_r1')
         if isinstance(self.spikein_index, str):
-            atac_align_spikein(self.project_dir, '_r1')
+            hiseq_align_spikein(self.project_dir, '_r1')
         # qc
         qc_trim_summary(self.project_dir, '_r1')
         qc_align_summary(self.project_dir, '_r1')
@@ -205,7 +209,8 @@ class AtacR1Config(object):
             'trim_json': trim_prefix+'.trim.json',
             
             # align files (genome)
-            'align_scale_json': align_prefix+'.scale.json',
+            'align_scale_json': self.bam_dir + '/' + 'scale.json',
+            'pcr_dup_json': self.bam_dir + '/' + 'pcr_dup.json',
             'align_stat': align_prefix+'.align.stat',
             'align_json': align_prefix+'.align.json',
             'align_flagstat': align_prefix+'.align.flagstat',
@@ -224,6 +229,7 @@ class AtacR1Config(object):
             # qc
             'trim_summary_json': os.path.join(self.qc_dir, '00.trim_summary.json'),
             'align_summary_json': os.path.join(self.qc_dir, '01.alignment_summary.json'),
+            'dup_summary_json': os.path.join(self.qc_dir, '01.pcr_dup_summary.json'),
             'lendist_csv': self.qc_dir + '/02.length_distribution.fragsize.csv',
             'lendist_txt': self.qc_dir + '/02.length_distribution.txt',
             'lendist_pdf': self.qc_dir + '/02.length_distribution.fragsize.pdf',

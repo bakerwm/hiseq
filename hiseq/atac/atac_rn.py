@@ -16,17 +16,22 @@ import argparse
 from multiprocessing import Pool
 from hiseq.atac.atac_r1 import AtacR1
 from hiseq.atac.atac_rp import AtacRp
-from hiseq.atac.utils import atac_merge_bam, \
-    atac_bam_to_bw, atac_call_peak, qc_lendist, qc_frip, qc_bam_cor, \
-    qc_peak_idr, qc_peak_overlap, qc_bam_fingerprint, qc_tss_enrich, \
-    qc_genebody_enrich    
-from hiseq.utils.file import check_path, check_fx_paired, symlink_file, \
-    file_exists, file_abspath, file_prefix, fx_name, list_dir
-from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \
-    read_hiseq, list_hiseq_file, run_shell_cmd
 from hiseq.utils.genome import Genome
 from hiseq.utils.bam import Bam
 from hiseq.align.align_index import AlignIndex, check_index_args
+from hiseq.atac.utils import (
+    hiseq_merge_bam, hiseq_bam2bw, hiseq_call_peak, qc_lendist, qc_frip, 
+    qc_bam_cor, qc_peak_idr, qc_peak_overlap, qc_bam_fingerprint, qc_tss_enrich,
+    qc_genebody_enrich 
+)
+from hiseq.utils.file import (
+    check_path, check_fx_paired, symlink_file, file_abspath, file_prefix, 
+    fx_name, file_exists, list_dir
+)
+from hiseq.utils.utils import (
+    log, update_obj, Config, get_date, init_cpu, read_hiseq, list_hiseq_file,
+    run_shell_cmd
+)
 
 
 class AtacRn(object):
@@ -49,10 +54,10 @@ class AtacRn(object):
 
 
     def run_pipe_rn(self): # for rep_list > 1
-        atac_merge_bam(self.project_dir, 'rn')
-        atac_call_peak(self.project_dir, 'rn')
-        atac_bam_to_bw(self.project_dir, 'rn')
-        atac_call_peak(self.project_dir, 'rn')
+        hiseq_merge_bam(self.project_dir, 'rn')
+        hiseq_call_peak(self.project_dir, 'rn')
+        hiseq_bam2bw(self.project_dir, 'rn')
+        hiseq_call_peak(self.project_dir, 'rn')
         # qc_trim(self.project_dir, 'rn')
         # qc_align(self.project_dir, 'rn')
         qc_lendist(self.project_dir, 'rn')
@@ -295,10 +300,17 @@ class AtacRnConfig(object):
             'trim_json': trim_prefix+'.trim.json',
             
             # align files
-            'align_scale_json': align_prefix+'.scale.json',
+            'align_scale_json': self.bam_dir + '/' + 'scale.json',
+            'pcr_dup_json': self.bam_dir + '/' + 'pcr_dup.json',
             'align_stat': align_prefix+'.align.stat',
             'align_json': align_prefix+'.align.json',
             'align_flagstat': align_prefix+'.align.flagstat',
+
+            # spikein files
+            'spikein_scale_json': spikein_prefix+'.scale.json',
+            'spikein_stat': spikein_prefix+'.align.stat',
+            'spikein_json': spikein_prefix+'.align.json',
+            'spikein_flagstat': spikein_prefix+'.align.flagstat',
 
             # spikein files
             'spikein_scale_json': spikein_prefix+'.scale.json',
@@ -309,6 +321,7 @@ class AtacRnConfig(object):
             # qc files
             'trim_summary_json':self.qc_dir +  '/00.trim_summary.json',
             'align_summary_json': self.qc_dir + '/01.alignment_summary.json',
+            'dup_summary_json': os.path.join(self.qc_dir, '01.pcr_dup_summary.json'),
             'lendist_csv': self.qc_dir + '/02.length_distribution.csv',
             'lendist_txt': self.qc_dir + '/02.length_distribution.txt',
             'lendist_pdf': self.qc_dir + '/02.length_distribution.pdf',
