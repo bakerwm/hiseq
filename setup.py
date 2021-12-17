@@ -12,7 +12,7 @@ def license():
 
 setuptools.setup(
     name="hiseq", # Replace with your own username
-    version="0.0.1",
+    version="0.9.1",
     author="Ming Wang",
     author_email="wangm08@hotmail.com",
     description="A collection of tools for high-throughput sequencing data analysis",
