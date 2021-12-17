@@ -6,7 +6,6 @@ for single-pair fastq file, ATACseq analysis [group: 1, fx: 1]
 
 analysis-module:
 """
-
 import os
 import sys
 from hiseq.atac.atac_rp import AtacRp
@@ -15,7 +14,7 @@ from hiseq.align.align_index import AlignIndex, check_index_args
 from hiseq.atac.utils import (
     hiseq_trim, hiseq_align_genome, hiseq_align_spikein, hiseq_call_peak, 
     hiseq_bam2bw, qc_trim_summary, qc_align_summary, qc_lendist, qc_frip,
-    qc_tss_enrich, qc_genebody_enrich
+    qc_tss_enrich, qc_genebody_enrich, hiseq_pcr_dup
 )
 from hiseq.utils.file import (
     check_path, check_fx_paired, symlink_file, file_abspath, file_prefix, 
@@ -45,6 +44,7 @@ class AtacR1(object):
         symlink_file(self.fq2, raw_fq2, absolute_path=True)
         hiseq_trim(self.project_dir, '_r1')
         hiseq_align_genome(self.project_dir, '_r1')
+        hiseq_pcr_dup(self.project_dir, '_r1')
         # sys.exit(1)
         hiseq_call_peak(self.project_dir, '_r1')
         hiseq_bam2bw(self.project_dir, '_r1')

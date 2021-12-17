@@ -7,7 +7,9 @@ Using featureCounts calculate counts on intervals (genes)
 
 import os
 import sys
+import argparse
 import pathlib
+from hiseq.utils.file import file_exists
 from hiseq.utils.utils import log
 from hiseq.utils.featurecounts import LibStrand, FeatureCounts
 
@@ -42,7 +44,7 @@ def fc_quant(gtf, bam, **kwargs):
     else:
         # fc_no = FeatureCounts(**args).run()
         # guess sense strand
-        s = LibStrand(bam=bam, gtf=gtf, clean_up=True) # sense_strand, anti_strand
+        s = LibStrand(bam=bam[0], gtf=gtf, clean_up=True) # sense_strand, anti_strand
         if args['strandness'] == 'sens':
             args['strandness'] = s.sens_strand
         elif args['strandness'] == 'anti':

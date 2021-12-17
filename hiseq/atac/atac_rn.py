@@ -22,7 +22,7 @@ from hiseq.align.align_index import AlignIndex, check_index_args
 from hiseq.atac.utils import (
     hiseq_merge_bam, hiseq_bam2bw, hiseq_call_peak, qc_lendist, qc_frip, 
     qc_bam_cor, qc_peak_idr, qc_peak_overlap, qc_bam_fingerprint, qc_tss_enrich,
-    qc_genebody_enrich 
+    qc_genebody_enrich, hiseq_pcr_dup
 )
 from hiseq.utils.file import (
     check_path, check_fx_paired, symlink_file, file_abspath, file_prefix, 
@@ -55,6 +55,7 @@ class AtacRn(object):
 
     def run_pipe_rn(self): # for rep_list > 1
         hiseq_merge_bam(self.project_dir, 'rn')
+        hiseq_pcr_dup(self.project_dir, '_rn')
         hiseq_call_peak(self.project_dir, 'rn')
         hiseq_bam2bw(self.project_dir, 'rn')
         hiseq_call_peak(self.project_dir, 'rn')

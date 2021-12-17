@@ -41,3 +41,27 @@ This is a package for High-throughput sequencing data analysis. including pipeli
 
   - Align with `--para-extra`
 
+
+
+
+
+requirements 
+
+pyyaml
+toml
+requests
+bs4
+pillow
+crcmod 
+trackhub 
+python-Levenshtein 
+
+
+pyfastx
+bowtie
+bowtie2
+bwa
+hisat2
+STAR=2.5.2a 
+
+
