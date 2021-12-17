@@ -15,8 +15,9 @@ import argparse
 from multiprocessing import Pool
 from hiseq.atac.atac_rn import AtacRn
 from hiseq.atac.atac_rp import AtacRp
+from hiseq.utils.genome import Genome
 from hiseq.utils.file import (
-    check_path, symlink_file, file_abspath, file_prefix, file_exists
+    check_path, symlink_file, file_abspath, file_prefix, file_exists, list_dir
 )
 from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu
 

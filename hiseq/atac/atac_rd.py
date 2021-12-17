@@ -8,8 +8,9 @@ create design.yaml
 
 import os
 import argparse
-from hiseq.utils.file import file_abspath, file_exists, fx_name, list_fx, \
-    check_fx_paired
+from hiseq.utils.file import (
+    file_abspath, file_exists, fx_name, list_fx, check_fx_paired, list_dir
+)
 from hiseq.utils.utils import log, update_obj, Config, get_date
 
 
@@ -36,7 +37,27 @@ class AtacRd(object):
         self.hiseq_type = 'atacseq_rd'
         self.build_design = False # force
 
-
+        
+    def list_fq_files(self):
+        """
+        List fastq files, in dir or subdir (level-1)
+        """
+        # for fq_dir
+        if isinstance(self.fq_dir, str):
+            f_list = list_fx(self.fq_dir)
+        # for fq_dir/subdir
+        if len(f_list) < 2:
+            # search fastq files in subdirs
+            sub_dirs = list_dir(self.fq_dir, include_dir=True)
+            sub_files = [list_fx(i) for i in sub_dirs if os.path.isdir(i)]
+            f_list = [f for i in sub_files if isinstance(i, list) for f in i]
+            # f_list = [f for i in sub_dirs if os.path.isdir(i) for f in list_fx(i)]
+        if len(f_list) < 2:
+            log.error('not enough fq files: {}'.format(self.fq_dir))
+            return None
+        return f_list
+    
+    
     def update_design(self):
         # load design/fq_groups
         if file_exists(self.design) and self.append:
@@ -84,7 +105,7 @@ class AtacRd(object):
         2. fq1, fq2
         """
         if isinstance(self.fq_dir, str):
-            f_list = list_fx(self.fq_dir)
+            f_list = self.list_fq_files()
         elif isinstance(self.fq1, list) and isinstance(self.fq2, list):
             f_list = self.fq1 + self.fq2
         elif isinstance(self.fq1, str) and isinstance(self.fq2, str):
