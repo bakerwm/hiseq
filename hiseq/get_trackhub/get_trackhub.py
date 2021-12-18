@@ -267,10 +267,11 @@ class TrackHub():
 
             # prepare: filterComposite
             # format: dimA, ...
-            if len(dim_list) > 2:
-                filterComposite = ' '.join(list(subgroups_dict.keys())[2:])
-            else:
-                filterComposite = None
+            filterComposite = None # fixed
+#             if len(dim_list) > 2:
+#                 filterComposite = ' '.join(list(subgroups_dict.keys())[2:])
+#             else:
+#                 filterComposite = None
         else:
             subgroups_def_list = []
             dimensions = None
