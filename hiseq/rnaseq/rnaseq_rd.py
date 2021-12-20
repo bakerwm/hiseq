@@ -59,67 +59,6 @@ class RnaseqRd(object):
         self.fq_dir = file_abspath(self.fq_dir)
 
 
-#     def parse_fq_v1(self):
-#         """
-#         Version-1:
-#         parse fastq files by keyword
-#         fq-dir
-#         wt (required)
-#         mutant (required)
-        
-#         return: dict (groups)
-#         """
-#         # check fq_dir
-#         if isinstance(self.fq_dir, str):
-#             f_list = list_fx(self.fq_dir)
-#         else:
-#             log.warning('--fq-dir required')
-#             f_list = []
-#         # check wt
-#         if not isinstance(self.wt, list):
-#             return None
-#         # check mutant
-#         if not isinstance(self.mutant, list):
-#             return None
-#         # split files input groups
-#         out = {}
-#         for ka, kb in zip(self.ip, self.input):
-#             # ip files
-#             ka_fq = [i for i in f_list if ka in fx_name(i)]
-#             ka_fq = [i for i in ka_fq if file_exists(i)]
-#             ka_fq1 = [i for i in ka_fq if fx_name(i).endswith('_1')]
-#             ka_fq2 = [i for i in ka_fq if fx_name(i).endswith('_2')]
-#             ka_paired = check_fx_paired(ka_fq1, ka_fq2)
-#             # input files
-#             kb_fq = [i for i in f_list if kb in fx_name(i)]
-#             kb_fq = [i for i in kb_fq if file_exists(i)]
-#             kb_fq1 = [i for i in kb_fq if fx_name(i).endswith('_1')]
-#             kb_fq2 = [i for i in kb_fq if fx_name(i).endswith('_2')]
-#             kb_paired = check_fx_paired(kb_fq1, kb_fq2)
-#             if len(ka_fq) > 0 and len(kb_fq) > 0:
-#                 if all([ka_paired, kb_paired]) and not self.as_se:
-#                     k_name = fx_name(ka_fq[0], fix_pe=True, fix_rep=True)
-#                     out.update({
-#                         k_name: {
-#                             'mut_fq1': ka_fq1,
-#                             'mut_fq2': ka_fq2,
-#                             'wt_fq1': kb_fq1,
-#                             'wt_fq2': kb_fq2,
-#                         }
-#                     })
-#                 else:
-#                     k_name = fx_name(ka_fq[0], fix_pe=False, fix_rep=True)
-#                     out.update({
-#                         k_name: {
-#                             'mut_fq1': ka_fq1,
-#                             'mut_fq2': None,
-#                             'wt_fq1': kb_fq1,
-#                             'wt_fq2': None,
-#                         }
-#                     })
-#         # output
-#         return out
-                    
     def list_fq_files(self):
         """
         List fastq files, in dir or subdir (level-1)
@@ -150,16 +89,6 @@ class RnaseqRd(object):
         
         return: dict (groups)
         """
-#         # check fq_dir
-#         if isinstance(self.fq_dir, str):
-#             f_list = list_fx(self.fq_dir)
-#         else:
-#             log.warning('--fq-dir required')
-#             f_list = []
-#         # check files
-#         if len(f_list) < 2:
-#             log.error('not enough fq files')
-#             return None
         f_list = self.list_fq_files()
         # check mut
         if not isinstance(self.mut, list):
@@ -211,8 +140,8 @@ class RnaseqRd(object):
             })
         # output
         return out
-            
-    
+
+
     def parse_fq_v2(self):
         """
         Version-2:
@@ -263,10 +192,13 @@ class RnaseqRd(object):
             self.wt_fq2 = [self.wt_fq2]
         # choose sub-command
         if isinstance(self.fq_dir, str) and isinstance(self.mut, list):
+            print("!B-1")
             fq = self.parse_fq_v1()
         elif isinstance(self.mut_fq1, list) and isinstance(self.mut_fq2, list):
+            print("!B-2")
             fq = self.parse_fq_v2()
         else:
+            print("!B-3")
             fq = {} # empty
         if len(fq) == 0: # empty
             raise ValueError('no fastq files found, check: fq_dir, mut, mut_fq1, ')
@@ -276,6 +208,10 @@ class RnaseqRd(object):
         else:
             out = {}
         # update fq
+#         fx = self.parse_fq_v1()
+#         fx = self.list_fq_files()
+        print('!A-2', fq)
+#         print('!A-1', len(fx))
         msg = ['='*80, 'build design']
         for k, v in fq.items():
             if k in out:
