@@ -53,6 +53,7 @@ from hiseq.utils.file import (
 )
 from hiseq.align.bowtie import Bowtie
 from hiseq.align.bowtie2 import Bowtie2
+from hiseq.align.hisat2 import Hisat2
 from hiseq.align.star import Star
 from hiseq.align.salmon import Salmon
 # from hiseq.align.utils import check_fx_args
@@ -234,8 +235,8 @@ class AlignR1(object):
             'bowtie2': Bowtie2,
             'star': Star,
             'salmon': Salmon,
+            'hisat2': Hisat2,
 #             'bwa': BWA,
-#             'hisat2': Hisat2,
 #             'kallisto': Kallisto,
         }
         port = aligner.get(self.aligner.lower(), None)

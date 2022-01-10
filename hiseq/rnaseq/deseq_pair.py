@@ -3,8 +3,13 @@
 
 import os
 import sys
+import pathlib
 import hiseq
-from hiseq.utils.helper import *
+from hiseq.utils.utils import (
+    log, update_obj, Config, get_date, init_cpu, read_hiseq, is_supported, 
+    print_dict
+)
+# from hiseq.utils.helper import *
 
 
 class DeseqPair(object):
@@ -13,28 +18,8 @@ class DeseqPair(object):
     support for the results of `hiseq rnaseq` output
     """
     def __init__(self, **kwargs):
-        self.update(kwargs, force=True)
+        self = update_obj(self, kwargs, force=True)
         self.init_args() # all args
-
-
-    def update(self, d, force=True, remove=False):
-        """
-        d: dict
-        force: bool, update exists attributes
-        remove: bool, remove exists attributes
-        Update attributes from dict
-        force exists attr
-        """
-        # fresh start
-        if remove is True:
-            for k in self.__dict__:
-                # self.__delattr__(k)
-                delattr(self, k)
-        # add attributes
-        if isinstance(d, dict):
-            for k, v in d.items():
-                if not hasattr(self, k) or force:
-                    setattr(self, k, v)
 
 
     def init_args(self):
@@ -57,18 +42,15 @@ class DeseqPair(object):
             'dirB': None,
             'feature': None,
             'outdir': str(pathlib.Path.cwd())}
-        self.update(args_default, force=False) # update missing attrs
-
+        self = update_obj(self, args_default, force=False)
         # outdir
         if self.outdir is None:
             self.outdir = str(pathlib.Path.cwd())
-
         # check path
         self.dirA = self.dirA.rstrip('/')
         self.dirB = self.dirB.rstrip('/')
         subdir = os.path.basename(self.dirA) + '.compare.' + os.path.basename(self.dirB)
         self.outdir = os.path.join(self.outdir, subdir) # add subdir
-        
         # abs path
         self.dirA = os.path.abspath(self.dirA)
         self.dirB = os.path.abspath(self.dirB)

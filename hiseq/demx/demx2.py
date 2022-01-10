@@ -318,6 +318,8 @@ class Demx2(object):
         exp_df = self.sheet.df.loc[:, ['name', 'reads']].set_index('name')
         exp_size = exp_df.to_dict('dict')['reads'] # sample_name:reads
         n_exp = exp_df['reads'].sum()
+        if isinstance(n_exp, str):
+            n_exp = 1
         # to json
         self.rename_i7_files() #
         self.rename_bc_files() #

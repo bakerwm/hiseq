@@ -124,7 +124,7 @@ class AlignIndex(object):
         if index is None:
             out = False
         f = ['.' + i + '.ht2' for i in [
-            '1', '2', '3', '4', 'rev.1', 'rev.2'
+            '1', '2', '3', '4'
             ]]
         if isinstance(index, str):
             f_list = [index+i for i in f]
