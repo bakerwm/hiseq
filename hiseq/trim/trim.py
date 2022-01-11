@@ -35,7 +35,6 @@ class Trim(object):
 
 
     def run(self):
-#         TrimRn(**self.__dict__).run()
         self.rn.run()
         TrimRp(**self.__dict__).run()
 

@@ -28,9 +28,11 @@ import pandas as pd
 import pyfastx
 from xopen import xopen
 from hiseq.utils.seq import Fastx
-from hiseq.utils.file import check_path, check_fx_args, file_exists, file_abspath, \
+from hiseq.utils.file import (
+    check_path, check_fx_args, file_exists, file_abspath,
     check_fx, check_fx_paired, copy_file, symlink_file, remove_file, fx_name
-from hiseq.utils.utils import log, update_obj, Config, run_shell_cmd
+)
+from hiseq.utils.utils import log, update_obj, Config, run_shell_cmd, get_date
 from hiseq.trim.cutadapt import Cutadapt
 
 
@@ -53,8 +55,35 @@ class TrimR1(object):
         Config().dump(self.__dict__.copy(), self.config_yaml)
         
     
+    def get_msg(self):
+        msg = '\n'.join([
+            '-'*80,
+            '{:>20s} : {}'.format('Date', get_date()),
+            '{:>20s} : {}'.format('program', 'Trim'),
+            '{:>20s} : {}'.format('config', self.config_yaml),
+            '{:>20s} : {}'.format('fq1', self.fq1),
+            '{:>20s} : {}'.format('fq2', self.fq2),
+            '{:>20s} : {}'.format('outdir', self.outdir),
+            '{:>20s} : {}'.format('library_type', self.library_type),
+            '{:>20s} : {}'.format('len_min', self.len_min),
+            '{:>20s} : {}'.format('len_max', self.len_max),
+            '{:>20s} : {}'.format('rmdup', self.rmdup),
+            '{:>20s} : {}'.format('cut_before_trim', self.cut_before_trim),
+            '{:>20s} : {}'.format('cut_after_trim', self.cut_after_trim),            
+            '{:>20s} : {}'.format('3-adapter (read1)', self.adapter3),
+            '{:>20s} : {}'.format('3-adapter (read2)', self.Adapter3),
+            '{:>20s} : {}'.format('5-adapter (read1)', self.adapter5),
+            '{:>20s} : {}'.format('5-adapter (read2)', self.Adapter5),
+            '{:>20s} : {}'.format('remove poly(N)', self.rm_polyN),
+            '{:>20s} : {}'.format('remove untrim', self.rm_untrim),
+            '-'*80,
+        ])
+        return msg
+    
+    
     def run(self):
         trim_args = self.__dict__.copy()
+        print(self.get_msg())
         Trim = TrimR1pe if self.is_paired else TrimR1se
         Trim(**trim_args).run()
     
@@ -76,7 +105,7 @@ class TrimR1Config(object):
             'len_max': 0,
             'threads': 4,
             'rmdup': False,
-            'cut_after_trim': None, # skip, str
+            'cut_after_trim': 0, # skip, str
             'cut_before_trim': 0,
             'cut_to_length': 0,
             'keep_tmp': False,
@@ -168,6 +197,11 @@ class TrimR1Config(object):
         '9,-9': [9:-9]
         """
         # sanitize arg
+        try:
+            s = str(s)
+        except:
+            log.error('unknown --cut-after-trim expect str, got {}'.format(
+                type(s).__name__))
         if isinstance(s, str):
             s = s.strip().replace(' ', '') # remove white spaces
             p = re.compile('^(\d+)$|^(-\d+)$|^((\d+),(-\d+))$')
@@ -189,6 +223,7 @@ class TrimR1Config(object):
         return: start, end
         """
         if self.is_valid_cut2_arg(s):
+            s = str(s) # to str
             s = s.strip().replace(' ', '') # remove white spaces
             p = re.compile('^(\d+)$|^(-\d+)$|^((\d+),(-\d+))$')
             m = p.search(s) # match [L, R, L&R, L, R]
@@ -205,11 +240,11 @@ class TrimR1Config(object):
             else:
                 pass
         else:
-            log.error('invalide --cut-after-trim, expect: 5; 5,-3; -3, \
-                got {}'.format(cut))
+            log.error('invalid --cut-after-trim, expect: 5; 5,-3; -3, \
+                got {}'.format(self.cut_after_trim))
             raise ValueError('check --cut-after-trim')
         return (s, e)
-        
+
 
 class TrimR1se(object):
     """
@@ -415,18 +450,16 @@ class TrimR1pe(object):
                             n_cut2_rm += 1
                             continue # drop short seq
                         # update name
-                        if f1[3]:
-                            f1[0] = '{} {}'.format(f1[0], f1[3])
-                        if f2[3]:
-                            f2[0] = '{} {}'.format(f2[0], f2[3])
+                        n1 = '{} {}'.format(f1[0], f1[3]) if f1[3] else f1[0]
+                        n2 = '{} {}'.format(f2[0], f2[3]) if f2[3] else f2[0]
                         # sub
                         s1 = substr(f1[1], self.cut2_l, self.cut2_r)
                         q1 = substr(f1[2], self.cut2_l, self.cut2_r)
                         s2 = substr(f2[1], self.cut2_l, self.cut2_r)
                         q2 = substr(f2[2], self.cut2_l, self.cut2_r)
                         # output
-                        w1.write('@{}\n{}\n+\n{}\n'.format(f1[0], s1, q1))
-                        w2.write('@{}\n{}\n+\n{}\n'.format(f2[0], s2, q2))
+                        w1.write('@{}\n{}\n+\n{}\n'.format(n1, s1, q1))
+                        w2.write('@{}\n{}\n+\n{}\n'.format(n2, s2, q2))
             except IOError as e:
                 log.error(e)
         else:
@@ -488,25 +521,32 @@ class TrimR1pe(object):
 
 
 def get_args():
+    return get_args_trim(get_args_io())
+    
+     
+def get_args_io():
     example = '\n'.join([
         'Examples:',
         '1. auto-detect adapters',
-        '$ python cutadapt.py -1 fq1 -2 fq2 -o outdir -m 20',
+        '$ python trim.py -1 fq1 -2 fq2 -o outdir -m 20',
         '2. specific 3-apdapter',
-        '$ python cutadapt.py -1 fq1 -2 fq2 -o outdir -m 20 -a AGATCGGAAGAGCACACGTCTGAACT',
+        '$ python trim.py -1 fq1 -2 fq2 -o outdir -m 20 -a AGATCGGAAGAGCACACGTCTGAACT',
     ])
     parser = argparse.ArgumentParser(
-        prog='cutadapt',
-        description='cutadapt: for single PE reads',
+        prog='trim',
+        description='trim adapters',
         epilog=example,
         formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('-1', '--fq1', required=True,
-        help='reads in FASTQ files, support (*.gz), 1-4 files.')
+        help='reads in FASTQ files, support (*.gz), 1 file.')
     parser.add_argument('-2', '--fq2', default=None,
         help='The read2 of pair-end reads')
     parser.add_argument('-o', '--outdir', default=None,
         help='The directory to save results.')
+    return parser
 
+
+def get_args_trim(parser):
     parser.add_argument('--library-type', dest='library_type', default=None,
         type=str, choices=['TruSeq', 'Nextera', 'smallRNA'],
         help='Type of the library structure, \
@@ -515,21 +555,23 @@ def get_args():
         smallRNA, small RNA library')
     parser.add_argument('-m', '--len_min', default=15, metavar='len_min',
         type=int, help='Minimum length of reads after trimming, defualt [15]')
-    parser.add_argument('-M', '--len-max', dest='len_max', default=0,
-        type=int, help='Maxmimum length of reads after trimming, defualt [0], ignore')
     parser.add_argument('--cut-to-length', default=0, dest='cut_to_length',
         type=int,
         help='cut reads to from right, default: [0], full length')
     parser.add_argument('--rmdup', action='store_true',
         help='remove duplicates')
-    parser.add_argument('--cut-after-trim', dest='cut_after_trim',
+    parser.add_argument('--cut-after-trim', dest='cut_after_trim', default='0',
         help='cut reads after triming, positive value, \
         cut from left; minus value, cut from right, eg: 3 or -4 or 3,-4, \
         default [0]')
     parser.add_argument('--recursive', action='store_true',
         help='trim adapter recursively')
     parser.add_argument('-p', '--threads', default=1, type=int,
-        help='Number of threads to launch, default [1]')
+        help='Number of threads to launch, default [1]')    
+    parser.add_argument('-j', '--parallel-jobs', dest='parallel_jobs',
+        default=1, type=int,
+        help='Number of jobs run in parallel, default: [1]')
+
     parser.add_argument('--overwrite', action='store_true',
         help='if spcified, overwrite exists file')
     ## global arguments
@@ -541,7 +583,6 @@ def get_args():
         help='Maximum allowed error rate, default [0.1]')
     parser.add_argument('-O', '--overlap', type=int, default=3,
         help='At least overlap between adapter and sequence, default: [3]')
-
     ## specific
     parser.add_argument('--rm-polyN', action='store_true',
         dest='rm_polyN',
@@ -566,7 +607,7 @@ def get_args():
 
     parser.add_argument('-a', '--adapter3', default=None,
         help='3-Adapter sequence, default [].')
-    parser.add_argument('-g', '--adapter5', default='',
+    parser.add_argument('-g', '--adapter5', default=None,
         help='5-Adapter, default: None')
 
     ## PE arguments

@@ -130,7 +130,7 @@ class Cutadapt(object):
             'Status: {}'.format(c0),
             '='*80,
         ])
-        print(msg)
+        # print(msg) # suppress msg
         if not c0:
             raise ValueError('fq1, fq2 no valid')
         self.fq1 = file_abspath(self.fq1)

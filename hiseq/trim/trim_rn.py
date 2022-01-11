@@ -9,7 +9,7 @@ Trim adapters, low quality bases, using cutadapt: multiple fx
 3. trim n-bases from read
 
 3.1 TruSeq (NSR)  
-    - cut 7, -7; from both ends of read (subseq)    
+    - cut 9, -9; from both ends of read (subseq)    
 
 3.2 TruSeq (iCLIP) 
     - cut 9; from read1    
@@ -27,10 +27,11 @@ import shutil
 import pathlib
 import argparse
 from multiprocessing import Pool
-from hiseq.utils.file import check_path, file_abspath, check_fx, \
-    check_fx_args, fx_name
+from hiseq.utils.file import (
+    check_path, file_abspath, check_fx, check_fx_args, fx_name
+)
 from hiseq.utils.utils import log, update_obj, Config
-from hiseq.trim.trim_r1 import TrimR1
+from hiseq.trim.trim_r1 import TrimR1, get_args_trim
 
 
 class TrimRn(object):
@@ -45,34 +46,34 @@ class TrimRn(object):
 
     def init_args(self):
         args_init = {
-            'library_type': None,
+#             'library_type': None,
             'fq1': None,
             'fq2': None,
-            'outdir': None,
-            'rmdup': False,
             'smp_name': None,
-            'cut_after_trim': None,
-            'cut_to_length': 0,
-            'recursive': False, # for ATACseq, smRNA, adapter-sliding,
-            'keep_tmp': False,
-            'overwrite': False,
-            'adapter3': None, # read1
-            'adapter5': None, # read1
-            'Adapter3': None, # read2
-            'Adapter5': None, # read2
-            'qual_min': 20,
-            'error_rate': 0.1,
-            'overlap': 3,
-            'percent': 80,
-            'rm_polyN': False,
-            'rm_untrim': False,
-            'save_untrim': False,
-            'save_too_short': False,
-            'save_too_long': False,
-            'cut_before_trim': 0,
-            'discard_tooshort': False,
-            'overwrite': False,
-            'parallel_jobs': 1,
+#             'outdir': None,
+#             'rmdup': False,
+#             'cut_after_trim': None,
+#             'cut_to_length': 0,
+#             'recursive': False, # for ATACseq, smRNA, adapter-sliding,
+#             'keep_tmp': False,
+#             'overwrite': False,
+#             'adapter3': None, # read1
+#             'adapter5': None, # read1
+#             'Adapter3': None, # read2
+#             'Adapter5': None, # read2
+#             'qual_min': 20,
+#             'error_rate': 0.1,
+#             'overlap': 3,
+#             'percent': 80,
+#             'rm_polyN': False,
+#             'rm_untrim': False,
+#             'save_untrim': False,
+#             'save_too_short': False,
+#             'save_too_long': False,
+#             'cut_before_trim': 0,
+#             'discard_tooshort': False,
+#             'overwrite': False,
+#             'parallel_jobs': 1,
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'trim_rn' #
@@ -81,7 +82,6 @@ class TrimRn(object):
             self.outdir = str(pathlib.Path.cwd())
         self.outdir = file_abspath(os.path.expanduser(self.outdir))
         # init smp_name
-        # if self.smp_name is None or not len(self.fq1) == len(self.smp_name):
         if isinstance(self.smp_name, list) and len(self.fq1) == len(self.smp_name):
             pass
         else:
@@ -135,8 +135,11 @@ class TrimRn(object):
             [self.run_r1(fq) for fq in self.fq1]
 
             
-
 def get_args():
+    return get_args_trim(get_args_io())
+    
+            
+def get_args_io():
     example = '\n'.join([
         'Examples:',
         '1. auto-detect adapters',
@@ -146,7 +149,7 @@ def get_args():
     ])
     parser = argparse.ArgumentParser(
         prog='trim',
-        description='trim: for multiple reads',
+        description='trim adapters',
         epilog=example,
         formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('-1', '--fq1', nargs='+', required=True,
@@ -155,77 +158,8 @@ def get_args():
         help='The read2 of pair-end reads')
     parser.add_argument('-o', '--outdir', default=None,
         help='The directory to save results.')
-
-    parser.add_argument('--library-type', dest='library_type', default=None,
-        type=str, choices=['TruSeq', 'Nextera', 'smallRNA'],
-        help='Type of the library structure, \
-        TruSeq, TruSeq standard library \
-        Nextera, Tn5 standard library, \
-        smallRNA, small RNA library')
-    parser.add_argument('-m', '--len_min', default=15, metavar='len_min',
-        type=int, help='Minimum length of reads after trimming, defualt [15]')
-    parser.add_argument('--cut-to-length', default=0, dest='cut_to_length',
-        type=int,
-        help='cut reads to from right, default: [0], full length')
-    parser.add_argument('--rmdup', action='store_true',
-        help='remove duplicates')
-    parser.add_argument('--cut-after-trim', dest='cut_after_trim',
-        help='cut reads after triming, positive value, \
-        cut from left; minus value, cut from right, eg: 3 or -4 or 3,-4, \
-        default [0]')
-    parser.add_argument('--recursive', action='store_true',
-        help='trim adapter recursively')
-    parser.add_argument('-p', '--threads', default=1, type=int,
-        help='Number of threads to launch, default [1]')    
-    parser.add_argument('-j', '--parallel-jobs', dest='parallel_jobs',
-        default=1, type=int,
-        help='Number of jobs run in parallel, default: [1]')
-
-    parser.add_argument('--overwrite', action='store_true',
-        help='if spcified, overwrite exists file')
-    ## global arguments
-    parser.add_argument('-q', '--qual-min', default=20, type=int,
-        dest='qual_min',
-        help='The cutoff of base quality, default [20]')
-    parser.add_argument('-e', '--error-rate', default=0.1, type=float,
-        dest='error_rate',
-        help='Maximum allowed error rate, default [0.1]')
-    parser.add_argument('-O', '--overlap', type=int, default=3,
-        help='At least overlap between adapter and sequence, default: [3]')
-    ## specific
-    parser.add_argument('--rm-polyN', action='store_true',
-        dest='rm_polyN',
-        help='remove polyN')
-    parser.add_argument('--rm-untrim', action='store_true',
-        dest='rm_untrim',
-        help='discard reads without adapter')
-    parser.add_argument('--save-untrim', action='store_true',
-        dest='save_untrim',
-        help='Save untrim reads to file')
-    parser.add_argument('--save-too-short', action='store_true',
-        dest='save_too_short',
-        help='Save too short reads to file')
-    parser.add_argument('--save-too-long', action='store_true',
-        dest='save_too_long',
-        help='Save too short reads to file')
-    parser.add_argument('--cut-before-trim', default='0',
-        dest='cut_before_trim',
-        help='cut n-bases before trimming adapter; positive value, \
-        cut from left; minus value, cut from right, eg: 3 or -4 or 3,-4, \
-        default [0]')
-
-    parser.add_argument('-a', '--adapter3', default=None,
-        help='3-Adapter sequence, default [].')
-    parser.add_argument('-g', '--adapter5', default='',
-        help='5-Adapter, default: None')
-
-    ## PE arguments
-    parser.add_argument('-A', '--Adapter3', default=None,
-        help='The 3 adapter of read2, default []')
-    parser.add_argument('-G', '--Adapter5', default=None,
-        help='The 5 adapter of read1, default: None')
     return parser
-
+            
 
 def main():
     args = vars(get_args().parse_args())
