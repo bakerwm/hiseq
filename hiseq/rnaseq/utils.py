@@ -150,7 +150,7 @@ def rnaseq_trim(x, hiseq_type='rnaseq_r1'):
             'fq2': fq2,
             'outdir': a.clean_dir,
             'len_min': 20,
-            'cut_after_trim': '9,-9' if is_nsr else None,
+            'cut_after_trim': '9,-9' if is_nsr else '0',
             'keep_tmp': True,
             'parallel_jobs': 1 # do not allowed > 1 !!!!
         }

@@ -134,6 +134,9 @@ class TrimR1Config(object):
         self.outdir = file_abspath(os.path.expanduser(self.outdir))
         self.init_fq()
         self.init_files()
+        # fix cut_after_trim
+        if self.cut_after_trim is None:
+            self.cut_after_trim = '0' # default
         self.cut2_l, self.cut2_r = self.parse_cut2_arg(self.cut_after_trim)
         self.cut2_skip = (self.cut2_l + abs(self.cut2_r) == 0)
 
