@@ -2,10 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Run cutadapt command
-
-optional
-1. --rm-untrim, --save-too-short, ...
+Wrap cutadapt commands
 """
 
 
@@ -16,8 +13,9 @@ import pathlib
 import argparse
 import pandas as pd
 from hiseq.utils.seq import Fastx
-from hiseq.utils.file import check_path, file_exists, file_abspath, check_fx, \
-    check_fx_paired, fx_name
+from hiseq.utils.file import (
+    check_path, file_exists, file_abspath, check_fx, check_fx_paired, fx_name
+)
 from hiseq.utils.utils import log, update_obj, Config, run_shell_cmd
 
 
