@@ -8,36 +8,17 @@
 import os
 import sys
 import re
-import shutil
+from shutil import which
 import numpy as np
 import pandas as pd
 from xopen import xopen
-import collections # Fastx().collapse()
+from collections import OrderedDict, Counter
 # from hiseq.utils.helper import *
 # from .utils import update_obj
 from hiseq.utils.utils import log, update_obj, run_shell_cmd
-from hiseq.utils.file import fx_name, check_path
-
-
-
-
-def update_obj(obj, d, force=True, remove=False):
-    """Update the object, by dict
-    d: dict
-    force: bool, update exists attributes
-    remove: bool, remove exists attributes
-    Update attributes from dict
-    force exists attr
-    """
-    if remove is True:
-        for k in obj.__dict__:
-            delattr(obj, k)
-    # add attributes
-    if isinstance(d, dict):
-        for k, v in d.items():
-            if not hasattr(obj, k) or force:
-                setattr(obj, k, v)
-    return obj
+from hiseq.utils.file import (
+    check_path, check_file, fx_name, check_fx, file_nrows
+)
 
 
 class Fastx(object):
@@ -52,160 +33,78 @@ class Fastx(object):
     ...    
     """
     def __init__(self, input, **kwargs):
-        """
-        read fastq/a file
-        """
         self = update_obj(self, kwargs, force=True)
         self.input = input
-        self.format = self.fx_type(input)
+        self.is_valid = check_fx(input) # check_empty
+        self.format = self.fx_type()
+        self.is_fastq = self.format == 'fastq'
+        self.is_fasta = self.format == 'fasta'
         self.cat = 'zcat' if input.endswith('.gz') else 'cat'
 
 
-    def is_not_empty(self, x):
-        """Check the file is empty or not
-        plain text: 0
-        gzip.txt: 20
-        """
-        return os.stat(x).st_size > 20
-
-
-    def is_fastq(self):
-        return self.fx_type(self.input) == 'fastq'
-
-
-    def is_fasta(self):
-        return self.fx_type(self.input) == 'fasta'
-
-
-    def file_type(self, fn, top_n=1000):
-        """
-        Check the file type by top 10000 rows:
-        identify @ for fastq, > for fasta, * unknown
-        """
-        assert isinstance(fn, str)
-
-        if self.is_not_empty(fn):
-            d = {}
-            counter = 0
-            with xopen(fn) as fh:
-                for line in fh:
-                    counter += 1
-                    if counter > top_n:
-                        break
-                    elif counter % 4 == 1: # for 1st line of fastq; and fa
-                        base = line[0] # the first character
-                        if base.lower() in 'acgtn': # sequence line in fasta
-                            continue
-                        d[base] = d.get(base, 0) + 1
-                    else:
-                        continue
-
-            ## percentage
-            x = sorted(d.items(), key=lambda kv:kv[1], reverse=True)
-            ## the top1 character
-            x_top1 = x[0][0]
-            x_top1_pct = x[0][1] / sum(d.values())
-
-            ## check
-            if x_top1 == '@':
-                fx_type = 'fastq'
-            elif x_top1 == '>':
-                fx_type = 'fasta'
+    def fx_type(self, topn=1000):
+        if self.is_valid:
+            a = read_lines(self.input, nrows=topn)
+            a1 = [v[0] for i,v in enumerate(a) if i%4 == 0]
+            d = Counter(a1).most_common(1) # top1
+            if d[0][0] == '@':
+                out = 'fastq'
+            elif d[0][0] == '>':
+                out = 'fasta'
             else:
-                fx_type = None
-
-            ## if top1_pct < 90%
-            if x_top1_pct < 0.9:
-                fx_type = None
+                out = None
+            # count
+            if d[0][1] < int(topn / 4):
+                out = None
         else:
-            fx_type = None
-
-        return fx_type
-
-
-    def file_ext(self, fn):
-        """
-        Check the file type by extension: fa/fq/fasta/fastq
-        gzip supported
-        """
-        fname = os.path.basename(fn)
-        fname = fname.lower()
-        if fn.endswith('gz'):
-            fname = os.path.splitext(fname)[0]
-
-        fext = os.path.splitext(fname)[1]
-
-        if fext.lower() in ['.fa', '.fasta']:
-            fx_type = 'fasta'
-        elif fext.lower() in ['.fq', '.fastq']:
-            fx_type = 'fastq'
-        else:
-            fx_type = None
-
-        return fx_type
-
-
-    def fx_type(self, fn):
-        fx1 = self.file_ext(fn) # extension
-        if os.path.exists(fn):
-            fx2 = self.file_type(fn) # content
-            if fx1 is None or fx2 is None:
-                fx_out = fx2 if fx1 is None else fx1
-            else:
-                if fx1 == fx2:
-                    fx_out = fx1
-                else:
-                    raise Exception('error, filename {} and content {} not \
-                        match: {}'.format(fx1, fx2, fn))
-        else:
-            fx_out = fx1
-
-        return fx_out
+            out = None
+        return out
 
 
     def revcomp(self, out):
-        """
-        Rev comp the fastx file
+        """Rev comp the fastx file
         fx_reader()
         """
-        with xopen(self.input) as r, xopen(out, 'wt') as w:
-            for name, seq, qual in self.readfq(r):
-                base_from = 'ACGTNacgtn'
-                base_to = 'TGCANtgcan'
-                tab = str.maketrans(base_from, base_to)
-                seq = seq.translate(tab)[::-1]
-                if qual is None:
-                    w.write('\n'.join('>'+name, seq))
-                else:
-                    qual = qual[::-1]
-                    w.write('\n'.join('@'+name, seq, '+', qual))
+        if self.is_valid:
+            with xopen(self.input) as r, xopen(out, 'wt') as w:
+                for name, seq, qual, comment in self.readfq(r):
+                    base_from = 'ACGTNacgtn'
+                    base_to = 'TGCANtgcan'
+                    tab = str.maketrans(base_from, base_to)
+                    seq = seq.translate(tab)[::-1]
+                    if isinstance(comment, str):
+                        if len(comment) > 0:
+                            name += ' '+comment
+                    if qual is None:
+                        w.write('\n'.join('>'+name, seq))
+                    else:
+                        qual = qual[::-1]
+                        w.write('\n'.join('@'+name, seq, '+', qual))
+        else:
+            log.error('not a fx file: {}'.format(self.input))
         
 
     def sample_random(self, out, n=1000, p=0.01):
-        """
-        Extract subset of fastx file using seqkit
+        """Extract subset of fastx file using seqkit
         fx_reader()
         """
         assert isinstance(n, int)
         assert isinstance(p, float)
         outdir = os.path.dirname(out)
-        check_path(outdir)
-
+        check_path(outdir, create_dir=True)
         ## warning
         if n > 1000000:
             log.warning('too-big n={}, change to 1000000'.format(n))
             n = 1000000
         if p > 0.1:
             p = 0.1
-            
         ## cmd
         cmd = ' '.join([
-            '{}'.format(shutil.which('seqkit')),
+            '{}'.format(which('seqkit')), # shutil.which
             'sample -n {}'.format(n),
             '-o {}'.format(out),
             '{}'.format(self.input)
             ])
-
         try:
             run_shell_cmd(cmd)
         except:
@@ -213,22 +112,23 @@ class Fastx(object):
 
 
     def sample(self, out, n=1000):
-        """
-        Create a subsample of input fastq files, default: 1M reads
+        """Create a subsample of input fastq files, default: 1M reads
         Run the whole process for demostration
         """
         outdir = os.path.dirname(out)
-        check_path(outdir)
-
+        check_path(outdir, create_dir=True)
         if os.path.exists(out):
             log.info('file eixsts, {}'.format(out))
         else:
             i = 0
             with xopen(self.input, 'rt') as r, xopen(out, 'wt') as w:
-                for name, seq, qual in self.readfq(r):
+                for name, seq, qual, comment in self.readfq(r):
                     i += 1
                     if i > n:
                         break
+                    if isinstance(comment, str):
+                        if len(comment) > 0:
+                            name += ' '+comment
                     if self.format == 'fastq':
                         fx = '@{}\n{}\n+\n{}'.format(name, seq, qual)
                     elif self.format == 'fasta':
@@ -238,46 +138,26 @@ class Fastx(object):
                     w.write(fx+'\n')
 
 
-    def fa2fq(self, out):
-        """
-        Convert fasta to fastq
+    def fa2fq(self, out, qual='J'):
+        """Convert fasta to fastq
         quality='J' Phred = 33
         """
         if not self.format == 'fasta':
             raise Exception('fasta file expected, input: {}'.format(self.input))
 
         with xopen(self.input) as r, xopen(out, 'wt') as w:
-            for name, seq, qual in self.readfq(r):
-                qual = 'J' * len(seq) # Phred33, 41
+            for name, seq, qual, comment in self.readfq(r):
+                qual = 'J' * len(seq) # Phred33, 41                
+                if isinstance(comment, str):
+                    if len(comment) > 0:
+                        name += ' '+comment
                 w.write('\n'.join('@'+name, seq, '+', qual) + '\n')
-
-
-    def readfa(self, fh):
-        """
-        Read fasta file,
-        return [name, seq]
-        """
-        name = seq = ''
-        for line in fh:
-            if line.startswith('>'):
-                head = line.strip().split()[0] # the first item
-                head = head.replace('>', '')
-                if len(seq) > 0:
-                    yield [name, seq]
-                name = head
-                seq = ''
-                continue
-            seq += line.strip()
-
-        # last one
-        if len(seq) > 0:
-            yield [name, seq]
 
 
     def readfq(self, fh): # this is a generator function
         """
         source: https://github.com/lh3/readfq/blob/master/readfq.py
-        processing fastq file
+        processing fastq file, modified, add comment
         """
         last = None # this is a buffer keeping the last unprocessed line
         while True: # mimic closure; is it a bad idea?
@@ -287,14 +167,14 @@ class Fastx(object):
                         last = l[:-1] # save this line
                         break
             if not last: break
-            name, seqs, last = last[1:].partition(" ")[0], [], None
+            [name, _, comment], seqs, last = last[1:].partition(" "), [], None
             for l in fh: # read the sequence
                 if l[0] in '@+>':
                     last = l[:-1]
                     break
                 seqs.append(l[:-1])
             if not last or last[0] != '+': # this is a fasta record
-                yield name, ''.join(seqs), None # yield a fasta record
+                yield name, ''.join(seqs), None, comment # yield a fasta record
                 if not last: break
             else: # this is a fastq record
                 seq, leng, seqs = ''.join(seqs), 0, []
@@ -303,353 +183,69 @@ class Fastx(object):
                     leng += len(l) - 1
                     if leng >= len(seq): # have read enough quality
                         last = None
-                        yield name, seq, ''.join(seqs); # yield a fastq record
+                        yield name, seq, ''.join(seqs), comment; # yield a fastq record
                         break
                 if last: # reach EOF before reading enough quality
-                    yield name, seq, None # yield a fasta record instead
+                    yield name, seq, None, comment # yield a fasta record instead
                     break
-
-
-    def count(self, x):
-        """
-        count the number of lines
-        source: by Michael Bacon on StackOverflow forum: 
-        url: https://stackoverflow.com/a/27518377/2530783.
-        """
-        def _make_gen(fh):
-            block = fh(1024*1024)
-            while block:
-                yield block
-                block = fh(1024*1024)
-
-        with xopen(x, 'rb') as fh:
-            return sum(buf.count(b'\n') for buf in _make_gen(fh.read))
-
-
-    def fq_counter(self, x):
-        """
-        Count fastq records
-        N = (total lines) / 4
-        """
-        return int(self.count(x) / 4)
-
-
-    def fa_counter(self, x):
-        """
-        Count fasta records
-        N = sum('>')
-        """
-        def _make_gen(fh):
-            block = fh(1024*1024)
-            while block:
-                yield block
-                block = fh(1024*1024)
-
-        with xopen(x, 'rb') as fh:
-            return sum(buf.count(b'\n>') for buf in _make_gen(fh.read))
+        ## original version
+        # last = None # this is a buffer keeping the last unprocessed line
+        # while True: # mimic closure; is it a bad idea?
+        #     if not last: # the first record or a record following a fastq
+        #         for l in fh: # search for the start of the next record
+        #             if l[0] in '>@': # fasta/q header line
+        #                 last = l[:-1] # save this line
+        #                 break
+        #     if not last: break
+        #     name, seqs, last = last[1:].partition(" ")[0], [], None
+        #     for l in fh: # read the sequence
+        #         if l[0] in '@+>':
+        #             last = l[:-1]
+        #             break
+        #         seqs.append(l[:-1])
+        #     if not last or last[0] != '+': # this is a fasta record
+        #         yield name, ''.join(seqs), None # yield a fasta record
+        #         if not last: break
+        #     else: # this is a fastq record
+        #         seq, leng, seqs = ''.join(seqs), 0, []
+        #         for l in fh: # read the quality
+        #             seqs.append(l[:-1])
+        #             leng += len(l) - 1
+        #             if leng >= len(seq): # have read enough quality
+        #                 last = None
+        #                 yield name, seq, ''.join(seqs); # yield a fastq record
+        #                 break
+        #         if last: # reach EOF before reading enough quality
+        #             yield name, seq, None # yield a fasta record instead
+        #             break
 
 
     def number_of_seq(self):
-        """
-        Number of sequences
+        """Number of sequences
         fa, fq
         """
-        return self.fq_counter(self.input) if self.format == 'fastq' else self.fa_counter(self.input)
+        n = file_nrows(self.input)
+        return n/4 if self.format == 'fastq' else n/2
 
 
-    def region_to_pos(self, region=None):
-        """
-        Extract substring by region: 
-        Convert 1-indexed region to 0-indexed python style
-        The region cloud be: 1-indexed
-        1:20,   the first 20 bases
-        -20:-1, the last 20 bases
-        1:-1,   the full length
-        """
-        if region is None:
-            region = '1:-1' # the full length
-        # convert "7,-7" to "7:-7"
-        region = region.replace(',', ":")
-
-        p = re.compile('^(-?\d+):(-?\d+)$')
-        m = p.search(region)
-        if m:
-            pass
-        else:
-            log.error('unknown region format, expect: 1:-1, got: {}'.format(region))
-
-        # 0-indexed
-        start = int(m.group(1))
-        end = int(m.group(2))
-        if start > 0:
-            start = start - 1
-
-        if end < 0:
-            end = end + 1
-
-        return (start, end)
-
-
-    def sub_string(self, s, start, end):
-        """
-        Extract substring, by start, end (0-index)
-        convert to python style
-        """
-        if start == 0 and end == 0:
-            pass
-        elif start == 0:
-            s = s[:end]
-        elif end == 0:
-            s = s[start:]
-        else:
-            s = s[start:end]
-
-        return s
-
-
-    def subseq(self, out, region=None):
-        """
-        Get subseq by region
-
-        The region cloud be: 1-indexed
-        1:20,   the first 20 bases
-        -20:-1, the last 20 bases
-        1:-1,   the full length
-        """
-        start, end = self.region_to_pos(region)
-
-        with xopen(self.input) as r, xopen(out, 'wt') as w:
-            for name, seq, qual in self.readfq(r):
-                seq = self.sub_string(seq, start, end)
-                # specific length
-                if len(seq) < self.len_min:
-                    continue
-
-                if qual is None: # fasta
-                    w.write('\n'.join(['>'+name, seq]) + '\n')
-                else:
-                    qual = self.sub_string(qual, start, end)
-                    w.write('\n'.join(['@'+name, seq, '+', qual]) + '\n')
-
-
-    def subseq_pe(self, input2, out1, out2, region=None):
-        """
-        Get subseq by region, for paired end reads; filter by length
-
-        The region cloud be: 1-indexed
-        1:20,   0:20 , the first 20 bases
-        -20:-1, -21: , the last 20 bases
-        1:-1,   0:   , the full length
-        """
-        start, end = self.region_to_pos(region)
-
-        with xopen(self.input) as r1, xopen(input2) as r2, \
-            xopen(out1, 'wt') as w1, xopen(out2, 'wt') as w2:
-            for read1, read2 in zip(self.readfq(r1), self.readfq(r2)):
-                name1, seq1, qual1 = read1
-                name2, seq2, qual2 = read2
-                seq1 = self.sub_string(seq1, start, end)
-                seq2 = self.sub_string(seq2, start, end)
-
-                # specific length
-                if len(seq1) < self.len_min or len(seq2) < self.len_min:
-                    continue
-
-                # write
-                if qual1 is None: # fa
-                    w1.write('\n'.join(['>' + name1, seq1]) + '\n')
-                    w2.write('\n'.join(['>' + name2, seq2]) + '\n')
-                else:
-                    qual1 = self.sub_string(qual1, start, end)
-                    qual2 = self.sub_string(qual2, start, end)
-                    w1.write('\n'.join(['@' + name1, seq1, '+', qual1]) + '\n')
-                    w2.write('\n'.join(['@' + name2, seq2, '+', qual2]) + '\n')
-
-
-    # Deprecated: (see: subseq)
-    def cut(self, out, len_min=15, **kwargs):
-        """
-        Cut bases from either ends of fasta/q
-
-        7, cut 7-nt from right of sequence (3')
-        -5, cut 5-nt from left of sequence (5')
-        
-        Cut to specific length, from right/left
-        
-
-        len_min:
-        cut: [7, -5, '7,-5']
-        cut_to_length: [30, -25]
-        discard_tooshort: [True, False]
-
-        """
-        # arguments
-        args = kwargs
-
-        cut = args.get('cut', 0)
-        cut_to_length = args.get('cut_to_length', 0) # defualt: skip
-        discard_tooshort = args.get('discard_tooshort', True)
-
-        # subseq = seq[start:end]
-        def cut_sub(x):
-            if isinstance(cut, int):
-                return x[cut:] if cut > 0 else x[:cut]
-            elif isinstance(cut, str):
-                if re.match('^\d+,-\d+$', cut):
-                    s, e = cut.split(',', 1)
-                    s = eval(s)
-                    e = eval(e)
-                    return x[s:e]
-                else:
-                    raise Exception('unknown format for cut={}'.format(cut))
-
-        # cut to length
-        def cut_sub2(x):
-            if isinstance(cut_to_length, int):
-                if abs(cut_to_length) < len(x):
-                    cut_n = len(x) - abs(cut_to_length)
-                    return x[cut_n:] if cut_to_length > 0 else x[:-cut_n]
-                else:
-                    return x
-            else:
-                raise Exception('unknown format, cut_to_length={}'.format(cut_to_length))
-            # if isinstance(cut_to_length, int):
-            #     if cut_to_length > 0: # cut from 3' end
-            #         x2 = x[:cut_to_length]
-            #     else: # cut from 5' end
-            #         n = len(x) - abs(cut_to_length)
-            #         if n < 0:
-            #             n = 0
-            #         x2 = x[n:]
-            #     return x2
-            # else:
-            #     log.error('unknown x, expect int, got {}'.format(cut_to_length))
-            #     return x
-
-
-        # merge two funcs
-        def cut_cut(x):
-            # cut
-            x_cut = cut_sub(x)
-
-            # cut to length
-            if not cut_to_length == 0:
-                x_cut = cut_sub2(x_cut)
-
-            return x_cut
-
-        with xopen(self.input) as r, xopen(out, 'wt') as w:
-            for name, seq, qual in self.readfq(r):
-                seq = cut_cut(seq)
-                if len(seq) < len_min and discard_tooshort:
-                    continue # skip
-                # write
-                if qual is None: # fasta
-                    w.write('\n'.join(['>'+name, seq]) + '\n')
-                else:
-                    qual = cut_cut(qual)
-                    w.write('\n'.join(['@'+name, seq, '+', qual]) + '\n')
-
-
-    # Deprecated: (see: subseq)
-    def cut_pe(self, input2, out1, out2, len_min=15, **kwargs):
-        """
-        Cut bases from either ends of fasta/q
-
-        7, cut 7-nt from right of sequence (3')
-        -5, cut 5-nt from left of sequence (5')
-        
-        Cut to specific length, from right/left
-        
-
-        len_min:
-        cut: [7, -5, '7,-5']
-        cut_to_length: [30, -25]
-        discard_tooshort: [True, False]
-
-        """
-        # arguments
-        args = kwargs
-
-        cut = args.get('cut', 0)
-        cut_to_length = args.get('cut_to_length', 0) # defualt: skip
-        discard_tooshort = args.get('discard_tooshort', True)
-
-        # subseq = seq[start:end]
-        def cut_sub(x):
-            if isinstance(cut, int):
-                return x[cut:] if cut > 0 else x[:cut]
-            elif isinstance(cut, str):
-                if re.match('^\d+,-\d+$', cut):
-                    s, e = cut.split(',', 1)
-                    s = eval(s)
-                    e = eval(e)
-                    return x[s:e]
-                else:
-                    raise Exception('unknown format for cut={}'.format(cut))
-
-        # cut to length
-        def cut_sub2(x):
-            if isinstance(cut_to_length, int):
-                if abs(cut_to_length) < len(x):
-                    cut_n = len(x) - abs(cut_to_length)
-                    return x[cut_n:] if cut_to_length > 0 else x[:-cut_n]
-                else:
-                    return x
-            else:
-                raise Exception('unknown format, cut_to_length={}'.format(cut_to_length))
-
-        # merge two funcs
-        def cut_cut(x):
-            # cut
-            x_cut = cut_sub(x)
-
-            # cut to length
-            if not cut_to_length == 0:
-                x_cut = cut_sub2(x_cut)
-
-            return x_cut
-
-        with xopen(self.input) as r1, xopen(input2) as r2, \
-            xopen(out1, 'wt') as w1, xopen(out2, 'wt') as w2:
-            for read1, read2 in zip(self.readfq(r1), self.readfq(r2)):
-                name1, seq1, qual1 = read1
-                name2, seq2, qual2 = read2
-                seq1_cut = cut_cut(seq1)
-                seq2_cut = cut_cut(seq2)
-                if discard_tooshort:
-                    if len(seq1_cut) < len_min or len(seq2_cut) < len_min:
-                        continue # skip pair reads
-                # write
-                if qual1 is None: # fa
-                    w1.write('\n'.join(['>' + name1, seq1]) + '\n')
-                    w2.write('\n'.join(['>' + name2, seq2]) + '\n')
-                else:
-                    qual1_cut = cut_cut(qual1)
-                    qual2_cut = cut_cut(qual2)
-                    w1.write('\n'.join(['@' + name1, seq1_cut, '+', qual1_cut]) + '\n')
-                    w2.write('\n'.join(['@' + name2, seq2_cut, '+', qual2_cut]) + '\n')
+    def count(self):
+        self.number_of_seq()
 
 
     def collapse(self, out, fq_out=False):
-        """
-        Collapse fastx file, remove PCR duplicates
+        """Collapse fastx file, remove PCR duplicates
         sort by counts
         """
-
         d = {}
         with xopen(self.input) as r:
-            for _, seq, _ in self.readfq(r):
+            for _, seq, _, _ in self.readfq(r):
                 d[seq] = d.get(seq, 0) + 1
-
         # sort by value
         tmp = sorted(d.items(), key=lambda kv: kv[1], reverse=True)
-        dd = collections.OrderedDict(tmp)
-
+        dd = OrderedDict(tmp) # collections.OrderedDict(tmp)
         # save to file
         n = 0
         with xopen(out, 'wt') as w:
-
             for key, value in dd.items():
                 n += 1
                 name = str(n) + '-' + str(value)
@@ -660,59 +256,9 @@ class Fastx(object):
                     w.write('\n'.join(['>'+name, key]) + '\n')
 
 
-    def detect_adapter(self, show_log=True):
-        """
-        Guess adapters, sampling the first 1000000 records
-        TruSeq    AGATCGGAAGAGC
-        Nextera   CTGTCTCTTATACACATCT
-        smallRNA  TGGAATTCTCGG
-
-        to-do
-        specific type of adapters
-        """
-        ad = {
-            'truseq': 'AGATCGGAAGAGC',
-            'nextera': 'CTGTCTCTTATA',
-            'smallrna': 'TGGAATTCTCGG'
-        }
-        # count 
-        d = {}
-        n_max = 100000 # 100k reads
-        n = 0
-        with xopen(self.input) as r:
-            for _, seq, _ in self.readfq(r):
-                n += 1
-                if n > n_max:
-                    break
-                # check
-                if ad['truseq'] in seq:
-                    d['truseq'] = d.get('truseq', 0) + 1
-                elif ad['nextera'] in seq:
-                    d['nextera'] = d.get('nextera', 0) + 1
-                elif ad['smallrna'] in seq:
-                    d['smallrna'] = d.get('smallrna', 0) + 1
-                else:
-                    d['unknown'] = d.get('unknown', 0) + 1
-        # summary
-        msg = '\n'.join([
-            '{}\t{}\t{}\t{}\t{}'.format('Type', 'sequence', 'total', 'count', 'percent'),
-            '{}\t{}\t{}\t{}\t{:.2f}%'.format('TruSeq', ad['truseq'], n_max, d.get('truseq', 0), d.get('truseq', 0)/n_max*100),
-            '{}\t{}\t{}\t{}\t{:.2f}%'.format('Nextera', ad['nextera'], n_max, d.get('nextera', 0), d.get('nextera', 0)/n_max*100),
-            '{}\t{}\t{}\t{}\t{:.2f}%'.format('smallRNA', ad['smallrna'], n_max, d.get('smallrna', 0), d.get('smallrna', 0)/n_max*100),
-            '{}\t{}\t{}\t{}\t{:.2f}%'.format('unknown', 'null', n_max, d.get('unknown', 0), d.get('unknown', 0)/n_max*100)
-            ])
-        if show_log:
-            print(msg)
-        # sort
-        dd = dict(sorted(d.items(), key=lambda x: x[1], reverse=True))
-        # dd = collections.OrderedDict(ds)
-        return dd
-
-
-    def calFreq(self, x):
+    def cal_freq(self, x):
         """Calculate the frequency of list
         return dataframe
-
         index count
         """
         if isinstance(x, list):
@@ -728,7 +274,6 @@ class Fastx(object):
         """Calculate the length distribution of the fx
         fq
         fa
-
         >fragsize.csv
         length count
         """
@@ -737,7 +282,7 @@ class Fastx(object):
         fragSizes = []
         frames = []
         with xopen(self.input) as r:
-            for name, seq, qual in self.readfq(r):
+            for _, seq, _, _ in self.readfq(r):
                 counter += 1
                 fragSizes.append(len(seq))
                 # last record
@@ -746,12 +291,12 @@ class Fastx(object):
                     break # stop
                 # chunk
                 if counter > 0 and counter%chunk == 0:
-                    frames.append(self.calFreq(fragSizes))
+                    frames.append(self.cal_freq(fragSizes))
                     fragSizes = [] # empty
                     log.info('{} : {}'.format('Processed', counter))
             # last chunk
             if len(fragSizes) > 0:
-                frames.append(self.calFreq(fragSizes))
+                frames.append(self.cal_freq(fragSizes))
                 fragSizes = [] # empty
                 log.info('{} : {}'.format('Processed', counter))
         # overall
@@ -763,6 +308,350 @@ class Fastx(object):
                 df.to_csv(csv_file, index=False)
         # output
         return df
+
+
+    def detect_adapter(self, show_log=True):
+        """
+        Guess adapters, sampling the first 100000 records
+        TruSeq    AGATCGGAAGAGC
+        Nextera   CTGTCTCTTATACACATCT
+        smallRNA  TGGAATTCTCGG
+        to-do
+        specific type of adapters
+        """
+        ad = {
+            'truseq': 'AGATCGGAAGAGC',
+            'nextera': 'CTGTCTCTTATA',
+            'smallrna': 'TGGAATTCTCGG'
+        }
+        # count
+        d = {}
+        n_max = 100000 # 100k reads
+        n = 0
+        with xopen(self.input) as r:
+            for _, seq, _, _ in self.readfq(r):
+                n += 1
+                if n > n_max:
+                    break
+                # check
+                if ad['truseq'] in seq:
+                    d['truseq'] = d.get('truseq', 0) + 1
+                elif ad['nextera'] in seq:
+                    d['nextera'] = d.get('nextera', 0) + 1
+                elif ad['smallrna'] in seq:
+                    d['smallrna'] = d.get('smallrna', 0) + 1
+                else:
+                    d['unknown'] = d.get('unknown', 0) + 1
+        # summary
+        h = '\t'.join(['Type', 'sequence', 'total', 'count', 'percent'])
+        out = [h]
+        for i in ['TruSeq', "Nextera", 'smallRNA']:
+            t = i.lower()
+            a = [i, ad.get(t), n_max, d.get(t, 0), d.get(t, 0)/n_max*100]
+            s = '\t'.join(list(map(str, a)))
+            out.append(s+'%')
+        msg = '\n'.join(out)
+        if show_log:
+            print(msg)
+        # sort
+        dd = dict(sorted(d.items(), key=lambda x: x[1], reverse=True))
+        return dd
+
+
+    # def region_to_pos(self, region=None):
+    #     """Extract substring by region: 
+    #     Convert 1-indexed region to 0-indexed python style
+    #     The region cloud be: 1-indexed
+    #     1:20,   the first 20 bases
+    #     -20:-1, the last 20 bases
+    #     1:-1,   the full length
+    #     """
+    #     if region is None:
+    #         region = '1:-1' # the full length
+    #     # convert "7,-7" to "7:-7"
+    #     region = region.replace(',', ":")
+    #     p = re.compile('^(-?\d+):(-?\d+)$')
+    #     m = p.search(region)
+    #     if m:
+    #         pass
+    #     else:
+    #         log.error('unknown region, expect: 1:-1, got: {}'.format(region))
+    #     # 0-indexed
+    #     start = int(m.group(1))
+    #     end = int(m.group(2))
+    #     if start > 0:
+    #         start = start - 1
+    #     if end < 0:
+    #         end = end + 1
+    #     return (start, end)
+
+
+    # def sub_string(self, s, start, end):
+    #     """Extract substring, by start, end (0-index)
+    #     convert to python style
+    #     """
+    #     if start == 0 and end == 0:
+    #         pass
+    #     elif start == 0:
+    #         s = s[:end]
+    #     elif end == 0:
+    #         s = s[start:]
+    #     else:
+    #         s = s[start:end]
+
+    #     return s
+
+
+    # def subseq(self, out, region=None):
+    #     """Get subseq by region
+    #     The region cloud be: 1-indexed
+    #     1:20,   the first 20 bases
+    #     -20:-1, the last 20 bases
+    #     1:-1,   the full length
+    #     """
+    #     start, end = self.region_to_pos(region)
+
+    #     with xopen(self.input) as r, xopen(out, 'wt') as w:
+    #         for name, seq, qual, comment in self.readfq(r):
+    #             seq = self.sub_string(seq, start, end)
+    #             if isinstance(comment, str):
+    #                 if len(comment) > 0:
+    #                     name += ' '+comment #fix comment=None
+    #             # specific length
+    #             if len(seq) < self.len_min:
+    #                 continue
+    #             if qual is None: # fasta
+    #                 w.write('\n'.join(['>'+name, seq]) + '\n')
+    #             else:
+    #                 qual = self.sub_string(qual, start, end)
+    #                 w.write('\n'.join(['@'+name, seq, '+', qual]) + '\n')
+
+
+    # def subseq_pe(self, input2, out1, out2, region=None):
+    #     """Get subseq by region, for paired end reads; filter by length
+    #     The region cloud be: 1-indexed
+    #     1:20,   0:20 , the first 20 bases
+    #     -20:-1, -21: , the last 20 bases
+    #     1:-1,   0:   , the full length
+    #     """
+    #     start, end = self.region_to_pos(region)
+
+    #     with xopen(self.input) as r1, xopen(input2) as r2, \
+    #         xopen(out1, 'wt') as w1, xopen(out2, 'wt') as w2:
+    #         for read1, read2 in zip(self.readfq(r1), self.readfq(r2)):
+    #             name1, seq1, qual1, comment1 = read1
+    #             name2, seq2, qual2, comment2 = read2
+    #             seq1 = self.sub_string(seq1, start, end)
+    #             seq2 = self.sub_string(seq2, start, end)
+    #             if isinstance(comment1, str):
+    #                 if len(comment1) > 0:
+    #                     name1 += ' '+comment1 #fix comment=None
+    #             if isinstance(comment2, str):
+    #                 if len(comment2) > 0:
+    #                     name2 += ' '+comment2 #fix comment=None
+    #             # specific length
+    #             if len(seq1) < self.len_min or len(seq2) < self.len_min:
+    #                 continue
+    #             # write
+    #             if qual1 is None: # fa
+    #                 w1.write('\n'.join(['>' + name1, seq1]) + '\n')
+    #                 w2.write('\n'.join(['>' + name2, seq2]) + '\n')
+    #             else:
+    #                 qual1 = self.sub_string(qual1, start, end)
+    #                 qual2 = self.sub_string(qual2, start, end)
+    #                 w1.write('\n'.join(['@' + name1, seq1, '+', qual1]) + '\n')
+    #                 w2.write('\n'.join(['@' + name2, seq2, '+', qual2]) + '\n')
+
+
+    # # Deprecated: (see: subseq)
+    # def cut(self, out, len_min=15, **kwargs):
+    #     """Cut bases from either ends of fasta/q
+    #     7, cut 7-nt from right of sequence (3')
+    #     -5, cut 5-nt from left of sequence (5')
+    #     Cut to specific length, from right/left
+    #     len_min:
+    #     cut: [7, -5, '7,-5']
+    #     cut_to_length: [30, -25]
+    #     discard_tooshort: [True, False]
+    #     """
+    #     # arguments
+    #     args = kwargs
+    #     cut = args.get('cut', 0)
+    #     cut_to_length = args.get('cut_to_length', 0) # defualt: skip
+    #     discard_tooshort = args.get('discard_tooshort', True)
+    #     # subseq = seq[start:end]
+    #     def cut_sub(x):
+    #         if isinstance(cut, int):
+    #             return x[cut:] if cut > 0 else x[:cut]
+    #         elif isinstance(cut, str):
+    #             if re.match('^\d+,-\d+$', cut):
+    #                 s, e = cut.split(',', 1)
+    #                 s = eval(s)
+    #                 e = eval(e)
+    #                 return x[s:e]
+    #             else:
+    #                 raise Exception('unknown format for cut={}'.format(cut))
+
+    #     # cut to length
+    #     def cut_sub2(x):
+    #         if isinstance(cut_to_length, int):
+    #             if abs(cut_to_length) < len(x):
+    #                 cut_n = len(x) - abs(cut_to_length)
+    #                 return x[cut_n:] if cut_to_length > 0 else x[:-cut_n]
+    #             else:
+    #                 return x
+    #         else:
+    #             raise Exception('unknown format, cut_to_length={}'.format(cut_to_length))
+    #         # if isinstance(cut_to_length, int):
+    #         #     if cut_to_length > 0: # cut from 3' end
+    #         #         x2 = x[:cut_to_length]
+    #         #     else: # cut from 5' end
+    #         #         n = len(x) - abs(cut_to_length)
+    #         #         if n < 0:
+    #         #             n = 0
+    #         #         x2 = x[n:]
+    #         #     return x2
+    #         # else:
+    #         #     log.error('unknown x, expect int, got {}'.format(cut_to_length))
+    #         #     return x
+
+    #     # merge two funcs
+    #     def cut_cut(x):
+    #         # cut
+    #         x_cut = cut_sub(x)
+
+    #         # cut to length
+    #         if not cut_to_length == 0:
+    #             x_cut = cut_sub2(x_cut)
+
+    #         return x_cut
+
+    #     with xopen(self.input) as r, xopen(out, 'wt') as w:
+    #         for name, seq, qual, comment in self.readfq(r):
+    #             seq = cut_cut(seq)
+    #             if len(seq) < len_min and discard_tooshort:
+    #                 continue # skip
+    #             if isinstance(comment, str):
+    #                 if len(comment) > 0:
+    #                     name += ' '+comment
+    #             # write
+    #             if qual is None: # fasta
+    #                 w.write('\n'.join(['>'+name, seq]) + '\n')
+    #             else:
+    #                 qual = cut_cut(qual)
+    #                 w.write('\n'.join(['@'+name, seq, '+', qual]) + '\n')
+
+
+    # # Deprecated: (see: subseq)
+    # def cut_pe(self, input2, out1, out2, len_min=15, **kwargs):
+    #     """
+    #     Cut bases from either ends of fasta/q
+
+    #     7, cut 7-nt from right of sequence (3')
+    #     -5, cut 5-nt from left of sequence (5')
+        
+    #     Cut to specific length, from right/left
         
 
+    #     len_min:
+    #     cut: [7, -5, '7,-5']
+    #     cut_to_length: [30, -25]
+    #     discard_tooshort: [True, False]
 
+    #     """
+    #     # arguments
+    #     args = kwargs
+
+    #     cut = args.get('cut', 0)
+    #     cut_to_length = args.get('cut_to_length', 0) # defualt: skip
+    #     discard_tooshort = args.get('discard_tooshort', True)
+
+    #     # subseq = seq[start:end]
+    #     def cut_sub(x):
+    #         if isinstance(cut, int):
+    #             return x[cut:] if cut > 0 else x[:cut]
+    #         elif isinstance(cut, str):
+    #             if re.match('^\d+,-\d+$', cut):
+    #                 s, e = cut.split(',', 1)
+    #                 s = eval(s)
+    #                 e = eval(e)
+    #                 return x[s:e]
+    #             else:
+    #                 raise Exception('unknown format for cut={}'.format(cut))
+
+    #     # cut to length
+    #     def cut_sub2(x):
+    #         if isinstance(cut_to_length, int):
+    #             if abs(cut_to_length) < len(x):
+    #                 cut_n = len(x) - abs(cut_to_length)
+    #                 return x[cut_n:] if cut_to_length > 0 else x[:-cut_n]
+    #             else:
+    #                 return x
+    #         else:
+    #             raise Exception('unknown format, cut_to_length={}'.format(cut_to_length))
+
+    #     # merge two funcs
+    #     def cut_cut(x):
+    #         # cut
+    #         x_cut = cut_sub(x)
+
+    #         # cut to length
+    #         if not cut_to_length == 0:
+    #             x_cut = cut_sub2(x_cut)
+
+    #         return x_cut
+
+    #     with xopen(self.input) as r1, xopen(input2) as r2, \
+    #         xopen(out1, 'wt') as w1, xopen(out2, 'wt') as w2:
+    #         for read1, read2 in zip(self.readfq(r1), self.readfq(r2)):
+    #             name1, seq1, qual1 = read1
+    #             name2, seq2, qual2 = read2
+    #             seq1_cut = cut_cut(seq1)
+    #             seq2_cut = cut_cut(seq2)
+    #             if discard_tooshort:
+    #                 if len(seq1_cut) < len_min or len(seq2_cut) < len_min:
+    #                     continue # skip pair reads
+    #             # write
+    #             if qual1 is None: # fa
+    #                 w1.write('\n'.join(['>' + name1, seq1]) + '\n')
+    #                 w2.write('\n'.join(['>' + name2, seq2]) + '\n')
+    #             else:
+    #                 qual1_cut = cut_cut(qual1)
+    #                 qual2_cut = cut_cut(qual2)
+    #                 w1.write('\n'.join(['@' + name1, seq1_cut, '+', qual1_cut]) + '\n')
+    #                 w2.write('\n'.join(['@' + name2, seq2_cut, '+', qual2_cut]) + '\n')
+
+
+    # def count(self):
+    #     """count the number of lines
+    #     source: by Michael Bacon on StackOverflow forum: 
+    #     url: https://stackoverflow.com/a/27518377/2530783.
+    #     """
+    #     def _make_gen(fh):
+    #         block = fh(1024*1024)
+    #         while block:
+    #             yield block
+    #             block = fh(1024*1024)
+    #     with xopen(x, 'rb') as fh:
+    #         return sum(buf.count(b'\n') for buf in _make_gen(fh.read))
+
+
+    # def fq_counter(self, x):
+    #     """Count fastq records
+    #     N = (total lines) / 4
+    #     """
+    #     return int(self.count(x) / 4)
+
+
+    # def fa_counter(self, x):
+    #     """Count fasta records
+    #     N = sum('>')
+    #     """
+    #     return int(self.count(x) / 2)
+    #     # def _make_gen(fh):
+    #     #     block = fh(1024*1024)
+    #     #     while block:
+    #     #         yield block
+    #     #         block = fh(1024*1024)
+    #     # with xopen(x, 'rb') as fh:
+    #     #     return sum(buf.count(b'\n>') for buf in _make_gen(fh.read))

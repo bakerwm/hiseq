@@ -29,8 +29,7 @@ import zipfile
 
 
 class Genome(object):
-    """
-    List related information of specific genome
+    """List related information of specific genome
     1. fa(), genome fasta
     2. fasize(), genome fasta size
     3. gene_bed(),

@@ -9,6 +9,9 @@ functions/classes:
 Bam
 Bam2cor
 Bam2fingerprint
+bwCompare
+Bw2cor
+is_sam_flag
 
 BAM:
   - sort
@@ -37,7 +40,7 @@ import pybedtools
 from shutil import which
 from hiseq.utils.utils import log, update_obj, get_date, Config, run_shell_cmd
 from hiseq.utils.file import (
-    check_path, check_file, file_exists, file_abspath, file_prefix, read_lines
+    check_file, check_path, file_abspath, file_prefix, file_exists, read_lines
 )
 
 
@@ -52,7 +55,6 @@ class Bam(object):
     - ...
 
     Using Pysam, Pybedtools, ...
-
     code from cgat:
     """
     def __init__(self, infile, threads=4):
@@ -60,29 +62,44 @@ class Bam(object):
         self.threads = threads
         # self.bed = self.to_bed()
 
+    def is_vaild(self):
+        """Bam file is valid
+        1. is str
+        2. .bam
+        3. file exists
+        """
+        c1 = check_file(self.bam, check_empty=True)
+        return self.bam.endswith('.bam') if c1 else False
+
 
     def index(self):
-        """Create index for bam
-        """
-        bai = self.bam + '.bai'
-        if not os.path.exists(bai):
-            pysam.index(self.bam)
-        # return os.path.exists(bai)
+        if self.is_valid():
+            bai = self.bam + '.bai'
+            if not file_exists(bai):
+                try:
+                    pysam.index(self.bam)
+                except:
+                    log.error('Bam().index() failed')
+        else:
+            log.error('not a bam file: {}'.format(self.bam))
 
 
     def sort(self, outfile=None, by_name=False, overwrite=False):
-        """Sort bam file by position (default)
-        save to *.sorted.bam (or specify the name)
-        """
-        if outfile is None:
-            outfile = os.path.splitext(self.bam)[0] + '.sorted.bam'
-        if os.path.exists(outfile) and overwrite is False:
-            log.info('file exists: {}'.format(outfile))
-        else:
-            if by_name:
-                tmp = pysam.sort('-@', str(self.threads), '-n', '-o', outfile, self.bam)
+        if self.is_valid():
+            if outfile is None:
+                outfile = os.path.splitext(self.bam)[0] + '.sorted.bam'
+            if file_exists(outfile) and overwrite is False:
+                log.info('file exists: {}'.format(outfile))
             else:
-                tmp = pysam.sort('-@', str(self.threads), '-o', outfile, self.bam)
+                if by_name:
+                    tmp = pysam.sort('-@', str(self.threads), '-n', '-o', 
+                        outfile, self.bam)
+                else:
+                    tmp = pysam.sort('-@', str(self.threads), '-o', 
+                        outfile, self.bam)
+        else:
+            log.error('not a bam file: {}'.format(self.bam))
+            outfile = None
         return outfile
 
 
@@ -93,72 +110,70 @@ class Bam(object):
         pass
 
 
-    def count(self, reads=True):
-        """Using samtools view -c"""
-        x = pysam.view('-c', self.bam)
-        n = int(x.strip())
-        if not reads:
-            if self.is_paired():
-                n = int(n / 2)
-        return n
-
-
     def to_bed(self, outfile=None):
-        """Convert BAM to BED
-        pybetools
+        """Convert BAM to BED, using pybetools
         """
-        if outfile is None:
-            outfile = os.path.splitext(self.bam)[0] + '.bed'
-        if not os.path.exists(outfile):
-            pybedtools.BedTool(self.bam).bam_to_bed().saveas(outfile)
+        if self.is_valid():
+            if outfile is None:
+                outfile = file_prefix(self.bam) + '.bed'
+            if not os.path.exists(outfile):
+                pybedtools.BedTool(self.bam).bam_to_bed().saveas(outfile)
+        else:
+            log.error('not a bam file: {}'.format(self.bam))
+            outfile = None    
         return outfile
 
 
     def rmdup(self, outfile=None, overwrite=False, tools='picard'):
         """Remove duplicates using picard/sambamba
         sambamba markdup -r --overflow-list-size 800000 raw.bam rmdup.bam
-        picard MarkDuplicates -REMOVE_DUPLICATES True -I in.bam -O outfile.bam -M metrix.txt
+        picard MarkDuplicates -REMOVE_DUPLICATES True -I in.bam -O outfile.bam
+            -M metrix.txt
         ## -REMOVE_SEQUENCING_DUPLICATES True
         """
-        if outfile is None:
-            outfile = os.path.splitext(self.bam)[0] + '.rmdup.bam'
-        if tools == 'sambamba':
-            sambamba = which('sambamba')
-            log_stderr = outfile + '.sambamba.log'
-            cmd = ' '.join([
-                '{} markdup -r'.format(which('sambamba')),
-                '-t {}'.format(2), #!! force to 2
-                '--overflow-list-size 1000000',
-                '--tmpdir={}'.format(tempfile.TemporaryDirectory().name),
-                '{} {} 2> {}'.format(self.bam, outfile, log_stderr),
-            ])
-        elif tools == 'picard':
-            picard = which('picard')
-            log_stderr = outfile + '.picard.log'
-            metrics_file = outfile + '.metrics.txt'
-            cmd = ' '.join([
-                '{} MarkDuplicates'.format(which('picard')),
-                'REMOVE_DUPLICATES=True',
-                'I={} O={} M={}'.format(self.bam, outfile, metrics_file),
-                '2>{}'.format(log_stderr),
-                '&& samtools index {}'.format(outfile)
-            ])
-            # 'REMOVE_SEQUENCING_DUPLICATES=True',
+        if self.is_valid():
+            if outfile is None:
+                outfile = file_prefix(self.bam)+'.rmdup.bam'
+            if tools == 'sambamba': # error prone !!!
+                # sambamba = which('sambamba') # shutil.which
+                log_stderr = outfile+'.sambamba.log'
+                cmd = ' '.join([
+                    '{} markdup -r'.format(which('sambamba')),
+                    '-t {}'.format(2), #!! force to 2
+                    '--overflow-list-size 1000000',
+                    '--tmpdir={}'.format(tempfile.TemporaryDirectory().name),
+                    '{} {} 2> {}'.format(self.bam, outfile, log_stderr),
+                ])
+            elif tools == 'picard':
+                # picard = which('picard')
+                log_stderr = outfile+'.picard.log'
+                metrics_file = outfile+'.metrics.txt'
+                cmd = ' '.join([
+                    '{} MarkDuplicates'.format(which('picard')),
+                    'REMOVE_DUPLICATES=True',
+                    'I={} O={} M={}'.format(self.bam, outfile, metrics_file),
+                    '2>{}'.format(log_stderr),
+                    '&& samtools index {}'.format(outfile)
+                ])
+                # 'REMOVE_SEQUENCING_DUPLICATES=True',
+            else:
+                log.error(' '.join([
+                    'rmdup(), unknown tools {}, '.format(tools),
+                    'options: ["sambamba", "picard"]'
+                ]))
+                return None
+            # save cmd
+            cmd_txt = outfile.replace('.bam', '.cmd.sh')
+            with open(cmd_txt, 'wt') as w:
+                w.write(cmd+'\n')
+            # if os.path.exists(outfile) and overwrite is False:
+            if check_file(outfile, check_empty=True) and not overwrite:
+                log.info('file exists: {}'.format(outfile))
+            else:
+                run_shell_cmd(cmd)
         else:
-            log.error(' '.join([
-                'rmdup(), unknown tools {}, '.format(tools),
-                'options: ["sambamba", "picard"]'
-            ]))
-            return None
-        # save cmd
-        cmd_txt = outfile.replace('.bam', '.cmd.sh')
-        with open(cmd_txt, 'wt') as w:
-            w.write(cmd+'\n')
-        # if os.path.exists(outfile) and overwrite is False:
-        if check_file(outfile, check_empty=True) and not overwrite:
-            log.info('file exists: {}'.format(outfile))
-        else:
-            run_shell_cmd(cmd)
+            log.error('not a bam file: {}'.format(self.bam))
+            outfile = None
         return outfile
 
 
@@ -166,39 +181,42 @@ class Bam(object):
         """Extract proper pair
         samtools view -f 2
         """
-        if outfile is None:
-            outfile = os.path.splitext(self.bam)[0] + '.proper_pair.bam'
-        if os.path.exists(outfile) and overwrite is False:
-            logging.info('file exists: {}'.format(outfile))
+        if self.is_valid():
+            if outfile is None:
+                outfile = file_prefix(self.bam) + '.proper_pair.bam'
+            if os.path.exists(outfile) and overwrite is False:
+                logging.info('file exists: {}'.format(outfile))
+            else:
+                pysam.view('-f', '2', '-Sub', '-@', str(self.threads),
+                    '-o', outfile, self.bam, catch_stdout=False)
         else:
-            pysam.view('-f', '2', '-h', '-b', '-@', str(self.threads),
-                '-o', outfile, self.bam, catch_stdout=False)
+            log.error('not a bam file: {}'.format(self.bam))
+            outfile = None
         return outfile
 
 
-    def subset(self, size=20000, subdir=None):
+    def topn(self, size=20000, subdir=None):
         """Extract N reads from bam list
+        samtools view -s [INT.FRAC] 
         !!!! caustion, PE reads !!!!
         """
-        if subdir is None:
-            subdir = self._tmp(delete=False)
-        check_path(subdir)
-        # src, dest
-        dest = os.path.join(subdir, os.path.basename(self.bam))
-        if file_exists(dest):
-            log.info('Bam.subset() skipped, file exists {}'.format(dest))
+        pass
+
+
+    def sample(self, frac, outfile=None, overwrite=False):
+        if self.is_valid():
+            if outfile is None:
+                outfile = file_prefix(self.bam) + '.sub.bam'
+            if os.path.exists(outfile) and overwrite is False:
+                log.info('Bam.sample() skipped, file exists {}'.format(outfile))
+            else:
+                self.index()
+                pysam.view('-Sub', '-@', str(self.threads), '-s', str(frac), 
+                    '-o', outfile, self.bam, catch_stdout=False)
         else:
-            self.index()
-            srcfile = pysam.AlignmentFile(self.bam, 'rb')
-            destfile = pysam.AlignmentFile(dest, 'wb', template=srcfile)
-            # counter
-            i = 0
-            for read in srcfile.fetch():
-                i +=1
-                if i > size:
-                    break
-                destfile.write(read)
-        return dest
+            log.error('not a bam file: {}'.format(self.bam))
+            outfile = None
+        return outfile
 
 
     def _tmp(self, delete=True):
@@ -216,21 +234,40 @@ class Bam(object):
         go through the topn alignments in file,
         return: True, any of the alignments are paired
         """
-        samfile = pysam.AlignmentFile(self.bam)
-        n = 0
-        for read in samfile:
-            if read.is_paired:
-                break
-            n += 1
-            if n == topn:
-                break
-        samfile.close()
-        return n != topn
+        if self.is_valid():
+            samfile = pysam.AlignmentFile(self.bam)
+            n = 0
+            for read in samfile:
+                if read.is_paired:
+                    break
+                n += 1
+                if n == topn:
+                    break
+            samfile.close()
+            out = topn > n
+        else:
+            log.error('not a bam file: {}'.format(self.bam))
+            out = False
+        return out
+
+
+    def count(self, reads=True):
+        """Using samtools view -c"""
+        if self.is_valid():
+            x = pysam.view('-c', '-F', '4', '-@', str(self.threads), self.bam)
+            n = int(x.strip())
+            if not reads:
+                if self.is_paired():
+                    n = int(n / 2)
+        else:
+            log.error('not a bam file: {}'.format(self.bam))
+            n = 0
+        return n
 
 
     def get_num_reads(self):
         """Count number of reads in bam file.
-        This methods works through pysam.idxstats.
+        Using pysam.idxstats.
         Arguments
         ---------
         bamfile : string
@@ -241,15 +278,19 @@ class Bam(object):
         nreads : int
             Number of reads
         """
-        lines = pysam.idxstats(self.bam).splitlines()
-        try:
-            nreads = sum(
-                map(int, [x.split("\t")[2]
-                          for x in lines if not x.startswith("#")]))
-        except IndexError as msg:
-            raise IndexError(
-                "can't get number of reads from bamfile, msg=%s, data=%s" %
-                (msg, lines))
+        if self.is_valid():
+            lines = pysam.idxstats(self.bam).splitlines()
+            try:
+                nreads = sum(
+                    map(int, [x.split("\t")[2]
+                              for x in lines if not x.startswith("#")]))
+            except IndexError as msg:
+                raise IndexError(
+                    "can't get number of reads from bamfile, msg=%s, data=%s" %
+                    (msg, lines))
+        else:
+            log.error('not a bam file: {}'.format(self.bam))
+            nreads = 0
         return nreads
 
 
@@ -464,8 +505,7 @@ def is_sam_flag(x, return_codes=False):
 
 
 class Bam2cor(object):
-    """
-    Compute correlation between replicates
+    """Compute correlation between replicates
 
     input: bam
     output: count_matrix
@@ -518,7 +558,7 @@ class Bam2cor(object):
         self.init_bam()
         self.init_files()
         # save config
-        check_path(self.outdir, create_dirs=True)
+        check_path(self.outdir, create_dir=True)
         Config().dump(self.__dict__, self.config_yaml)
 
 
@@ -560,7 +600,7 @@ class Bam2cor(object):
             'log_pca': os.path.join(self.outdir, self.prefix + '.cor_PCA.log')
         }
         self = update_obj(self, default_files, force=True) # key
-        check_path(self.outdir, create_dirs=True)
+        check_path(self.outdir, create_dir=True)
 
 
     def bam_summary(self):
@@ -677,7 +717,7 @@ class Bam2fingerprint(object):
         self.init_bam()
         self.init_files()
         # save config
-        check_path(self.outdir, create_dirs=True)
+        check_path(self.outdir, create_dir=True)
         Config().dump(self.__dict__, self.config_yaml)
 
 
@@ -850,7 +890,7 @@ class Bw2cor(object):
         self.init_bw()
         self.init_files()
         # save config
-        check_path(self.outdir, create_dirs=True)
+        check_path(self.outdir, create_dir=True)
         Config().dump(self.__dict__, self.config_yaml)
 
 
@@ -891,7 +931,7 @@ class Bw2cor(object):
             'log_pca': os.path.join(self.outdir, self.prefix + '.cor_PCA.log')
         }
         self = update_obj(self, default_files, force=True) # key
-        check_path(self.outdir, create_dirs=True)
+        check_path(self.outdir, create_dir=True)
 
 
     def bw_summary(self):

@@ -29,7 +29,8 @@ from hiseq.utils.utils import (
     convert_image, log, update_obj, Config, run_shell_cmd
 )
 from hiseq.utils.file import (
-    check_path, file_exists, file_nrows, file_prefix, remove_file, read_lines
+    check_path, check_file, file_exists, file_nrows, file_prefix, 
+    remove_file, read_lines, save2file
 )
 from hiseq.utils.bam import Bam
 from hiseq.utils.featurecounts import FeatureCounts
@@ -236,7 +237,6 @@ class ParseError(Exception):
             return Exception.__str__(self)
 
 
-
 class Bed(object):
     def __init__(self, fields, reader=None):
         """Convertions for Bed file
@@ -382,7 +382,6 @@ class Bed(object):
         assert chrom in chrom2size
         self.fields[1] = str(max(0, self.get_start()))
         self.fields[2] = str(min(chrom2size[chrom], self.get_end()))
-
 
 
 class BedReader(TableReader):
