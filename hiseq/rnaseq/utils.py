@@ -796,11 +796,9 @@ def qc_tss_enrich_tool(x, hiseq_type='r1', bw_type='r1',
         if a.hiseq_type.startswith('rnaseq'):
             b1 = list_hiseq_file(x, 'bw_fwd', 'r1')
             b2 = list_hiseq_file(x, 'bw_rev', 'r1')
-            n1 = list_hiseq_file(x, 'smp_name', 'rn')
-            n2 = list_hiseq_file(x, 'smp_name', 'rn')
+            n1 = list_hiseq_file(x, 'smp_name', '_r1')
             n1 = [i.replace(a.smp_name+'_', '') for i in n1]
-            n2 = [i.replace(a.smp_name+'_', '') for i in n2]
-            n_list = [i+k for i in n1 + n2 for k in ['_fwd', '_rev']]
+            n_list = [k+i for i in ['_fwd', '_rev'] for k in n1]
             bw_list = [a.bw_fwd, a.bw_rev] + b1 + b2
             n_list = ['merge_fwd', 'merge_rev'] + n_list
             bw = ' '.join(bw_list)
@@ -851,7 +849,7 @@ def qc_tss_enrich_tool(x, hiseq_type='r1', bw_type='r1',
     arg_ma = ' '.join([arg_label, arg_body, arg_bw, arg_bed])
     arg_plot = ' '.join([arg_title, per_group])
     # return arguments
-    return (arg_ma, arg_plot)            
+    return (arg_ma, arg_plot)
             
 
 def qc_genebody_enrich(x, hiseq_type='r1', bw_type='r1', **kwargs):

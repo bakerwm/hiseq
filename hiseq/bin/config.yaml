@@ -13,3 +13,4 @@ supported_genome:
 - hg19
 - hg38
 - GRCh38
+- susScr11

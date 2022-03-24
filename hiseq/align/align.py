@@ -583,13 +583,15 @@ def get_args():
         help='Overwrite the exist files')
     parser.add_argument('-u', '--unique-only', action='store_true',
         dest='unique_only', help='Report unique mapped reads only')
-    parser.add_argument('--n-map', type=int, default=1,
-        help='Number of hits per read')
+    parser.add_argument('--n-map', dest='n_map', type=int, default=0,
+        help='Number of hits per read, default [0]')
     parser.add_argument('-l', '--largs-insert', action='store_true',
         dest='large_insert',
         help='For large insert, use: -X 1000 --chunkmbs 128')
-    parser.add_argument('--clean', dest='keep_tmp', action='store_false',
-        help='Clean temp files')
+    parser.add_argument('--keep-tmp', dest='keep_tmp', action='store_true',
+                        help='save temp files')
+    parser.add_argument('--rm-unmap', dest='keep_unmap', action='store_false',
+                        help='remove unmap fastq files')
     parser.add_argument('-X', '--extra-para', dest='extra_para', default=None,
         help='Add extra parameters, eg: "-X 2000"')
     parser.add_argument('--verbose', action='store_true', 
@@ -600,7 +602,7 @@ def get_args():
 def main():
     args = vars(get_args().parse_args())
     # update: keep_tmp, keep_unmap
-    args['keep_unmap'] = args['keep_tmp']
+    # args['keep_unmap'] = args['keep_tmp']
     Align(**args).run()
 
 

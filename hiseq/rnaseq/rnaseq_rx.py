@@ -246,7 +246,7 @@ class RnaseqRxConfig(object):
             self.wt_name = fx_name(self.wt_fq1[0], fix_pe=True, fix_rep=True)
         if not isinstance(self.smp_name, str):
             # fix smp_name
-            self.smp_name = '{}.vs.{}'.format(self.mut_name, self.wt_name)
+            self.smp_name = '{}.vs.{}'.format(self.wt_name, self.mut_name)
         # update mut/wt dirs
         self.mut_dir = os.path.join(self.outdir, self.mut_name)
         self.wt_dir = os.path.join(self.outdir, self.wt_name)

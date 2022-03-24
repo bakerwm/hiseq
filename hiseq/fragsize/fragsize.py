@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+
 """
 Calculate the fragment size of PE reads,
 
@@ -11,6 +12,7 @@ Statistics:
 1. length count
 2. mean/medium/qrt.
 """
+
 
 import os
 import sys

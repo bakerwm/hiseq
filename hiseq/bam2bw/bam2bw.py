@@ -28,8 +28,6 @@ normalizeUsing: Possible choices: RPKM, CPM, BPM, RPGC. We will use BPM (Bins Pe
 binSize: size of bins in bases
 smoothLength: defines a window, larger than the binSize, to average the number of reads over. This helps produce a more continuous plot.
 centerReads: reads are centered with respect to the fragment length as specified by extendReads. This option is useful to get a sharper signal around enriched regions.
-
-
 """
 
 import os
@@ -141,6 +139,7 @@ class Bam2bw(object):
             'normalizeUsing': 'RPGC',
             'extend_read': False,
             'blacklist': None,
+            'include_bl': False,
             'threads': 4,
             'config_txt': os.path.join(self.outdir, 'config.txt'),
             'config_yaml': os.path.join(self.outdir, 'config.yaml'),
@@ -187,6 +186,8 @@ class Bam2bw(object):
         if self.blacklist is None:
             self.blacklist = Genome(self.genome).blacklist()
         self.args_bl = '--blackListFileName {}'.format(self.blacklist) if file_exists(self.blacklist) else ''
+        if self.include_bl:
+            self.args_bl = ''
         # extend reads
         self.args_extread = '--extendReads 150' if self.extend_read else ''
         # for chipseq
@@ -356,6 +357,8 @@ def get_args():
         help='Whether overwrite exists files')
     parser.add_argument('-p', '--threads', type=int, default=4,
         help='Number of threads, default: [4]')
+    parser.add_argument('--include-bl', dest='include_bl', action='store_true',
+        help='Include signals on blacklist regions')
     parser.add_argument('-e', '--extend-read', dest='extend_read', action='store_true',
         help='Extend the reads to fragment size, see deeptools bamCoverage')
     return parser

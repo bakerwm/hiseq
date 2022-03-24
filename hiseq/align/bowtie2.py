@@ -281,21 +281,21 @@ class Bowtie2(object):
                 cmd_unique = ' '.join([
                     '&& samtools view -Sub',
                     '<(samtools view -H {};'.format(self.sam),
-                    'samtools view -F 2048 {}'.format(self.sam),
+                    'samtools view -F 0x4 -F 2048 {}'.format(self.sam),
                     "| grep 'YT:Z:CP')",
                     ])
             else:
                 cmd_unique = ' '.join([
-                    '&& samtools view -Sub -F 2048 {}'.format(self.sam),
+                    '&& samtools view -Sub -F 0x4 -F 2048 {}'.format(self.sam),
                     ])
         else:
             if self.unique_only:
                 cmd_unique = ' '.join([
-                    '&& samtools view -Sub -q 10 -F 2048 {}'.format(self.sam)
+                    '&& samtools view -Sub -q 10 -F 0x4 -F 2048 {}'.format(self.sam)
                     ])
             else:
                 cmd_unique = ' '.join([
-                    '&& samtools view -Sub -F 2048 {}'.format(self.sam)
+                    '&& samtools view -Sub -F 0x4 -F 2048 {}'.format(self.sam)
                     ])
         # add cmd
         self.cmd = ' '.join([
@@ -336,8 +336,8 @@ class Bowtie2(object):
         del_list = [self.sam]
         if not self.keep_unmap:
             del_list.extend([self.unmap1, self.unmap2, self.unmap])
-        if not self.keep_tmp:
-            remove_file(del_list, ask=False)
+        # if not self.keep_tmp:
+        remove_file(del_list, ask=False)
         return (self.bam, self.unmap1, self.unmap2)
 
 
@@ -379,8 +379,10 @@ def get_args():
     parser.add_argument('-l', '--largs-insert', action='store_true',
                         dest='large_insert',
                         help='For large insert, use: -X 1000 --chunkmbs 128')
-    parser.add_argument('--clean', dest='keep_tmp', action='store_false',
-                        help='Clean temp files')
+    parser.add_argument('--keep-tmp', dest='keep_tmp', action='store_true',
+                        help='save temp files')
+    parser.add_argument('--rm-unmap', dest='keep_unmap', action='store_false',
+                        help='remove unmap fastq files')
     parser.add_argument('-X', '--extra-para', dest='extra_para', default=None,
                         help='Add extra parameters, eg: "-X 2000"')
     return parser
@@ -389,7 +391,7 @@ def get_args():
 def main():
     args = vars(get_args().parse_args())
     # update: keep_tmp, keep_unmap
-    args['keep_unmap'] = args['keep_tmp']
+    # args['keep_unmap'] = args['keep_tmp']
     Bowtie2(**args).run()
 
 

@@ -137,7 +137,7 @@ class StarConfig(object):
             'keep_tmp': False,
             'keep_unmap': True,
             'large_insert': False,
-            'genomeLoad': 'LoadAndRemove',
+            'genomeLoad': 'NoSharedMemory',
         }
         self = update_obj(self, args_init, force=False)
         self.hiseq_type = 'STAR_r1'
@@ -388,8 +388,10 @@ def get_args():
     parser.add_argument('-l', '--largs-insert', action='store_true',
                         dest='large_insert',
                         help='For large insert, use: -X 1000 --chunkmbs 128')
-    parser.add_argument('--clean', dest='keep_tmp', action='store_false',
-                        help='Clean temp files')
+    parser.add_argument('--keep-tmp', dest='keep_tmp', action='store_true',
+                        help='save temp files')
+    parser.add_argument('--rm-unmap', dest='keep_unmap', action='store_false',
+                        help='remove unmap fastq files')
     parser.add_argument('-X', '--extra-para', dest='extra_para', default=None,
                         help='Add extra parameters, eg: "-X 2000"')
     return parser
@@ -398,7 +400,7 @@ def get_args():
 def main():
     args = vars(get_args().parse_args())
     # update: keep_tmp, keep_unmap
-    args['keep_unmap'] = args['keep_tmp']
+    # args['keep_unmap'] = args['keep_tmp']
     Star(**args).run()
 
 
