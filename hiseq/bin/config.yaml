@@ -10,6 +10,7 @@ supported_genome:
 - dm6
 - dm6_te_piRC
 - mm10
+- mmul_10
 - hg19
 - hg38
 - GRCh38

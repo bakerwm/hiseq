@@ -1,0 +1,1 @@
+python atac.py -g mm10 -p 12 --trimmed -d /data/yulab/wangming/work/yu_2022/projects/20220329_qd_ATAC_yy125/data/atac_mouse.json -o /data/yulab/wangming/work/yu_2022/projects/20220329_qd_ATAC_yy125/results/ATAC_mouse

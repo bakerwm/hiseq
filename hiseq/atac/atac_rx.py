@@ -13,7 +13,9 @@ import os
 import pathlib
 import argparse
 from multiprocessing import Pool
-from hiseq.atac.atac_rn import AtacRn
+from .atac_rn import AtacRn
+from .atac_rp import AtacRp
+# from hiseq.atac.atac_rn import AtacRn
 from hiseq.atac.atac_rp import AtacRp
 from hiseq.utils.genome import Genome
 from hiseq.utils.file import (

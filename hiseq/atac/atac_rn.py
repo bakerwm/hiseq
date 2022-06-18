@@ -14,8 +14,10 @@ import sys
 import pathlib
 import argparse
 from multiprocessing import Pool
-from hiseq.atac.atac_r1 import AtacR1
-from hiseq.atac.atac_rp import AtacRp
+from .atac_r1 import AtacR1
+from .atac_rp import AtacRp
+# from hiseq.atac.atac_r1 import AtacR1
+# from hiseq.atac.atac_rp import AtacRp
 from hiseq.utils.genome import Genome
 from hiseq.utils.bam import Bam
 from hiseq.align.align_index import AlignIndex, check_index_args
@@ -83,10 +85,14 @@ class AtacRn(object):
         for k in k_list:
             k_from = list_hiseq_file(r1_dir, k, 'r1')
             k_to = getattr(self, k)
-            symlink_file(k_from[0], k_to)
+            if isinstance(k_from, list):
+                k_from = k_from[0]
+            symlink_file(k_from, k_to)
         # copy all files in qc dir
         r1_qc_dir = list_hiseq_file(r1_dir, 'qc_dir', 'r1')
-        r1_qc_files = list_dir(r1_qc_dir[0], include_dir=True)
+        if isinstance(r1_qc_dir, list):
+            r1_qc_dir = r1_qc_dir[0]
+        r1_qc_files = list_dir(r1_qc_dir, include_dir=True)
         for f in r1_qc_files:
             symlink_file(f, self.qc_dir) # to qc_dir
         # update: bam index
@@ -235,7 +241,10 @@ class AtacRnConfig(object):
         ## for single-fq ##
         if len(self.fq1) == 1:
             s = fx_name(self.fq1[0], fix_pe=True)
-            self.rep_list = [os.path.join(self.outdir, s+'_rep1')] # single
+            if s.endswith('_rep1'):
+                self.rep_list = [os.path.join(self.outdir, s)]
+            else:
+                self.rep_list = [os.path.join(self.outdir, s+'_rep1')] # single
         else:
             self.rep_list = [
                 os.path.join(self.outdir, i) for i in fx_name(self.fq1, fix_pe=True)

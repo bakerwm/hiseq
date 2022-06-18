@@ -242,7 +242,7 @@ class Cutadapt(object):
         arg_cut_to_length = '--length {}'.format(self.cut_to_length) if self.cut_to_length else ''
         arg_adapter_5 = '-g {}'.format(self.adapter5) if self.adapter5 else ''
         arg_Adapter_5 = '-G {}'.format(self.Adapter5) if self.Adapter5 else ''
-        arg_rm_polyN = r'-a "A{50}" -a "C{50}" -a "G{50}" -a "T{50}"' if self.rm_polyN else ''
+        arg_rm_polyN = r'-a "A{20}" -a "C{20}" -a "G{20}" -a "T{20}"' if self.rm_polyN else ''
         arg_cut_before_trim = '--cut {}'.format(self.cut_before_trim) if self.cut_before_trim else ''
         # adapter3
         ad3_list, _ = self.get_ad3()
@@ -287,7 +287,7 @@ class Cutadapt(object):
         arg_cut_to_length = '--length {}'.format(self.cut_to_length) if self.cut_to_length else ''
         arg_adapter_5 = '-g {}'.format(self.adapter5) if self.adapter5 else ''
         arg_Adapter_5 = '-G {}'.format(self.Adapter5) if self.Adapter5 else ''
-        arg_rm_polyN = r'-a "A{50}" -a "C{50}" -a "G{50}" -a "T{50}"' if self.rm_polyN else ''
+        arg_rm_polyN = r'-a "A{20}" -a "C{20}" -a "G{20}" -a "T{20}"' if self.rm_polyN else ''
         if self.save_too_short:
             arg_too_short = '--too-short-output={} --too-short-paired-output={}'.format(
                 self.too_short_fq1, self.too_short_fq2)

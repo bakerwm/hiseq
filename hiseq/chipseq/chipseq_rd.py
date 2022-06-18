@@ -16,7 +16,8 @@ search files by key words, from command line
 import os
 import argparse
 from hiseq.utils.file import (
-    check_fx_args, check_fx_paired, file_abspath, file_exists, fx_name, list_fx
+    file_abspath, file_exists, fx_name, list_fx, list_dir, check_fx_paired,
+    check_fx_args
 )
 from hiseq.utils.utils import log, update_obj, Config, get_date
 
@@ -54,6 +55,26 @@ class ChipseqRd(object):
         self.fq_dir = file_abspath(self.fq_dir)
 
 
+    def list_fq_files(self):
+        """
+        List fastq files, in dir or subdir (level-1)
+        """
+        # for fq_dir
+        if isinstance(self.fq_dir, str):
+            f_list = list_fx(self.fq_dir)
+        # for fq_dir/subdir
+        if len(f_list) < 2:
+            # search fastq files in subdirs
+            sub_dirs = list_dir(self.fq_dir, include_dir=True)
+            sub_files = [list_fx(i) for i in sub_dirs if os.path.isdir(i)]
+            f_list = [f for i in sub_files if isinstance(i, list) for f in i]
+            # f_list = [f for i in sub_dirs if os.path.isdir(i) for f in list_fx(i)]
+        if len(f_list) < 2:
+            log.error('not enough fq files: {}'.format(self.fq_dir))
+            return None
+        return f_list
+
+
     def parse_fq_v1(self):
         """
         Version-1:
@@ -64,16 +85,17 @@ class ChipseqRd(object):
         
         return: dict (groups)
         """
-        # check fq_dir
-        if isinstance(self.fq_dir, str):
-            f_list = list_fx(self.fq_dir)
-        else:
-            log.warning('--fq-dir required')
-            f_list = []
-        # check files
-        if len(f_list) < 2:
-            log.error('not enough fq files')
-            return None
+        # # check fq_dir
+        # if isinstance(self.fq_dir, str):
+        #     f_list = list_fx(self.fq_dir)
+        # else:
+        #     log.warning('--fq-dir required')
+        #     f_list = []
+        # # check files
+        # if len(f_list) < 2:
+        #     log.error('not enough fq files')
+        #     return None
+        f_list = self.list_fq_files()
         # check ip
         if not isinstance(self.ip, list):
             log.error('unknown ip, expect list, got {}'.format(
@@ -84,7 +106,7 @@ class ChipseqRd(object):
             self.input = [self.input] * len(self.ip)
         elif isinstance(self.input, list):
             if len(self.input) == 1:
-                self.input = [self.input] * len(self.ip)
+                self.input = self.input * len(self.ip)
         else:
             log.error('--input expect str, list, got {}'.format(
                 type(self.input).__name__))
@@ -117,10 +139,10 @@ class ChipseqRd(object):
                 ka_fq2 = kb_fq2 = None
             out.update({
                 k_name: {
-                    'mut_fq1': ka_fq1,
-                    'mut_fq2': ka_fq2,
-                    'wt_fq1': kb_fq1,
-                    'wt_fq2': kb_fq2
+                    'ip_fq1': ka_fq1,
+                    'ip_fq2': ka_fq2,
+                    'input_fq1': kb_fq1,
+                    'input_fq2': kb_fq2
                 }
             })
         # output
@@ -191,10 +213,13 @@ class ChipseqRd(object):
                 out.update({k:v}) # update
                 status = 'add'
             # for log
+            ip = v.get('ip', None)
             ip_fq1 = v.get('ip_fq1', None)
             ip_fq2 = v.get('ip_fq2', None)
+            input = v.get('input', None)
             input_fq1 = v.get('input_fq1', None)
             input_fq2 = v.get('input_fq2', None)
+
             ip_name = fx_name(ip_fq1[0], fix_pe=True, fix_rep=True)
             # fix for SE
             if ip_fq2 is None:

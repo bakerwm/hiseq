@@ -8,7 +8,8 @@ analysis-module:
 """
 import os
 import sys
-from hiseq.atac.atac_rp import AtacRp
+from .atac_rp import AtacRp
+# from hiseq.atac.atac_rp import AtacRp
 from hiseq.utils.genome import Genome
 from hiseq.align.align_index import AlignIndex, check_index_args
 from hiseq.atac.utils import (

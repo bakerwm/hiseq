@@ -12,8 +12,10 @@ mission-2: run_pipe, parsing config from design.yaml
 import os
 import pathlib
 import argparse
-from hiseq.atac.atac_rd import AtacRd
-from hiseq.atac.atac_rx import AtacRx
+from .atac_rd import AtacRd
+from .atac_rx import AtacRx
+# from hiseq.atac.atac_rd import AtacRd
+# from hiseq.atac.atac_rx import AtacRx
 from hiseq.utils.utils import log, update_obj, Config, get_date
 from hiseq.utils.file import file_abspath
 

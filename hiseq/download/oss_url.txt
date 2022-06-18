@@ -1,0 +1,9 @@
+类别	内容
+合同号	YF20213225
+开题单号	LPL2022041015
+提取码	4804
+AccessKeyId	LTAI5tL2YJruHJKDsTFwqSTv
+AccessKeySecret	TiResEwadHyLiueVdWGUYmUk7SUuou
+预设OSS路径	oss://psndata-transfer/customer/2022/0509/YF20213225/LPL2022041015/
+过期时间	2022/05/17 18:12:31
+使用教程	在线教程 
