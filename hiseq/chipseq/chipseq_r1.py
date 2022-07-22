@@ -1,7 +1,7 @@
 #!/usr/bin/env python
-
+#-*- endoding: utf-8 -*-
 """
-Run Chipseq for single fastq file (PE or SE)
+Run ChIPseq for single fastq file (PE or SE)
 
 main:
 
@@ -37,7 +37,6 @@ Quality control
 5. peaks ()
 6. enrichment of motif 
 7. 
-
 """
 
 
@@ -45,15 +44,17 @@ import os
 import sys
 from hiseq.chipseq.chipseq_rp import ChipseqRp
 from hiseq.chipseq.utils import (
-    hiseq_bam2bw, hiseq_pcr_dup,
-    chipseq_trim, chipseq_align_genome, chipseq_align_spikein, 
-    chipseq_call_peak, qc_trim_summary, qc_align_summary, qc_lendist, qc_frip,
-    qc_tss_enrich, qc_genebody_enrich
+    hiseq_bam2bw, hiseq_pcr_dup, chipseq_trim, chipseq_align_genome, 
+    chipseq_align_spikein, chipseq_call_peak, qc_trim_summary, qc_align_summary,
+    qc_lendist, qc_frip, qc_tss_enrich, qc_genebody_enrich
 )
-from hiseq.utils.file import check_fx_args, check_fx_paired, check_path, \
-    symlink_file, file_abspath, file_prefix, fx_name
-from hiseq.utils.utils import log, update_obj, Config, get_date, init_cpu, \
-    read_hiseq
+from hiseq.utils.file import (
+    check_fx_args, check_fx_paired, check_path, symlink_file, file_abspath, 
+    file_prefix, fx_name
+)
+from hiseq.utils.utils import (
+    log, update_obj, Config, get_date, init_cpu, read_hiseq
+)
 from hiseq.align.align_index import AlignIndex, check_index_args
 from hiseq.utils.genome import Genome
 

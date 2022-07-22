@@ -289,48 +289,76 @@ def chipseq_merge_bam(x, hiseq_type='_rn'):
         log.error('chipseq_merge_bam() skipped, not a chipseq_rn dir:\
             {}'.format(x))
     bam_list = list_hiseq_file(x, 'bam', 'r1')
-    cmd = ' '.join([
-        'samtools merge -',
-        ' '.join(bam_list),
-        '| samtools sort -o {} -'.format(a.bam_raw),
-        '&& samtools index {}'.format(a.bam_raw)])
-    if not all(file_exists(bam_list)):
-        raise ValueError('bam file not exists: {}'.format(bam_list))
-    if file_exists(a.bam_raw) and not a.overwrite:
-        log.info('merge_bam() skipped, file exists: {}'.format(a.bam_raw))
+    # single or multiple
+    if isinstance(bam_list, list) and len(bam_list) > 1:
+        cmd = ' '.join([
+            'samtools merge -',
+            ' '.join(bam_list),
+            '| samtools sort -o {} -'.format(a.bam_raw),
+            '&& samtools index {}'.format(a.bam_raw)])
+        if not all(file_exists(bam_list)):
+            raise ValueError('bam file not exists: {}'.format(bam_list))
+        if file_exists(a.bam_raw) and not a.overwrite:
+            log.info('merge_bam() skipped, file exists: {}'.format(a.bam_raw))
+        else:
+            try:
+                run_shell_cmd(cmd)
+            except:
+                log.warning('merge_bam() failed.')
+        # rmdup
+        if a.rmdup:
+            if file_exists(a.bam_raw):
+                if check_file(a.bam, check_empty=True) and not a.overwrite:
+                    log.info('rmdup() skipped, file exists: {}'.format(
+                        a.bam))
+                else:
+                    Bam(a.bam_raw).rmdup(a.bam)
+        else:
+            symlink_file(a.bam_raw, a.bam)
+        # check-point
+        if not file_exists(a.bam):
+            raise ValueError('chipseq_merge_bam() failed, see: {}'.format(a.bam_dir))
+        # save align_json
+        d = {'name': a.smp_name}
+        for aj in list_hiseq_file(x, 'align_json', 'r1'):
+            da = Config().load(aj)
+            d.update({
+                'index': da.get('index', None),
+                'unique_only': da.get('unique_only', False),
+                'total': d.get('total', 0) + da.get('total', 0),
+                'map': d.get('map', 0) + da.get('map', 0),
+                'unique': d.get('unique', 0) + da.get('unique', 0),
+                'multi': d.get('multi', 0) + da.get('multi', 0)
+            })
+        Config().dump(d, a.align_json)
+        # calculate norm scale
+        s = hiseq_norm_scale(x, hiseq_type=hiseq_type, by_spikein=False) # to genome
+    elif isinstance(bam_list, str): # single
+        log.warning('merge() skipped, Only 1 replicate detected')
+        k_list = [
+            'bam', 'bw', 'peak', 'peak_seacr', 'peak_seacr_top001',
+            'align_scale_json', 'trim_json', 'align_json', 'pcr_dup_json'
+        ]
+        # get the rep list
+        rep_list =  list_hiseq_file(x, 'rep_list', '_rn')
+        r1_dir = rep_list[0]
+        # rep_dir = self.rep_list[0] # first one
+        for k in k_list:
+            k_from = list_hiseq_file(r1_dir, k, 'r1')
+            k_to = list_hiseq_file(x, k, 'rn')
+            symlink_file(k_from, k_to) # update list_hiseq_file
+        # copy bam.bai
+        r1_bam_bai = list_hiseq_file(r1_dir, 'bam', 'r1')+'.bai'
+        m_bam_bai = list_hiseq_file(x, 'bam', 'rn')+'.bai'
+        symlink_file(r1_bam_bai, m_bam_bai)
+        # copy qc
+        m_qc_dir = list_hiseq_file(x, 'qc_dir', 'rn') # dest
+        r1_qc_dir = list_hiseq_file(r1_dir, 'qc_dir', 'r1')
+        r1_qc_files = list_dir(r1_qc_dir, include_dir=True) # update list_hiseq_file
+        for f in r1_qc_files:
+            symlink_file(f, m_qc_dir) # to qc_dir
     else:
-        try:
-            run_shell_cmd(cmd)
-        except:
-            log.warning('merge_bam() failed.')
-    # rmdup
-    if a.rmdup:
-        if file_exists(a.bam_raw):
-            if check_file(a.bam, check_empty=True) and not a.overwrite:
-                log.info('rmdup() skipped, file exists: {}'.format(
-                    a.bam))
-            else:
-                Bam(a.bam_raw).rmdup(a.bam)
-    else:
-        symlink_file(a.bam_raw, a.bam)
-    # check-point
-    if not file_exists(a.bam):
-        raise ValueError('chipseq_merge_bam() failed, see: {}'.format(a.bam_dir))
-    # save align_json
-    d = {'name': a.smp_name}
-    for aj in list_hiseq_file(x, 'align_json', 'r1'):
-        da = Config().load(aj)
-        d.update({
-            'index': da.get('index', None),
-            'unique_only': da.get('unique_only', False),
-            'total': d.get('total', 0) + da.get('total', 0),
-            'map': d.get('map', 0) + da.get('map', 0),
-            'unique': d.get('unique', 0) + da.get('unique', 0),
-            'multi': d.get('multi', 0) + da.get('multi', 0)
-        })
-    Config().dump(d, a.align_json)
-    # calculate norm scale
-    s = hiseq_norm_scale(x, hiseq_type=hiseq_type, by_spikein=False) # to genome
+        log.error('unknown bam_list: {}'.format(type(bam_list).__name__))
 
 
 def hiseq_pcr_dup(x, hiseq_type='r1'):

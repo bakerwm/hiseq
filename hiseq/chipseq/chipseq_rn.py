@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding:utf-8 -*-
-
 """
 Chipseqseq pipeline: level-3 (run _rn)
 
@@ -16,11 +15,11 @@ from multiprocessing import Pool
 from hiseq.chipseq.chipseq_r1 import ChipseqR1
 from hiseq.chipseq.chipseq_rp import ChipseqRp
 from hiseq.chipseq.utils import (
-    hiseq_bam2bw, hiseq_pcr_dup,
-    chipseq_trim, chipseq_align_genome, chipseq_merge_bam, 
-    chipseq_align_spikein, chipseq_call_peak, qc_trim_summary, 
-    qc_align_summary, qc_lendist, qc_frip, qc_bam_cor, qc_peak_idr,
-    qc_tss_enrich, qc_genebody_enrich, qc_peak_overlap, qc_bam_fingerprint
+    hiseq_bam2bw, hiseq_pcr_dup, chipseq_trim, chipseq_align_genome, 
+    chipseq_merge_bam, chipseq_align_spikein, chipseq_call_peak, 
+    qc_trim_summary, qc_align_summary, qc_lendist, qc_frip, qc_bam_cor, 
+    qc_peak_idr, qc_tss_enrich, qc_genebody_enrich, qc_peak_overlap, 
+    qc_bam_fingerprint
 )
 from hiseq.utils.file import (
     check_path, check_fx_args, check_fx_paired, symlink_file, file_exists, 
@@ -71,26 +70,27 @@ class ChipseqRn(object):
         qc_bam_fingerprint(self.project_dir, 'rn')
 
 
-    def run_pipe_r1(self): # for rep_list == 1
-        log.warning('merge() skipped, Only 1 replicate detected')
-        k_list = [
-            'bam', 'bw', 'peak', 'peak_seacr', 'peak_seacr_top001',
-            'align_scale_json', 'trim_json', 'align_json'
-        ]
-        # get the replist
-        rep_dir = self.rep_list[0] # first one
-        for k in k_list:
-            k_from = list_hiseq_file(rep_dir, k, 'r1')
-            # k_to = list_hiseq_file(self.project_dir, k, 'rn')
-            k_to = getattr(self, k)
-            symlink_file(k_from[0], k_to)
-        # copy all files in qc dir
-        rep_qc_dir = list_hiseq_file(rep_dir, 'qc_dir', 'r1')
-        rep_qc_files = list_dir(rep_qc_dir[0], include_dir=True)
-        for f in rep_qc_files:
-            symlink_file(f, self.qc_dir) # to qc_dir
-        # update: bam index
-        Bam(self.bam).index()
+    def run_pipe_r1(self): # for rep_list == 1        
+        chipseq_merge_bam(self.project_dir, 'rn') # copy bam, qc_dir files
+        # log.warning('merge() skipped, Only 1 replicate detected')
+        # k_list = [
+        #     'bam', 'bw', 'peak', 'peak_seacr', 'peak_seacr_top001',
+        #     'align_scale_json', 'trim_json', 'align_json'
+        # ]
+        # # get the replist
+        # rep_dir = self.rep_list[0] # first one
+        # for k in k_list:
+        #     k_from = list_hiseq_file(rep_dir, k, 'r1')
+        #     # k_to = list_hiseq_file(self.project_dir, k, 'rn')
+        #     k_to = getattr(self, k)
+        #     symlink_file(k_from[0], k_to)
+        # # copy all files in qc dir
+        # rep_qc_dir = list_hiseq_file(rep_dir, 'qc_dir', 'r1')
+        # rep_qc_files = list_dir(rep_qc_dir[0], include_dir=True)
+        # for f in rep_qc_files:
+        #     symlink_file(f, self.qc_dir) # to qc_dir
+        # # update: bam index
+        # Bam(self.bam).index()
 
 
     def run_single_fx(self, i):
