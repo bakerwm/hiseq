@@ -485,7 +485,7 @@ class AlignR1Config(object):
         """Force fx to list
         fq1 : str required. 
         fq2 : None or str, optional, None
-        smp_name ： str
+        smp_name: str
         index_list : list
         index_name : list
         """
